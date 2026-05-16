@@ -23,8 +23,14 @@ src/
 │   │   └── index.ts
 │   └── index.ts                    # 提供者统一导出 + registerAllProviders()
 ├── extension.ts                    # 扩展入口
-└── test/
-    └── extension.test.ts
+└── test/                           # 测试文件
+    ├── index.ts                    # 测试入口
+    ├── runTest.ts                  # 测试运行器
+    ├── extension.test.ts           # 扩展集成测试
+    ├── registry.test.ts            # ModelRegistry 单元测试
+    ├── provider-registry.test.ts   # ProviderFactoryRegistry 单元测试
+    ├── interfaces.test.ts           # 接口和数据结构测试
+    └── utils.test.ts               # 工具函数测试
 ```
 
 ## 核心接口
@@ -147,6 +153,98 @@ export function registerAllProviders(): void {
   }
 }
 ```
+
+## 测试
+
+### 测试命令
+
+```bash
+# 编译并运行测试
+pnpm run test
+
+# 仅编译测试（不运行）
+pnpm run test:compile
+```
+
+### 测试文件结构
+
+| 文件 | 说明 |
+|------|------|
+| `registry.test.ts` | ModelRegistry 单例测试：提供者注册/注销、模型列表管理 |
+| `provider-registry.test.ts` | ProviderFactoryRegistry 测试：工厂注册、启用/禁用状态过滤 |
+| `interfaces.test.ts` | 接口和数据结构测试：ModelDefinition、ApiMessage、StreamCallbacks 等 |
+| `utils.test.ts` | 工具函数测试：safeStringify、sanitizeForLog、isSensitiveKey |
+| `extension.test.ts` | 扩展集成测试：命令注册、配置验证、语言模型提供者声明 |
+
+### 测试覆盖
+
+```
+Registry Tests (11 cases)
+├── Singleton pattern
+├── Provider registration/removal
+├── Model list management
+├── Find by ID
+└── Duplicate prevention
+
+ProviderFactoryRegistry Tests (9 cases)
+├── Factory registration
+├── Enabled/disabled filtering
+└── Duplicate prevention
+
+Interfaces Tests (10+ cases)
+├── ModelDefinition structure
+├── ModelCapabilities
+├── ApiMessage (user/assistant/system/tool)
+├── ApiRequest format
+└── StreamCallbacks
+
+Utils Tests (15+ cases)
+├── safeStringify (Map, circular ref)
+├── sanitizeForLog (sensitive data redaction)
+└── isSensitiveKey patterns
+
+Extension Tests (5 cases)
+├── VS Code module availability
+├── Command registration
+├── Configuration defaults
+└── Language model provider declaration
+```
+
+### 运行测试
+
+1. **VS Code 调试面板**
+   - 选择 "Run Tests" 配置
+   - 按 `F5` 开始调试测试
+
+2. **命令行**
+   ```bash
+   pnpm run test:compile  # 编译
+   pnpm run test          # 运行测试
+   ```
+
+### 编写新测试
+
+测试使用 Mocha 框架 + VS Code Test Electron：
+
+```typescript
+// src/test/myfeature.test.ts
+import * as assert from 'assert';
+import { MyClass } from '../core/myclass';
+
+suite('MyClass', () => {
+	test('should do something', () => {
+		const instance = new MyClass();
+		assert.strictEqual(instance.method(), expected);
+	});
+});
+```
+
+### 测试注意事项
+
+- 测试文件必须以 `.test.ts` 结尾
+- 放在 `src/test/` 目录下
+- 运行前需先编译：`pnpm run test:compile`
+- 测试在 VS Code 扩展主机环境中运行，可使用 VS Code API
 
 ## 开发命令
 
