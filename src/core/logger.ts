@@ -18,24 +18,13 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
 	error: 3,
 };
 
-// 日志分类
-export type LogCategory =
-	| 'core'
-	| 'registry'
-	| 'provider'
-	| 'deepseek'
-	| 'auth'
-	| 'api'
-	| 'chat'
-	| 'stream'
-	| 'config';
+/** 日志分类 */
+export type LogCategory = 'core' | 'registry' | 'provider' | 'auth' | 'api' | 'chat' | 'stream' | 'config';
 
-// 日志分类显示名称
-const CATEGORY_NAMES: Record<LogCategory, string> = {
+// 预定义分类的显示名称
+const PREDEFINED_CATEGORY_NAMES: Record<Exclude<LogCategory, 'provider'>, string> = {
 	core: 'Core',
 	registry: 'Registry',
-	provider: 'Provider',
-	deepseek: 'DeepSeek',
 	auth: 'Auth',
 	api: 'API',
 	chat: 'Chat',
@@ -43,20 +32,8 @@ const CATEGORY_NAMES: Record<LogCategory, string> = {
 	config: 'Config',
 };
 
-// 分类颜色（用于控制台输出）
-const CATEGORY_COLORS: Record<LogCategory, string> = {
-	core: '\x1b[36m', // 青色
-	registry: '\x1b[35m', // 紫色
-	provider: '\x1b[34m', // 蓝色
-	deepseek: '\x1b[33m', // 黄色
-	auth: '\x1b[33m', // 黄色
-	api: '\x1b[32m', // 绿色
-	chat: '\x1b[96m', // 亮青色
-	stream: '\x1b[90m', // 灰色
-	config: '\x1b[90m', // 灰色
-};
-
-const RESET_COLOR = '\x1b[0m';
+// 动态注册的 provider 信息
+const providerCategories = new Map<string, string>();
 
 /** 输出通道实例 */
 let channel: vscode.OutputChannel | undefined;
@@ -72,29 +49,16 @@ let isDevelopmentMode = false;
 
 /**
  * 检测是否为开发模式
- * 开发模式：扩展以 workspace 形式运行（调试时）
- * 生产模式：扩展以安装包形式运行
- *
- * 通过以下方式检测：
- * 1. NODE_ENV=development 环境变量
- * 2. 检查 VSCode 的 URI scheme（开发时为 file，生产时为 vscode）
  */
 function detectDevelopmentMode(): boolean {
 	try {
-		// 检查 NODE_ENV 环境变量
 		if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
 			return true;
 		}
-
-		// 检查是否在调试模式
 		if (typeof process !== 'undefined' && process.env?.NODE_ENV === undefined) {
-			// 当 NODE_ENV 未设置时，检查是否为调试环境
-			// 可以通过检查全局变量或配置来判断
 			const isDebug = typeof (globalThis as Record<string, unknown>)['__vscdebug'] !== 'undefined';
 			if (isDebug) { return true; }
 		}
-
-		// 默认返回 false（生产模式）
 		return false;
 	} catch {
 		return false;
@@ -103,8 +67,6 @@ function detectDevelopmentMode(): boolean {
 
 /**
  * 获取默认日志级别
- * 开发模式：debug
- * 生产模式：info
  */
 function getDefaultLogLevel(): LogLevel {
 	if (isDevelopmentMode) {
@@ -133,10 +95,20 @@ function ts(): string {
 }
 
 /**
+ * 获取分类显示名称
+ */
+function getCategoryName(category: string): string {
+	if (category === 'provider') {
+		return 'Provider';
+	}
+	return PREDEFINED_CATEGORY_NAMES[category as keyof typeof PREDEFINED_CATEGORY_NAMES] ?? category;
+}
+
+/**
  * 格式化日志消息
  */
-function formatMessage(level: string, category: LogCategory, args: unknown[]): string {
-	const categoryText = showCategory ? `[${CATEGORY_NAMES[category]}] ` : '';
+function formatMessage(level: string, category: string, args: unknown[]): string {
+	const categoryText = showCategory ? `[${getCategoryName(category)}] ` : '';
 	const prefix = `[${ts()}] [${level}] ${categoryText}`;
 
 	const text = args
@@ -168,7 +140,7 @@ function shouldLog(level: LogLevel): boolean {
 /**
  * 写入日志消息到输出通道
  */
-function write(level: LogLevel, category: LogCategory, args: unknown[]): void {
+function write(level: LogLevel, category: string, args: unknown[]): void {
 	if (!shouldLog(level)) {
 		return;
 	}
@@ -179,8 +151,7 @@ function write(level: LogLevel, category: LogCategory, args: unknown[]): void {
 
 	// 开发模式下同时输出到控制台
 	if (isDevelopmentMode && level === 'debug') {
-		const color = CATEGORY_COLORS[category];
-		console.log(`${color}${text}${RESET_COLOR}`);
+		console.log(text);
 	}
 }
 
@@ -193,7 +164,6 @@ export function setShowCategory(show: boolean): void {
 
 /**
  * 设置日志级别
- * @param level 日志级别
  */
 export function setLogLevel(level: LogLevel): void {
 	currentLogLevel = level;
@@ -211,6 +181,40 @@ export function getLogLevel(): LogLevel {
  */
 export function isDevMode(): boolean {
 	return isDevelopmentMode;
+}
+
+/**
+ * 日志记录器接口
+ */
+export interface Logger {
+	info: (...args: unknown[]) => void;
+	warn: (...args: unknown[]) => void;
+	error: (...args: unknown[]) => void;
+	debug: (...args: unknown[]) => void;
+}
+
+/**
+ * 创建一个 provider 专用的日志记录器
+ * @param providerId 提供商 ID（如 'deepseek', 'bigmodel'）
+ * @param providerName 提供商显示名称（如 'DeepSeek', 'BigModel'）
+ * @returns 日志记录器
+ *
+ * @example
+ * const logger = createProviderLogger('deepseek', 'DeepSeek');
+ * logger.info('消息'); // 输出: [时间] [INFO] [DeepSeek] 消息
+ */
+export function createProviderLogger(providerId: string, providerName: string): Logger {
+	// 注册 provider 分类
+	if (!providerCategories.has(providerId)) {
+		providerCategories.set(providerId, providerName);
+	}
+
+	return {
+		info: (...args: unknown[]) => write('info', providerId, args),
+		warn: (...args: unknown[]) => write('warn', providerId, args),
+		error: (...args: unknown[]) => write('error', providerId, args),
+		debug: (...args: unknown[]) => write('debug', providerId, args),
+	};
 }
 
 // 初始化日志模块
@@ -242,14 +246,6 @@ export const logger = {
 		warn: (...args: unknown[]) => write('warn', 'provider', args),
 		error: (...args: unknown[]) => write('error', 'provider', args),
 		debug: (...args: unknown[]) => write('debug', 'provider', args),
-	},
-
-	// DeepSeek 提供者日志
-	deepseek: {
-		info: (...args: unknown[]) => write('info', 'deepseek', args),
-		warn: (...args: unknown[]) => write('warn', 'deepseek', args),
-		error: (...args: unknown[]) => write('error', 'deepseek', args),
-		debug: (...args: unknown[]) => write('debug', 'deepseek', args),
 	},
 
 	// 认证模块日志

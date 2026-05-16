@@ -76,7 +76,260 @@ function isAbortError(error: unknown): boolean {
 }
 
 /**
- * 基础 API 客户端实现
+ * API 客户端配置
+ */
+export interface ApiClientConfig {
+	/** 基础 URL */
+	baseUrl: string;
+	/** API 密钥 */
+	apiKey: string;
+	/** 提供商名称 */
+	providerName: string;
+	/** 请求超时（毫秒），可选 */
+	timeoutMs?: number;
+}
+
+/**
+ * 创建 API 客户端实例
+ */
+export function createApiClient(config: ApiClientConfig): IApiClient {
+	return new (class implements IApiClient {
+		readonly baseUrl: string;
+		readonly apiKey: string;
+		private readonly providerName: string;
+		private readonly timeoutMs: number;
+
+		constructor() {
+			this.baseUrl = config.baseUrl;
+			this.apiKey = config.apiKey;
+			this.providerName = config.providerName;
+			this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+			logger.api.debug(`[${this.providerName}] ApiClient created`);
+		}
+
+		async streamChatCompletion(
+			request: ApiRequest,
+			callbacks: StreamCallbacks,
+			cancellationToken?: CancellationToken,
+		): Promise<void> {
+			const { providerName, timeoutMs } = this;
+			logger.api.info(`[${providerName}] Starting streamChatCompletion, model: ${request.model}, timeout: ${timeoutMs}ms`);
+
+			const controller = new AbortController();
+			const cancelListener = cancellationToken?.onCancellationRequested(() => {
+				logger.api.info(`[${providerName}] Cancellation requested`);
+				controller.abort();
+			});
+
+			if (cancellationToken?.isCancellationRequested) {
+				logger.api.info(`[${providerName}] Already cancelled, aborting`);
+				controller.abort();
+			}
+
+			// 设置请求超时
+			const timeoutId = setTimeout(() => {
+				logger.api.warn(`[${providerName}] Request timeout after ${timeoutMs}ms`);
+				controller.abort();
+			}, timeoutMs);
+
+			try {
+				const requestBody = {
+					...request,
+					stream_options: { include_usage: true },
+				};
+
+				// 打印脱敏后的请求体用于调试
+				logger.api.debug(`[${providerName}] Request body: ${safeStringify(sanitizeForLog(requestBody))}`);
+
+				const endpoint = `${this.baseUrl}/chat/completions`;
+				logger.api.debug(`[${providerName}] POST ${endpoint}`);
+
+				const response = await fetch(endpoint, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${this.apiKey}`,
+					},
+					body: safeStringify(requestBody),
+					signal: controller.signal,
+				});
+
+				// 请求成功，清除超时
+				clearTimeout(timeoutId);
+
+				logger.api.debug(`[${providerName}] Response status: ${response.status}`);
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					let errorMessage: string;
+					try {
+						const errorJson = JSON.parse(errorText);
+						errorMessage = errorJson.error?.message || errorJson.message || errorText;
+					} catch {
+						errorMessage = errorText;
+					}
+					logger.api.error(`[${providerName}] API error (${response.status}): ${errorMessage}`);
+					throw new Error(`${providerName} API error (${response.status}): ${errorMessage}`);
+				}
+
+				if (!response.body) {
+					logger.api.error(`[${providerName}] No response body received`);
+					throw new Error('No response body received');
+				}
+
+				const reader = response.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = '';
+				let totalTokensReceived = 0;
+
+				// 按索引累积工具调用增量
+				const pendingToolCalls = new Map<number, ApiToolCall>();
+
+				logger.api.debug(`[${providerName}] Streaming started`);
+
+				while (true) {
+					if (cancellationToken?.isCancellationRequested) {
+						logger.api.info(`[${providerName}] Cancellation requested, stopping stream`);
+						controller.abort();
+						return;
+					}
+
+					const { done, value } = await reader.read();
+					if (done) {
+						logger.api.debug(`[${providerName}] Stream reader done`);
+						break;
+					}
+
+					buffer += decoder.decode(value, { stream: true });
+
+					const lines = buffer.split('\n');
+					buffer = lines.pop() || '';
+
+					for (const line of lines) {
+						const trimmed = line.trim();
+
+						if (!trimmed || trimmed.startsWith(':')) {
+							continue;
+						}
+
+						if (trimmed === 'data: [DONE]') {
+							logger.api.debug(`[${providerName}] Received [DONE] signal`);
+							for (const tc of pendingToolCalls.values()) {
+								callbacks.onToolCall(tc);
+							}
+							pendingToolCalls.clear();
+							callbacks.onDone();
+							return;
+						}
+
+						if (!trimmed.startsWith('data: ')) {
+							continue;
+						}
+
+						const jsonStr = trimmed.slice(6);
+						try {
+							const chunk = JSON.parse(jsonStr) as StreamChunk;
+
+							// 统计 token
+							if (chunk.usage) {
+								totalTokensReceived++;
+								if (totalTokensReceived % 50 === 0) {
+									logger.api.debug(`[${providerName}] Received ${totalTokensReceived} chunks`);
+								}
+							}
+
+							// 捕获使用统计
+							if (chunk.usage && callbacks.onUsage) {
+								callbacks.onUsage(chunk.usage);
+							}
+
+							const choice = chunk.choices?.[0];
+							if (choice) {
+								// 思考内容
+								const reasoning = choice.delta.reasoning_content;
+								if (reasoning) {
+									callbacks.onThinking(reasoning);
+								}
+
+								// 普通内容
+								if (choice.delta.content) {
+									callbacks.onContent(choice.delta.content);
+								}
+
+								// 工具调用
+								if (choice.delta.tool_calls) {
+									for (const tc of choice.delta.tool_calls) {
+										let pending = pendingToolCalls.get(tc.index);
+										if (!pending && tc.id) {
+											pending = {
+												id: tc.id,
+												type: 'function',
+												function: { name: '', arguments: '' },
+											};
+											pendingToolCalls.set(tc.index, pending);
+										}
+										if (pending) {
+											if (tc.function?.name) {
+												pending.function.name += tc.function.name;
+											}
+											if (tc.function?.arguments) {
+												pending.function.arguments += tc.function.arguments;
+											}
+										}
+									}
+								}
+
+								// 完成时刷新待处理的工具调用
+								if (choice.finish_reason === 'tool_calls' || choice.finish_reason === 'stop') {
+									for (const tc of pendingToolCalls.values()) {
+										callbacks.onToolCall(tc);
+									}
+									pendingToolCalls.clear();
+								}
+							}
+						} catch (e) {
+							logger.api.warn(`[${providerName}] Failed to parse SSE chunk:`, e);
+						}
+					}
+				}
+
+				logger.api.info(`[${providerName}] Stream completed, total chunks: ${totalTokensReceived}`);
+				callbacks.onDone();
+			} catch (error) {
+				clearTimeout(timeoutId);
+
+				// 检查是否为超时错误
+				if (isAbortError(error)) {
+					const errMsg = error instanceof Error ? error.message.toLowerCase() : '';
+					if (errMsg.includes('timeout') || errMsg.includes('aborted')) {
+						if (!cancellationToken?.isCancellationRequested) {
+							logger.api.error(`[${providerName}] Request timeout after ${timeoutMs}ms`);
+							callbacks.onError(new Error(`${providerName} request timeout`));
+						} else {
+							logger.api.info(`[${providerName}] Stream aborted due to cancellation`);
+						}
+						return;
+					}
+				}
+
+				if (isAbortError(error) && cancellationToken?.isCancellationRequested) {
+					logger.api.info(`[${providerName}] Stream aborted due to cancellation`);
+					return;
+				}
+
+				const errorMsg = error instanceof Error ? error : new Error(String(error));
+				logger.api.error(`[${providerName}] Stream error:`, errorMsg);
+				callbacks.onError(errorMsg);
+			} finally {
+				clearTimeout(timeoutId);
+				cancelListener?.dispose();
+			}
+		}
+	})();
+}
+
+/**
+ * 基础 API 客户端实现 (保留用于向后兼容)
  */
 export abstract class BaseApiClient implements IApiClient {
 	constructor(

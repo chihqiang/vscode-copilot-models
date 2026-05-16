@@ -9,17 +9,23 @@ src/
 │   ├── consts.ts                   # 常量定义
 │   ├── registry.ts                 # 模型注册表 (ModelRegistry 单例)
 │   ├── provider-registry.ts        # 提供者工厂注册表 (ProviderFactoryRegistry)
-│   └── logger.ts                   # 日志模块 (分类日志输出)
+│   └── logger.ts                   # 日志模块 (createProviderLogger)
 ├── providers/                      # 模型提供者
 │   ├── base/                       # 基础抽象类
-│   │   ├── auth-manager.ts         # BaseAuthManager - 认证管理基类
+│   │   ├── model-provider.ts       # BaseModelProvider - 模型提供商基类 (API Key 管理、客户端创建)
+│   │   ├── chat-provider.ts       # BaseChatProvider - Chat Provider 基类 (消息转换、流式请求)
 │   │   ├── client.ts               # BaseApiClient - API 客户端基类 (SSE 流式处理)
-│   │   ├── chat-provider.ts       # BaseChatProvider - Chat Provider 基类
+│   │   ├── auth-manager.ts         # BaseAuthManager - 认证管理基类
 │   │   └── index.ts
-│   ├── deepseek/                  # DeepSeek 实现
-│   │   ├── models.ts              # 模型定义 (DeepSeek V4 Flash/Pro)
+│   ├── deepseek/                   # DeepSeek 实现
+│   │   ├── models.ts               # 模型定义 (DeepSeek V4 Flash/Pro)
 │   │   ├── client.ts               # DeepSeekClient
 │   │   ├── provider.ts             # DeepSeekProviderFactory + DeepSeekChatProvider
+│   │   └── index.ts
+│   ├── bigmodel/                   # 智谱 AI 实现
+│   │   ├── models.ts               # 模型定义 (GLM-5.1/5-Turbo/5)
+│   │   ├── client.ts               # BigModelClient
+│   │   ├── provider.ts             # BigModelProviderFactory + BigModelChatProvider
 │   │   └── index.ts
 │   └── index.ts                    # 提供者统一导出 + registerAllProviders()
 ├── extension.ts                    # 扩展入口
@@ -29,42 +35,50 @@ src/
     ├── extension.test.ts           # 扩展集成测试
     ├── registry.test.ts            # ModelRegistry 单元测试
     ├── provider-registry.test.ts   # ProviderFactoryRegistry 单元测试
-    ├── interfaces.test.ts           # 接口和数据结构测试
+    ├── interfaces.test.ts          # 接口和数据结构测试
     └── utils.test.ts               # 工具函数测试
 ```
 
 ## 核心接口
 
 | 接口 | 说明 |
-|------|------|
+|:-----|:-----|
 | `IModelProvider` | 模型提供商接口，定义获取 API 密钥、模型列表等方法 |
 | `IApiClient` | API 客户端接口，定义流式请求方法 |
 | `ModelDefinition` | 模型定义结构，包含 ID、名称、能力等 |
 | `ProviderConfig` | 提供商配置信息 |
 | `IProviderFactory` | 提供者工厂接口，用于动态注册新提供商 |
 
-## 日志分类
+## 日志系统
 
-日志系统支持以下分类，便于调试和问题排查：
+### 使用方式
 
-| 分类 | 说明 |
-|------|------|
-| `core` | 核心模块日志 |
-| `registry` | 模型注册表日志 |
-| `provider` | 提供者通用日志 |
-| `deepseek` | DeepSeek 提供者日志 |
-| `auth` | 认证模块日志 |
-| `api` | API 请求日志 |
-| `chat` | Chat 会话日志 |
-| `stream` | 流式处理日志 |
-| `config` | 配置变更日志 |
+每个 provider 使用 `createProviderLogger` 创建独立的日志记录器：
 
-## 日志级别
+```typescript
+import { createProviderLogger, logger as globalLogger } from '../../core/logger';
+
+// 创建 provider 日志
+const providerLogger = createProviderLogger('deepseek', 'DeepSeek');
+
+// 扩展通用日志（可选）
+const logger = {
+    ...providerLogger,
+    chat: globalLogger.chat,
+    stream: globalLogger.stream,
+};
+
+// 使用
+logger.info('消息');        // [时间] [INFO] [DeepSeek] 消息
+logger.debug('调试信息');   // 仅开发模式输出
+```
+
+### 日志级别
 
 日志系统支持 **4 个日志级别**，自动区分开发环境和生产环境：
 
 | 级别 | 说明 | 开发模式 | 生产模式 |
-|------|------|---------|---------|
+|:-----|:-----|:-------:|:-------:|
 | `debug` | 详细调试信息 | ✅ 输出 | ❌ 不输出 |
 | `info` | 一般信息 | ✅ 输出 | ✅ 输出 |
 | `warn` | 警告信息 | ✅ 输出 | ✅ 输出 |
@@ -74,28 +88,6 @@ src/
 
 - **开发模式**：`NODE_ENV=development` 或调试会话中
 - **生产模式**：插件以安装包形式运行时
-
-### 配置日志级别
-
-```typescript
-import { logger, setLogLevel, getLogLevel } from './core/logger';
-
-// 获取当前日志级别
-const level = getLogLevel();
-
-// 设置日志级别
-setLogLevel('debug'); // 开启调试日志
-setLogLevel('info');  // 仅输出 info 及以上
-
-// 或通过 logger 对象
-logger.level = 'debug';
-```
-
-### 开发模式特性
-
-在开发模式下：
-- `debug` 日志会同时输出到 VS Code 输出面板和控制台
-- 可以通过 `setLogLevel('debug')` 开启详细日志
 
 ## 动态注册机制
 
@@ -111,18 +103,27 @@ logger.level = 'debug';
 
 ### 添加新模型提供商
 
+使用 `BaseModelProvider` + `BaseChatProvider` 基类，只需约 **90 行代码**即可添加新提供商。
+
+#### 步骤
+
 1. 在 `providers/` 下创建新目录（如 `providers/openai/`）
 2. 创建模型定义 `models.ts`
-3. 创建 API 客户端继承 `BaseApiClient`
-4. 创建 Provider 继承 `BaseChatProvider`
-5. 实现 `IProviderFactory` 接口
-6. 在 `providers/index.ts` 中导出并注册
-7. 在 `package.json` 的 `copilot-models.enabledProviders` 配置中添加新的 providerId
+3. 创建 API 客户端，继承 `BaseApiClient`
+4. 创建 Provider 配置 + `BaseModelProvider` 子类
+5. 创建 ChatProvider，继承 `BaseChatProvider`
+6. 实现 `IProviderFactory` 接口
+7. 在 `providers/index.ts` 中导出并注册
+8. 在 `package.json` 的 `languageModelChatProviders` 中添加配置
 
-**示例代码：**
+#### 示例代码
 
 ```typescript
+// ============================================
 // 1. models.ts - 定义模型列表
+// ============================================
+import { ModelDefinition } from '../../core/interfaces';
+
 export const OPENAI_MODELS: ModelDefinition[] = [
   {
     id: 'gpt-4',
@@ -140,23 +141,88 @@ export const OPENAI_MODELS: ModelDefinition[] = [
   },
 ];
 
-export const OPENAI_PROVIDER_ID = 'openai';
-export const OPENAI_CONFIG_SECTION = 'copilot-models';
-export const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+// ============================================
+// 2. client.ts - API 客户端
+// ============================================
+import { BaseApiClient, ApiResponse, StreamCallbacks } from '../base/client';
 
-// 2. provider.ts - 实现 ProviderFactory
+export class OpenAIClient extends BaseApiClient {
+  // 如有特殊处理需求可覆写，如：
+  // protected override mapRole(role: string): string { ... }
+}
+
+// ============================================
+// 3. provider.ts - Provider 实现（核心约 90 行）
+// ============================================
+import * as vscode from 'vscode';
+import { BaseModelProvider } from '../base/model-provider';
+import { BaseChatProvider } from '../base/chat-provider';
 import { IProviderFactory, ProviderFactoryRegistry } from '../../core/provider-registry';
+import { createProviderLogger, logger as globalLogger } from '../../core/logger';
+import { ModelProviderConfig } from '../base/model-provider';
+import { OPENAI_MODELS } from './models';
+import { OpenAIClient } from './client';
 
+const PROVIDER_ID = 'openai';
+const CONFIG_SECTION = 'copilot-models';
+const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+
+// 日志
+const logger = {
+  ...createProviderLogger(PROVIDER_ID, 'OpenAI'),
+  chat: globalLogger.chat,
+  stream: globalLogger.stream,
+};
+
+// ============================================
+// 3.1 ModelProvider 配置
+// ============================================
+const modelProviderConfig: ModelProviderConfig = {
+  providerId: PROVIDER_ID,
+  providerName: 'OpenAI',
+  configSection: CONFIG_SECTION,
+  defaultBaseUrl: DEFAULT_BASE_URL,
+  models: OPENAI_MODELS,
+  apiKeyPrompt: 'Enter your OpenAI API Key',
+  apiKeyPlaceholder: 'sk-...',
+  createClient: (baseUrl, apiKey) => new OpenAIClient(baseUrl, apiKey),
+};
+
+// ============================================
+// 3.2 ModelProvider 子类
+// ============================================
+class OpenAIModelProvider extends BaseModelProvider {
+  constructor(context: vscode.ExtensionContext) {
+    super(context, modelProviderConfig);
+  }
+}
+
+// ============================================
+// 3.3 ChatProvider 子类（仅需覆写特殊逻辑）
+// ============================================
+export class OpenAIChatProvider extends BaseChatProvider {
+  constructor(context: vscode.ExtensionContext) {
+    super(context, new OpenAIModelProvider(context));
+    logger.info('OpenAIChatProvider created');
+  }
+
+  // 如有特殊消息转换需求可覆写，如：
+  // protected override convertMessages(request: ApiRequest): void { ... }
+}
+
+// ============================================
+// 3.4 ProviderFactory 实现
+// ============================================
 export class OpenAIProviderFactory implements IProviderFactory {
-  readonly providerId = OPENAI_PROVIDER_ID;
+  readonly providerId = PROVIDER_ID;
   readonly providerName = 'OpenAI';
 
   isEnabled(): boolean {
-    const config = vscode.workspace.getConfiguration(OPENAI_CONFIG_SECTION);
+    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
     return config.get<boolean>('enabledProviders')?.includes(this.providerId) ?? false;
   }
 
-  createChatProvider(context: vscode.ExtensionContext): OpenAIChatProvider {
+  createChatProvider(context: vscode.ExtensionContext) {
     return new OpenAIChatProvider(context);
   }
 }
@@ -166,10 +232,15 @@ export function registerOpenAIProviderFactory(): void {
   ProviderFactoryRegistry.getInstance().register(new OpenAIProviderFactory());
 }
 
-// 3. providers/index.ts - 统一注册
+// ============================================
+// 4. providers/index.ts - 统一注册
+// ============================================
 export function registerAllProviders(): void {
   const { registerDeepSeekProviderFactory } = require('./deepseek');
   registerDeepSeekProviderFactory();
+
+  const { registerBigModelProviderFactory } = require('./bigmodel');
+  registerBigModelProviderFactory();
 
   // 添加新提供商
   const { registerOpenAIProviderFactory } = require('./openai');
@@ -177,20 +248,12 @@ export function registerAllProviders(): void {
 }
 ```
 
-### 配置控制
+#### 基类功能一览
 
-可在 `package.json` 中通过配置控制提供商启用状态：
-
-```json
-{
-  "copilot-models.enabledProviders": {
-    "type": "array",
-    "default": ["deepseek"],
-    "items": { "type": "string" },
-    "markdownDescription": "Enabled providers"
-  }
-}
-```
+| 基类 | 功能 |
+|:-----|:-----|
+| `BaseModelProvider` | API Key 管理、配置读取、模型 ID 覆盖、客户端创建 |
+| `BaseChatProvider` | 消息转换、角色映射、流式回调、请求发送、API Key 配置、模型选择器 |
 
 ## 测试
 
@@ -207,7 +270,7 @@ pnpm run test:compile
 ### 测试文件结构
 
 | 文件 | 说明 |
-|------|------|
+|:-----|:-----|
 | `registry.test.ts` | ModelRegistry 单例测试：提供者注册/注销、模型列表管理 |
 | `provider-registry.test.ts` | ProviderFactoryRegistry 测试：工厂注册、启用/禁用状态过滤 |
 | `interfaces.test.ts` | 接口和数据结构测试：ModelDefinition、ApiMessage、StreamCallbacks 等 |

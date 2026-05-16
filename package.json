@@ -2,7 +2,7 @@
   "name": "vscode-copilot-models",
   "displayName": "Copilot Models",
   "description": "Unlock third-party large model extensions for GitHub Copilot. Support DeepSeek and more LLMs.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "chihqiang",
   "icon": "resources/icon.png",
   "repository": {
@@ -37,18 +37,22 @@
       {
         "vendor": "deepseek",
         "displayName": "DeepSeek"
+      },
+      {
+        "vendor": "bigmodel",
+        "displayName": "BigModel"
       }
     ],
     "commands": [
       {
         "command": "copilot-models.setApiKey",
         "title": "Set API Key",
-        "description": "Configure API key for the selected model provider"
+        "description": "Configure API key for model provider (select provider first)"
       },
       {
         "command": "copilot-models.clearApiKey",
         "title": "Clear API Key",
-        "description": "Remove stored API key"
+        "description": "Remove stored API key (select provider first)"
       },
       {
         "command": "copilot-models.openSettings",
@@ -92,6 +96,16 @@
             "verbose"
           ],
           "description": "Debug mode for logging"
+        },
+        "copilot-models.bigmodelBaseUrl": {
+          "type": "string",
+          "default": "https://open.bigmodel.cn/api/paas/v4",
+          "description": "BigModel API base URL"
+        },
+        "copilot-models.bigmodelApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "BigModel API key (for CI/automation only, prefer secure storage)"
         }
       }
     }
