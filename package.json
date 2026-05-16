@@ -4,6 +4,10 @@
   "description": "Unlock third-party large model extensions for GitHub Copilot. Support DeepSeek and more LLMs.",
   "version": "0.1.0",
   "publisher": "copilot-models",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chihqiang/vscode-copilot-models.git"
+  },
   "license": "MIT",
   "engines": {
     "vscode": "^1.120.0"
@@ -81,7 +85,11 @@
         "copilot-models.debugMode": {
           "type": "string",
           "default": "minimal",
-          "enum": ["minimal", "metadata", "verbose"],
+          "enum": [
+            "minimal",
+            "metadata",
+            "verbose"
+          ],
           "description": "Debug mode for logging"
         }
       }
@@ -92,16 +100,18 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "package": "npx vsce package"
   },
   "devDependencies": {
-    "@types/vscode": "^1.120.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "typescript-eslint": "^8.56.1",
+    "@types/vscode": "^1.120.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.3",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript-eslint": "^8.56.1",
+    "vsce": "^2.15.0"
   }
 }

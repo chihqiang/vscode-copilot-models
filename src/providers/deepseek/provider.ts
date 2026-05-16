@@ -181,6 +181,25 @@ export class DeepSeekChatProvider extends BaseChatProvider {
 		_isThinkingModel: boolean,
 	): ApiMessage[] {
 		logger.chat.debug(`Converting ${messages.length} messages`);
+
+		// 打印每条原始消息用于调试
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i];
+			const partsInfo = msg.content.map((p) => {
+				if (p instanceof vscode.LanguageModelTextPart) {
+					return `TextPart(${p.value.substring(0, 50)}...)`;
+				}
+				if (p instanceof vscode.LanguageModelToolCallPart) {
+					return `ToolCallPart(${p.name})`;
+				}
+				if (p instanceof vscode.LanguageModelToolResultPart) {
+					return `ToolResultPart(${p.callId})`;
+				}
+				return `UnknownPart`;
+			});
+			logger.chat.debug(`  Message ${i}: role=${msg.role}, parts=[${partsInfo.join(', ')}]`);
+		}
+
 		const result: ApiMessage[] = [];
 
 		for (const message of messages) {

@@ -212,6 +212,9 @@ export abstract class BaseChatProvider implements vscode.LanguageModelChatProvid
 			? this.convertTools(options.tools)
 			: undefined;
 
+		logger.chat.debug(`[${this.provider.id}] Original messages count: ${messages.length}`);
+		logger.chat.debug(`[${this.provider.id}] Converted apiMessages: ${JSON.stringify(apiMessages)}`);
+
 		const request: ApiRequest = {
 			model: this.getApiModelId(modelInfo.id),
 			messages: apiMessages,
@@ -219,6 +222,8 @@ export abstract class BaseChatProvider implements vscode.LanguageModelChatProvid
 			tools,
 			tool_choice: tools && tools.length > 0 ? 'auto' : undefined,
 		};
+
+		logger.chat.debug(`[${this.provider.id}] Request messages after assignment: ${JSON.stringify(request.messages)}`);
 
 		// 如果是思考模型，添加思考相关参数
 		if (isThinkingModel) {

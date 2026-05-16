@@ -12,9 +12,10 @@ import { logger } from '../../core/logger';
  */
 function safeStringify(obj: unknown): string {
 	return JSON.stringify(obj, (_, value) => {
-		if (typeof value === 'object' && value !== null) {
-			if ((value as Map<unknown, unknown>)[Symbol.iterator]) {
-				return Object.fromEntries(value as Map<string, unknown>);
+		if (typeof value === 'object' && value !== null && !(value instanceof Array)) {
+			// 只有 Map 类型才需要转换（其他对象保持原样）
+			if (value instanceof Map) {
+				return Object.fromEntries(value);
 			}
 		}
 		return value;
@@ -66,7 +67,6 @@ export abstract class BaseApiClient implements IApiClient {
 	): Promise<void> {
 		const providerName = this.getProviderName();
 		logger.api.info(`[${providerName}] Starting streamChatCompletion, model: ${request.model}`);
-		logger.api.debug(`[${providerName}] Request payload:`, request);
 
 		const controller = new AbortController();
 		const cancelListener = cancellationToken?.onCancellationRequested(() => {
@@ -84,6 +84,9 @@ export abstract class BaseApiClient implements IApiClient {
 				...request,
 				stream_options: { include_usage: true },
 			};
+
+			// 打印完整请求体用于调试
+			logger.api.debug(`[${providerName}] Request body: ${safeStringify(requestBody)}`);
 
 			const endpoint = `${this.baseUrl}${this.getChatEndpoint()}`;
 			logger.api.debug(`[${providerName}] POST ${endpoint}`);
