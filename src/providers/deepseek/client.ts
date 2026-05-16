@@ -2,17 +2,22 @@
  * DeepSeek API 客户端
  */
 
-import { BaseApiClient } from '../base/client';
+import { createApiClient } from '../base/client';
+import type { IApiClient } from '../../core/interfaces';
 
 /**
- * DeepSeek API 客户端实现
+ * 创建 DeepSeek API 客户端
  */
-export class DeepSeekClient extends BaseApiClient {
-	constructor(baseUrl: string, apiKey: string) {
-		super(baseUrl, apiKey);
-	}
+export function createDeepSeekClient(baseUrl: string, apiKey: string): IApiClient {
+	return createApiClient({ baseUrl, apiKey, providerName: 'DeepSeek' });
+}
 
-	protected override getProviderName(): string {
-		return 'DeepSeek';
+/**
+ * @deprecated 使用 createDeepSeekClient 代替
+ */
+export class DeepSeekClient {
+	constructor(baseUrl: string, apiKey: string) {
+		console.warn('DeepSeekClient is deprecated, use createDeepSeekClient instead');
+		return createDeepSeekClient(baseUrl, apiKey) as unknown as DeepSeekClient;
 	}
 }

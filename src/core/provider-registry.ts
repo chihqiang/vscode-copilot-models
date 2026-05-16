@@ -115,3 +115,46 @@ export function registerProvider(providerId: string, providerName: string) {
 		return target;
 	};
 }
+
+/**
+ * ProviderFactory 配置
+ */
+export interface ProviderFactoryConfig {
+	providerId: string;
+	providerName: string;
+	configSection: string;
+	enabledByDefault?: boolean;
+	createChatProvider: (context: vscode.ExtensionContext) => vscode.LanguageModelChatProvider;
+}
+
+/**
+ * 创建 ProviderFactory 的辅助函数
+ * 用于减少重复代码
+ */
+export function createProviderFactory(config: ProviderFactoryConfig): IProviderFactory {
+	const { providerId, providerName, configSection, enabledByDefault = true, createChatProvider } = config;
+
+	return {
+		providerId,
+		providerName,
+		isEnabled: () => {
+			const cfg = vscode.workspace.getConfiguration(configSection);
+			return cfg.get<boolean>('enabled', enabledByDefault);
+		},
+		createChatProvider,
+	};
+}
+
+/**
+ * 创建 ProviderFactory 注册函数的辅助函数
+ */
+export function createProviderFactoryRegister(config: ProviderFactoryConfig) {
+	const factory = createProviderFactory(config);
+
+	return {
+		factory,
+		register: () => {
+			ProviderFactoryRegistry.getInstance().register(factory);
+		},
+	};
+}
