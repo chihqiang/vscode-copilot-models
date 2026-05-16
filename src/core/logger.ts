@@ -91,7 +91,7 @@ function detectDevelopmentMode(): boolean {
 			// 当 NODE_ENV 未设置时，检查是否为调试环境
 			// 可以通过检查全局变量或配置来判断
 			const isDebug = typeof (globalThis as Record<string, unknown>)['__vscdebug'] !== 'undefined';
-			if (isDebug) return true;
+			if (isDebug) { return true; }
 		}
 
 		// 默认返回 false（生产模式）

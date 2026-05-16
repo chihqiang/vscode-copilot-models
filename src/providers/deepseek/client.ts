@@ -2,7 +2,6 @@
  * DeepSeek API 客户端
  */
 
-import type { ApiRequest, StreamCallbacks } from '../../core/interfaces';
 import { BaseApiClient } from '../base/client';
 
 /**
