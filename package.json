@@ -1,29 +1,96 @@
 {
   "name": "vscode-copilot-models",
-  "displayName": "vscode-copilot-models",
-  "description": "Unlock third-party large model extensions for GitHub Copilot, seamlessly integrate with mainstream LLMs such as DeepSeek, switch with one click, and maintain compatibility with native panels.",
-  "version": "0.0.1",
+  "displayName": "Copilot Models",
+  "description": "Unlock third-party large model extensions for GitHub Copilot. Support DeepSeek and more LLMs.",
+  "version": "0.1.0",
+  "publisher": "copilot-models",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.120.0"
   },
   "categories": [
-    "Other"
+    "AI",
+    "Chat",
+    "Programming Languages"
   ],
-  "activationEvents": [],
+  "keywords": [
+    "copilot",
+    "github copilot",
+    "copilot chat",
+    "deepseek",
+    "language model",
+    "ai",
+    "chat",
+    "byok"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
+    "languageModelChatProviders": [
+      {
+        "vendor": "deepseek",
+        "displayName": "DeepSeek"
+      }
+    ],
     "commands": [
       {
-        "command": "vscode-copilot-models.helloWorld",
-        "title": "Hello World"
+        "command": "copilot-models.setApiKey",
+        "title": "Set API Key",
+        "description": "Configure API key for the selected model provider"
+      },
+      {
+        "command": "copilot-models.clearApiKey",
+        "title": "Clear API Key",
+        "description": "Remove stored API key"
+      },
+      {
+        "command": "copilot-models.openSettings",
+        "title": "Open Settings",
+        "description": "Open extension settings"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Copilot Models",
+      "properties": {
+        "copilot-models.deepseekBaseUrl": {
+          "type": "string",
+          "default": "https://api.deepseek.com",
+          "description": "DeepSeek API base URL"
+        },
+        "copilot-models.modelIdOverrides": {
+          "type": "object",
+          "default": {},
+          "description": "Override model IDs for custom API endpoints",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "copilot-models.maxTokens": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Maximum tokens to generate (0 = unlimited)"
+        },
+        "copilot-models.deepseekApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "DeepSeek API key (for CI/automation only, prefer secure storage)"
+        },
+        "copilot-models.debugMode": {
+          "type": "string",
+          "default": "minimal",
+          "enum": ["minimal", "metadata", "verbose"],
+          "description": "Debug mode for logging"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "pnpm run compile && pnpm run lint",
     "lint": "eslint src",
     "test": "vscode-test"
   },
