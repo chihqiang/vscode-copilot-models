@@ -2,9 +2,21 @@
  * 日志模块
  *
  * 提供分类日志功能，支持多模型提供者的日志输出
+ * 自动区分开发环境（详细日志）和生产环境（精简日志）
  */
 
 import vscode from 'vscode';
+
+/** 日志级别 */
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+/** 日志级别优先级 */
+const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
+	debug: 0,
+	info: 1,
+	warn: 2,
+	error: 3,
+};
 
 // 日志分类
 export type LogCategory =
@@ -52,6 +64,61 @@ let channel: vscode.OutputChannel | undefined;
 /** 是否显示分类标签 */
 let showCategory = true;
 
+/** 当前日志级别 */
+let currentLogLevel: LogLevel = 'info';
+
+/** 是否为开发模式 */
+let isDevelopmentMode = false;
+
+/**
+ * 检测是否为开发模式
+ * 开发模式：扩展以 workspace 形式运行（调试时）
+ * 生产模式：扩展以安装包形式运行
+ *
+ * 通过以下方式检测：
+ * 1. NODE_ENV=development 环境变量
+ * 2. 检查 VSCode 的 URI scheme（开发时为 file，生产时为 vscode）
+ */
+function detectDevelopmentMode(): boolean {
+	try {
+		// 检查 NODE_ENV 环境变量
+		if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
+			return true;
+		}
+
+		// 检查是否在调试模式
+		if (typeof process !== 'undefined' && process.env?.NODE_ENV === undefined) {
+			// 当 NODE_ENV 未设置时，检查是否为调试环境
+			// 可以通过检查全局变量或配置来判断
+			const isDebug = typeof (globalThis as Record<string, unknown>)['__vscdebug'] !== 'undefined';
+			if (isDebug) return true;
+		}
+
+		// 默认返回 false（生产模式）
+		return false;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * 获取默认日志级别
+ * 开发模式：debug
+ * 生产模式：info
+ */
+function getDefaultLogLevel(): LogLevel {
+	if (isDevelopmentMode) {
+		return 'debug';
+	}
+	return 'info';
+}
+
+/** 初始化日志模块 */
+function initLogger(): void {
+	isDevelopmentMode = detectDevelopmentMode();
+	currentLogLevel = getDefaultLogLevel();
+}
+
 /** 获取或创建输出通道 */
 function getChannel(): vscode.OutputChannel {
 	if (!channel) {
@@ -92,25 +159,29 @@ function formatMessage(level: string, category: LogCategory, args: unknown[]): s
 }
 
 /**
- * 写入日志消息到输出通道
+ * 检查是否应该输出此级别的日志
  */
-function write(level: string, category: LogCategory, args: unknown[]): void {
-	const text = formatMessage(level, category, args);
-	getChannel().appendLine(text);
+function shouldLog(level: LogLevel): boolean {
+	return LOG_LEVEL_PRIORITY[level] >= LOG_LEVEL_PRIORITY[currentLogLevel];
 }
 
 /**
- * 写入带颜色的日志（仅在开发模式下）
+ * 写入日志消息到输出通道
  */
-function writeColored(level: string, category: LogCategory, args: unknown[]): void {
-	const color = CATEGORY_COLORS[category];
-	const text = formatMessage(level, category, args);
+function write(level: LogLevel, category: LogCategory, args: unknown[]): void {
+	if (!shouldLog(level)) {
+		return;
+	}
 
-	// VS Code 输出通道不支持颜色，但控制台支持
-	console.log(`${color}${text}${RESET_COLOR}`);
-
-	// 同时写入到输出通道
+	const levelStr = level.toUpperCase().padEnd(5);
+	const text = formatMessage(levelStr, category, args);
 	getChannel().appendLine(text);
+
+	// 开发模式下同时输出到控制台
+	if (isDevelopmentMode && level === 'debug') {
+		const color = CATEGORY_COLORS[category];
+		console.log(`${color}${text}${RESET_COLOR}`);
+	}
 }
 
 /**
@@ -121,86 +192,111 @@ export function setShowCategory(show: boolean): void {
 }
 
 /**
+ * 设置日志级别
+ * @param level 日志级别
+ */
+export function setLogLevel(level: LogLevel): void {
+	currentLogLevel = level;
+}
+
+/**
+ * 获取当前日志级别
+ */
+export function getLogLevel(): LogLevel {
+	return currentLogLevel;
+}
+
+/**
+ * 检查是否为开发模式
+ */
+export function isDevMode(): boolean {
+	return isDevelopmentMode;
+}
+
+// 初始化日志模块
+initLogger();
+
+/**
  * 日志记录器导出对象
  */
 export const logger = {
 	// 核心模块日志
 	core: {
-		info: (...args: unknown[]) => write('INFO ', 'core', args),
-		warn: (...args: unknown[]) => write('WARN ', 'core', args),
-		error: (...args: unknown[]) => write('ERROR', 'core', args),
-		debug: (...args: unknown[]) => write('DEBUG', 'core', args),
+		info: (...args: unknown[]) => write('info', 'core', args),
+		warn: (...args: unknown[]) => write('warn', 'core', args),
+		error: (...args: unknown[]) => write('error', 'core', args),
+		debug: (...args: unknown[]) => write('debug', 'core', args),
 	},
 
 	// 模型注册表日志
 	registry: {
-		info: (...args: unknown[]) => write('INFO ', 'registry', args),
-		warn: (...args: unknown[]) => write('WARN ', 'registry', args),
-		error: (...args: unknown[]) => write('ERROR', 'registry', args),
-		debug: (...args: unknown[]) => write('DEBUG', 'registry', args),
+		info: (...args: unknown[]) => write('info', 'registry', args),
+		warn: (...args: unknown[]) => write('warn', 'registry', args),
+		error: (...args: unknown[]) => write('error', 'registry', args),
+		debug: (...args: unknown[]) => write('debug', 'registry', args),
 	},
 
 	// 提供者通用日志
 	provider: {
-		info: (...args: unknown[]) => write('INFO ', 'provider', args),
-		warn: (...args: unknown[]) => write('WARN ', 'provider', args),
-		error: (...args: unknown[]) => write('ERROR', 'provider', args),
-		debug: (...args: unknown[]) => write('DEBUG', 'provider', args),
+		info: (...args: unknown[]) => write('info', 'provider', args),
+		warn: (...args: unknown[]) => write('warn', 'provider', args),
+		error: (...args: unknown[]) => write('error', 'provider', args),
+		debug: (...args: unknown[]) => write('debug', 'provider', args),
 	},
 
 	// DeepSeek 提供者日志
 	deepseek: {
-		info: (...args: unknown[]) => write('INFO ', 'deepseek', args),
-		warn: (...args: unknown[]) => write('WARN ', 'deepseek', args),
-		error: (...args: unknown[]) => write('ERROR', 'deepseek', args),
-		debug: (...args: unknown[]) => write('DEBUG', 'deepseek', args),
+		info: (...args: unknown[]) => write('info', 'deepseek', args),
+		warn: (...args: unknown[]) => write('warn', 'deepseek', args),
+		error: (...args: unknown[]) => write('error', 'deepseek', args),
+		debug: (...args: unknown[]) => write('debug', 'deepseek', args),
 	},
 
 	// 认证模块日志
 	auth: {
-		info: (...args: unknown[]) => write('INFO ', 'auth', args),
-		warn: (...args: unknown[]) => write('WARN ', 'auth', args),
-		error: (...args: unknown[]) => write('ERROR', 'auth', args),
-		debug: (...args: unknown[]) => write('DEBUG', 'auth', args),
+		info: (...args: unknown[]) => write('info', 'auth', args),
+		warn: (...args: unknown[]) => write('warn', 'auth', args),
+		error: (...args: unknown[]) => write('error', 'auth', args),
+		debug: (...args: unknown[]) => write('debug', 'auth', args),
 	},
 
 	// API 请求日志
 	api: {
-		info: (...args: unknown[]) => write('INFO ', 'api', args),
-		warn: (...args: unknown[]) => write('WARN ', 'api', args),
-		error: (...args: unknown[]) => write('ERROR', 'api', args),
-		debug: (...args: unknown[]) => write('DEBUG', 'api', args),
+		info: (...args: unknown[]) => write('info', 'api', args),
+		warn: (...args: unknown[]) => write('warn', 'api', args),
+		error: (...args: unknown[]) => write('error', 'api', args),
+		debug: (...args: unknown[]) => write('debug', 'api', args),
 	},
 
 	// Chat 会话日志
 	chat: {
-		info: (...args: unknown[]) => write('INFO ', 'chat', args),
-		warn: (...args: unknown[]) => write('WARN ', 'chat', args),
-		error: (...args: unknown[]) => write('ERROR', 'chat', args),
-		debug: (...args: unknown[]) => write('DEBUG', 'chat', args),
+		info: (...args: unknown[]) => write('info', 'chat', args),
+		warn: (...args: unknown[]) => write('warn', 'chat', args),
+		error: (...args: unknown[]) => write('error', 'chat', args),
+		debug: (...args: unknown[]) => write('debug', 'chat', args),
 	},
 
 	// 流式处理日志
 	stream: {
-		info: (...args: unknown[]) => write('INFO ', 'stream', args),
-		warn: (...args: unknown[]) => write('WARN ', 'stream', args),
-		error: (...args: unknown[]) => write('ERROR', 'stream', args),
-		debug: (...args: unknown[]) => write('DEBUG', 'stream', args),
+		info: (...args: unknown[]) => write('info', 'stream', args),
+		warn: (...args: unknown[]) => write('warn', 'stream', args),
+		error: (...args: unknown[]) => write('error', 'stream', args),
+		debug: (...args: unknown[]) => write('debug', 'stream', args),
 	},
 
 	// 配置日志
 	config: {
-		info: (...args: unknown[]) => write('INFO ', 'config', args),
-		warn: (...args: unknown[]) => write('WARN ', 'config', args),
-		error: (...args: unknown[]) => write('ERROR', 'config', args),
-		debug: (...args: unknown[]) => write('DEBUG', 'config', args),
+		info: (...args: unknown[]) => write('info', 'config', args),
+		warn: (...args: unknown[]) => write('warn', 'config', args),
+		error: (...args: unknown[]) => write('error', 'config', args),
+		debug: (...args: unknown[]) => write('debug', 'config', args),
 	},
 
 	/** 通用日志方法 */
-	info: (...args: unknown[]) => write('INFO ', 'core', args),
-	warn: (...args: unknown[]) => write('WARN ', 'core', args),
-	error: (...args: unknown[]) => write('ERROR', 'core', args),
-	debug: (...args: unknown[]) => write('DEBUG', 'core', args),
+	info: (...args: unknown[]) => write('info', 'core', args),
+	warn: (...args: unknown[]) => write('warn', 'core', args),
+	error: (...args: unknown[]) => write('error', 'core', args),
+	debug: (...args: unknown[]) => write('debug', 'core', args),
 
 	/** 显示输出面板 */
 	show: () => getChannel().show(),
@@ -210,6 +306,14 @@ export const logger = {
 
 	/** 清除日志 */
 	clear: () => getChannel().clear(),
+
+	/** 获取/设置日志级别 */
+	get level(): LogLevel {
+		return currentLogLevel;
+	},
+	set level(level: LogLevel) {
+		currentLogLevel = level;
+	},
 
 	/** 释放资源 */
 	dispose: () => {

@@ -59,6 +59,44 @@ src/
 | `stream` | 流式处理日志 |
 | `config` | 配置变更日志 |
 
+## 日志级别
+
+日志系统支持 **4 个日志级别**，自动区分开发环境和生产环境：
+
+| 级别 | 说明 | 开发模式 | 生产模式 |
+|------|------|---------|---------|
+| `debug` | 详细调试信息 | ✅ 输出 | ❌ 不输出 |
+| `info` | 一般信息 | ✅ 输出 | ✅ 输出 |
+| `warn` | 警告信息 | ✅ 输出 | ✅ 输出 |
+| `error` | 错误信息 | ✅ 输出 | ✅ 输出 |
+
+### 环境检测
+
+- **开发模式**：`NODE_ENV=development` 或调试会话中
+- **生产模式**：插件以安装包形式运行时
+
+### 配置日志级别
+
+```typescript
+import { logger, setLogLevel, getLogLevel } from './core/logger';
+
+// 获取当前日志级别
+const level = getLogLevel();
+
+// 设置日志级别
+setLogLevel('debug'); // 开启调试日志
+setLogLevel('info');  // 仅输出 info 及以上
+
+// 或通过 logger 对象
+logger.level = 'debug';
+```
+
+### 开发模式特性
+
+在开发模式下：
+- `debug` 日志会同时输出到 VS Code 输出面板和控制台
+- 可以通过 `setLogLevel('debug')` 开启详细日志
+
 ## 动态注册机制
 
 扩展使用 **ProviderFactoryRegistry** 实现动态注册，支持在不修改 `extension.ts` 的情况下添加新提供商。
