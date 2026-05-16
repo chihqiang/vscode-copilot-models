@@ -1,5 +1,5 @@
 /**
- * DeepSeek 模型提供者
+ * BigModel (智谱AI) 模型提供者
  */
 
 import vscode from 'vscode';
@@ -16,18 +16,18 @@ import { ModelRegistry } from '../../core/registry';
 import { IProviderFactory, ProviderFactoryRegistry } from '../../core/provider-registry';
 import { BaseAuthManager } from '../base/auth-manager';
 import { BaseChatProvider, type ModelPickerChatInformation } from '../base/chat-provider';
-import { DeepSeekClient } from './client';
+import { BigModelClient } from './client';
 import {
-	DEEPSEEK_CONFIG_SECTION,
-	DEEPSEEK_DEFAULT_BASE_URL,
-	DEEPSEEK_MODELS,
-	DEEPSEEK_PROVIDER_ID,
+	BIGMODEL_CONFIG_SECTION,
+	BIGMODEL_DEFAULT_BASE_URL,
+	BIGMODEL_MODELS,
+	BIGMODEL_PROVIDER_ID,
 } from './models';
 
-/** DeepSeek 日志记录器 */
-const providerLogger = createProviderLogger(DEEPSEEK_PROVIDER_ID, 'DeepSeek');
+/** BigModel 日志记录器 */
+const providerLogger = createProviderLogger(BIGMODEL_PROVIDER_ID, 'BigModel');
 
-/** DeepSeek 日志（同时支持通用日志） */
+/** BigModel 日志（同时支持通用日志） */
 const logger = {
 	...providerLogger,
 	chat: globalLogger.chat,
@@ -35,42 +35,42 @@ const logger = {
 };
 
 /**
- * DeepSeek 认证管理器
+ * BigModel 认证管理器
  */
-class DeepSeekAuthManager extends BaseAuthManager {
+class BigModelAuthManager extends BaseAuthManager {
 	constructor(context: vscode.ExtensionContext) {
-		super(context, DEEPSEEK_CONFIG_SECTION, DEEPSEEK_PROVIDER_ID);
-		logger.debug('DeepSeekAuthManager created');
+		super(context, BIGMODEL_CONFIG_SECTION, BIGMODEL_PROVIDER_ID);
+		logger.debug('BigModelAuthManager created');
 	}
 
 	override async promptForApiKey(): Promise<boolean> {
-		logger.info('Prompting for DeepSeek API key...');
+		logger.info('Prompting for BigModel API key...');
 		return super.promptForApiKey(
-			'Enter your DeepSeek API Key',
-			'sk-xxxxxxxxxxxxxxxxxxxxxxxx',
+			'Enter your BigModel API Key',
+			'your-api-key-here',
 		);
 	}
 }
 
 /**
- * DeepSeek 模型提供商
+ * BigModel 模型提供商
  */
-export class DeepSeekModelProvider implements IModelProvider {
+export class BigModelModelProvider implements IModelProvider {
 	readonly config: ProviderConfig = {
-		vendorId: DEEPSEEK_PROVIDER_ID,
-		vendorName: 'DeepSeek',
-		baseUrl: DEEPSEEK_DEFAULT_BASE_URL,
-		apiKeyConfigKey: `${DEEPSEEK_CONFIG_SECTION}.deepseekApiKey`,
-		apiKeySecretKey: `${DEEPSEEK_CONFIG_SECTION}.deepseek.apiKey`,
-		modelIdOverridesConfigKey: `${DEEPSEEK_CONFIG_SECTION}.modelIdOverrides`,
+		vendorId: BIGMODEL_PROVIDER_ID,
+		vendorName: 'BigModel',
+		baseUrl: BIGMODEL_DEFAULT_BASE_URL,
+		apiKeyConfigKey: `${BIGMODEL_CONFIG_SECTION}.bigmodelApiKey`,
+		apiKeySecretKey: `${BIGMODEL_CONFIG_SECTION}.bigmodel.apiKey`,
+		modelIdOverridesConfigKey: `${BIGMODEL_CONFIG_SECTION}.modelIdOverrides`,
 	};
 
-	readonly id = DEEPSEEK_PROVIDER_ID;
-	private readonly authManager: DeepSeekAuthManager;
+	readonly id = BIGMODEL_PROVIDER_ID;
+	private readonly authManager: BigModelAuthManager;
 
 	constructor(context: vscode.ExtensionContext) {
-		logger.info('Creating DeepSeekModelProvider...');
-		this.authManager = new DeepSeekAuthManager(context);
+		logger.info('Creating BigModelModelProvider...');
+		this.authManager = new BigModelAuthManager(context);
 	}
 
 	getApiKey(): Promise<string | undefined> {
@@ -90,25 +90,25 @@ export class DeepSeekModelProvider implements IModelProvider {
 	}
 
 	getModels(): ModelDefinition[] {
-		logger.debug(`Returning ${DEEPSEEK_MODELS.length} models`);
-		return DEEPSEEK_MODELS;
+		logger.debug(`Returning ${BIGMODEL_MODELS.length} models`);
+		return BIGMODEL_MODELS;
 	}
 
-	createClient(apiKey: string): DeepSeekClient {
+	createClient(apiKey: string): BigModelClient {
 		const baseUrl = this.getBaseUrl();
-		logger.debug(`Creating DeepSeekClient, baseUrl: ${baseUrl}`);
-		return new DeepSeekClient(baseUrl, apiKey);
+		logger.debug(`Creating BigModelClient, baseUrl: ${baseUrl}`);
+		return new BigModelClient(baseUrl, apiKey);
 	}
 
 	getBaseUrl(): string {
-		const config = vscode.workspace.getConfiguration(DEEPSEEK_CONFIG_SECTION);
-		const baseUrl = config.get<string>('deepseekBaseUrl') || DEEPSEEK_DEFAULT_BASE_URL;
+		const config = vscode.workspace.getConfiguration(BIGMODEL_CONFIG_SECTION);
+		const baseUrl = config.get<string>('bigmodelBaseUrl') || BIGMODEL_DEFAULT_BASE_URL;
 		logger.debug(`getBaseUrl: ${baseUrl}`);
 		return baseUrl;
 	}
 
 	getApiModelId(vscodeModelId: string): string {
-		const config = vscode.workspace.getConfiguration(DEEPSEEK_CONFIG_SECTION);
+		const config = vscode.workspace.getConfiguration(BIGMODEL_CONFIG_SECTION);
 		const overrides = config.get<Record<string, string>>('modelIdOverrides');
 		const modelId = overrides?.[vscodeModelId]?.trim() || vscodeModelId;
 		if (overrides?.[vscodeModelId]) {
@@ -119,22 +119,22 @@ export class DeepSeekModelProvider implements IModelProvider {
 }
 
 /**
- * DeepSeek Chat Provider 实现
+ * BigModel Chat Provider 实现
  */
-export class DeepSeekChatProvider extends BaseChatProvider {
-	readonly modelProvider: DeepSeekModelProvider;
+export class BigModelChatProvider extends BaseChatProvider {
+	readonly modelProvider: BigModelModelProvider;
 
 	constructor(context: vscode.ExtensionContext) {
-		super(context, new DeepSeekModelProvider(context));
-		this.modelProvider = this.provider as DeepSeekModelProvider;
-		logger.info('DeepSeekChatProvider created');
+		super(context, new BigModelModelProvider(context));
+		this.modelProvider = this.provider as BigModelModelProvider;
+		logger.info('BigModelChatProvider created');
 	}
 
 	protected override affectsConfiguration(e: vscode.ConfigurationChangeEvent): boolean {
 		return (
-			e.affectsConfiguration(`${DEEPSEEK_CONFIG_SECTION}.deepseekBaseUrl`) ||
-			e.affectsConfiguration(`${DEEPSEEK_CONFIG_SECTION}.modelIdOverrides`) ||
-			e.affectsConfiguration(`${DEEPSEEK_CONFIG_SECTION}.deepseekApiKey`)
+			e.affectsConfiguration(`${BIGMODEL_CONFIG_SECTION}.bigmodelBaseUrl`) ||
+			e.affectsConfiguration(`${BIGMODEL_CONFIG_SECTION}.modelIdOverrides`) ||
+			e.affectsConfiguration(`${BIGMODEL_CONFIG_SECTION}.bigmodelApiKey`)
 		);
 	}
 
@@ -159,25 +159,30 @@ export class DeepSeekChatProvider extends BaseChatProvider {
 				toolCalling: model.capabilities.toolCalling,
 				imageInput: model.capabilities.imageInput,
 			},
-			...(model.capabilities.thinking ? { configurationSchema: this.buildThinkingEffortSchema() } : {}),
+			...(model.capabilities.thinking ? { configurationSchema: this.buildThinkingSchema() } : {}),
 		};
 	}
 
-	private buildThinkingEffortSchema() {
+	private buildThinkingSchema() {
 		return {
 			properties: {
-				reasoningEffort: {
-					type: 'string',
-					title: 'Thinking Effort',
-					enum: ['none', 'high', 'max'],
-					enumItemLabels: ['None', 'High', 'Max'],
-					enumDescriptions: [
-						'Disable thinking mode',
-						'High reasoning effort',
-						'Maximum reasoning effort',
-					],
-					default: 'high',
-					group: 'navigation',
+				thinking: {
+					type: 'object',
+					title: 'Thinking Mode',
+					properties: {
+						type: {
+							type: 'string',
+							title: 'Type',
+							enum: ['disabled', 'enabled'],
+							enumItemLabels: ['Disabled', 'Enabled'],
+							enumDescriptions: [
+								'Disable thinking mode',
+								'Enable deep thinking mode',
+							],
+							default: 'enabled',
+							group: 'navigation',
+						},
+					},
 				},
 			},
 		};
@@ -189,7 +194,7 @@ export class DeepSeekChatProvider extends BaseChatProvider {
 
 	protected override convertMessages(
 		messages: readonly vscode.LanguageModelChatRequestMessage[],
-		_isThinkingModel: boolean,
+		isThinkingModel: boolean,
 	): ApiMessage[] {
 		logger.chat.debug(`Converting ${messages.length} messages`);
 
@@ -301,8 +306,8 @@ export class DeepSeekChatProvider extends BaseChatProvider {
 
 		const apiKey = await this.modelProvider.getApiKey();
 		if (!apiKey) {
-			logger.error('DeepSeek API key not configured');
-			throw new Error('DeepSeek API key not configured');
+			logger.error('BigModel API key not configured');
+			throw new Error('BigModel API key not configured');
 		}
 
 		const client = this.modelProvider.createClient(apiKey);
@@ -405,7 +410,7 @@ export class DeepSeekChatProvider extends BaseChatProvider {
 		logger.info('Clearing API key...');
 		await this.modelProvider.deleteApiKey();
 		this.refreshModelPicker();
-		vscode.window.showInformationMessage('DeepSeek API key cleared');
+		vscode.window.showInformationMessage('BigModel API key cleared');
 	}
 
 	/**
@@ -418,45 +423,45 @@ export class DeepSeekChatProvider extends BaseChatProvider {
 }
 
 /**
- * DeepSeek 提供者工厂 - 实现 IProviderFactory 接口
+ * BigModel 提供者工厂 - 实现 IProviderFactory 接口
  */
-export class DeepSeekProviderFactory implements IProviderFactory {
-	readonly providerId = DEEPSEEK_PROVIDER_ID;
-	readonly providerName = 'DeepSeek';
+export class BigModelProviderFactory implements IProviderFactory {
+	readonly providerId = BIGMODEL_PROVIDER_ID;
+	readonly providerName = 'BigModel';
 
 	isEnabled(): boolean {
-		const config = vscode.workspace.getConfiguration(DEEPSEEK_CONFIG_SECTION);
+		const config = vscode.workspace.getConfiguration(BIGMODEL_CONFIG_SECTION);
 		return config.get<boolean>('enabled', true);
 	}
 
-	createChatProvider(context: vscode.ExtensionContext): DeepSeekChatProvider {
-		logger.info('Creating DeepSeekChatProvider from factory...');
-		const chatProvider = new DeepSeekChatProvider(context);
+	createChatProvider(context: vscode.ExtensionContext): BigModelChatProvider {
+		logger.info('Creating BigModelChatProvider from factory...');
+		const chatProvider = new BigModelChatProvider(context);
 
 		// 注册到模型注册表
 		ModelRegistry.getInstance().registerProvider(chatProvider.modelProvider);
 
-		logger.info('DeepSeek provider registered successfully');
+		logger.info('BigModel provider registered successfully');
 		return chatProvider;
 	}
 }
 
 /**
- * DeepSeek 提供者工厂单例
+ * BigModel 提供者工厂单例
  */
-export const deepseekProviderFactory = new DeepSeekProviderFactory();
+export const bigmodelProviderFactory = new BigModelProviderFactory();
 
 /**
- * 注册 DeepSeek 提供者到全局注册表 (兼容旧接口)
+ * 注册 BigModel 提供者到全局注册表 (兼容旧接口)
  */
-export function registerDeepSeekProvider(context: vscode.ExtensionContext): DeepSeekChatProvider {
-	return deepseekProviderFactory.createChatProvider(context);
+export function registerBigModelProvider(context: vscode.ExtensionContext): BigModelChatProvider {
+	return bigmodelProviderFactory.createChatProvider(context);
 }
 
 /**
- * 初始化 DeepSeek 提供者注册
+ * 初始化 BigModel 提供者注册
  * 在模块加载时调用，将工厂注册到 ProviderFactoryRegistry
  */
-export function registerDeepSeekProviderFactory(): void {
-	ProviderFactoryRegistry.getInstance().register(deepseekProviderFactory);
+export function registerBigModelProviderFactory(): void {
+	ProviderFactoryRegistry.getInstance().register(bigmodelProviderFactory);
 }

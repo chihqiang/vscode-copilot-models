@@ -74,26 +74,72 @@ function registerProvider(factory: IProviderFactory, context: vscode.ExtensionCo
 function registerCommands(): void {
 	logger.core.info('Registering commands...');
 
-	// 设置 API 密钥
-	vscode.commands.registerCommand('copilot-models.setApiKey', async (vendorId?: string) => {
-		const targetVendor = vendorId || getDefaultVendorId();
-		logger.core.info(`setApiKey command invoked for vendor: ${targetVendor}`);
+	// 设置 API 密钥（先选择服务商，再输入 token）
+	vscode.commands.registerCommand('copilot-models.setApiKey', async () => {
+		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
 
-		const provider = chatProviders.get(targetVendor);
+		if (factories.length === 0) {
+			vscode.window.showWarningMessage('No model providers enabled');
+			return;
+		}
+
+		// 如果只有一个提供商，直接设置
+		if (factories.length === 1) {
+			const factory = factories[0];
+			const provider = chatProviders.get(factory.providerId);
+			if (provider) {
+				const chatProvider = provider as { configureApiKey?(): Promise<void> };
+				await chatProvider.configureApiKey?.();
+			}
+			return;
+		}
+
+		// 多个提供商时，先选择
+		const selected = await vscode.window.showQuickPick(
+			factories.map((f) => ({ label: f.providerName, id: f.providerId })),
+			{ placeHolder: 'Select a model provider' },
+		);
+
+		if (!selected) {
+			return;
+		}
+
+		const provider = chatProviders.get(selected.id);
 		if (provider) {
 			const chatProvider = provider as { configureApiKey?(): Promise<void> };
 			await chatProvider.configureApiKey?.();
-		} else {
-			logger.core.warn(`Provider not found: ${targetVendor}`);
 		}
 	});
 
-	// 清除 API 密钥
-	vscode.commands.registerCommand('copilot-models.clearApiKey', async (vendorId?: string) => {
-		const targetVendor = vendorId || getDefaultVendorId();
-		logger.core.info(`clearApiKey command invoked for vendor: ${targetVendor}`);
+	// 清除 API 密钥（先选择服务商）
+	vscode.commands.registerCommand('copilot-models.clearApiKey', async () => {
+		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
 
-		const provider = chatProviders.get(targetVendor);
+		if (factories.length === 0) {
+			vscode.window.showWarningMessage('No model providers enabled');
+			return;
+		}
+
+		if (factories.length === 1) {
+			const factory = factories[0];
+			const provider = chatProviders.get(factory.providerId);
+			if (provider) {
+				const chatProvider = provider as { clearApiKey?(): Promise<void> };
+				await chatProvider.clearApiKey?.();
+			}
+			return;
+		}
+
+		const selected = await vscode.window.showQuickPick(
+			factories.map((f) => ({ label: f.providerName, id: f.providerId })),
+			{ placeHolder: 'Select a model provider' },
+		);
+
+		if (!selected) {
+			return;
+		}
+
+		const provider = chatProviders.get(selected.id);
 		if (provider) {
 			const chatProvider = provider as { clearApiKey?(): Promise<void> };
 			await chatProvider.clearApiKey?.();
@@ -128,14 +174,6 @@ function registerCommands(): void {
 		}
 		logger.core.info('Models refreshed successfully');
 	});
-}
-
-/**
- * 获取默认提供商 ID
- */
-function getDefaultVendorId(): string {
-	const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
-	return factories[0]?.providerId || '';
 }
 
 /**
