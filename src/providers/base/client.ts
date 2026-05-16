@@ -8,6 +8,11 @@ import { IApiClient } from '../../core/interfaces';
 import { logger } from '../../core/logger';
 
 /**
+ * 默认请求超时时间（毫秒）
+ */
+const DEFAULT_TIMEOUT_MS = 60_000; // 60 秒
+
+/**
  * 安全地将对象序列化为 JSON，处理循环引用
  */
 function safeStringify(obj: unknown): string {
@@ -20,6 +25,47 @@ function safeStringify(obj: unknown): string {
 		}
 		return value;
 	});
+}
+
+/**
+ * 深度复制对象并脱敏敏感字段
+ */
+function sanitizeForLog(obj: unknown): unknown {
+	if (typeof obj !== 'object' || obj === null) {
+		return obj;
+	}
+
+	if (Array.isArray(obj)) {
+		return obj.map(sanitizeForLog);
+	}
+
+	const result: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+		if (isSensitiveKey(key)) {
+			result[key] = '[REDACTED]';
+		} else if (typeof value === 'object' && value !== null) {
+			result[key] = sanitizeForLog(value);
+		} else {
+			result[key] = value;
+		}
+	}
+	return result;
+}
+
+/**
+ * 判断是否为敏感字段
+ */
+function isSensitiveKey(key: string): boolean {
+	const sensitivePatterns = [
+		'api[_-]?key',
+		'authorization',
+		' bearer',
+		'password',
+		'token',
+		'secret',
+	];
+	const lowerKey = key.toLowerCase();
+	return sensitivePatterns.some((pattern) => lowerKey.includes(pattern.toLowerCase()));
 }
 
 /**
@@ -37,7 +83,14 @@ export abstract class BaseApiClient implements IApiClient {
 		public readonly baseUrl: string,
 		public readonly apiKey: string,
 	) {
-		logger.api.debug(`[${this.getProviderName()}] BaseApiClient created, baseUrl: ${baseUrl}`);
+		logger.api.debug(`[${this.getProviderName()}] BaseApiClient created`);
+	}
+
+	/**
+	 * 获取请求超时时间（子类可重写）
+	 */
+	protected getTimeoutMs(): number {
+		return DEFAULT_TIMEOUT_MS;
 	}
 
 	/**
@@ -66,7 +119,8 @@ export abstract class BaseApiClient implements IApiClient {
 		cancellationToken?: CancellationToken,
 	): Promise<void> {
 		const providerName = this.getProviderName();
-		logger.api.info(`[${providerName}] Starting streamChatCompletion, model: ${request.model}`);
+		const timeoutMs = this.getTimeoutMs();
+		logger.api.info(`[${providerName}] Starting streamChatCompletion, model: ${request.model}, timeout: ${timeoutMs}ms`);
 
 		const controller = new AbortController();
 		const cancelListener = cancellationToken?.onCancellationRequested(() => {
@@ -79,14 +133,20 @@ export abstract class BaseApiClient implements IApiClient {
 			controller.abort();
 		}
 
+		// 设置请求超时
+		const timeoutId = setTimeout(() => {
+			logger.api.warn(`[${providerName}] Request timeout after ${timeoutMs}ms`);
+			controller.abort();
+		}, timeoutMs);
+
 		try {
 			const requestBody = {
 				...request,
 				stream_options: { include_usage: true },
 			};
 
-			// 打印完整请求体用于调试
-			logger.api.debug(`[${providerName}] Request body: ${safeStringify(requestBody)}`);
+			// 打印脱敏后的请求体用于调试
+			logger.api.debug(`[${providerName}] Request body: ${safeStringify(sanitizeForLog(requestBody))}`);
 
 			const endpoint = `${this.baseUrl}${this.getChatEndpoint()}`;
 			logger.api.debug(`[${providerName}] POST ${endpoint}`);
@@ -97,6 +157,9 @@ export abstract class BaseApiClient implements IApiClient {
 				body: safeStringify(requestBody),
 				signal: controller.signal,
 			});
+
+			// 请求成功，清除超时
+			clearTimeout(timeoutId);
 
 			logger.api.debug(`[${providerName}] Response status: ${response.status}`);
 
@@ -189,14 +252,32 @@ export abstract class BaseApiClient implements IApiClient {
 			logger.api.info(`[${providerName}] Stream completed, total chunks: ${totalTokensReceived}`);
 			callbacks.onDone();
 		} catch (error) {
+			clearTimeout(timeoutId);
+
+			// 检查是否为超时错误
+			if (isAbortError(error)) {
+				const errMsg = error instanceof Error ? error.message.toLowerCase() : '';
+				if (errMsg.includes('timeout') || errMsg.includes('aborted')) {
+					if (!cancellationToken?.isCancellationRequested) {
+						logger.api.error(`[${providerName}] Request timeout after ${timeoutMs}ms`);
+						callbacks.onError(new Error(`${providerName} request timeout`));
+					} else {
+						logger.api.info(`[${providerName}] Stream aborted due to cancellation`);
+					}
+					return;
+				}
+			}
+
 			if (isAbortError(error) && cancellationToken?.isCancellationRequested) {
 				logger.api.info(`[${providerName}] Stream aborted due to cancellation`);
 				return;
 			}
+
 			const errorMsg = error instanceof Error ? error : new Error(String(error));
 			logger.api.error(`[${providerName}] Stream error:`, errorMsg);
 			callbacks.onError(errorMsg);
 		} finally {
+			clearTimeout(timeoutId);
 			cancelListener?.dispose();
 		}
 	}

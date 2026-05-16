@@ -2,17 +2,19 @@
  * VS Code Copilot Models 扩展主入口
  *
  * 支持多种语言模型接入 VS Code Copilot Chat
- * 当前支持: DeepSeek
+ * 使用动态注册机制，支持扩展新的模型提供者
  */
 
 import vscode from 'vscode';
 import { logger } from './core';
-import { registerDeepSeekProvider, DeepSeekChatProvider } from './providers/deepseek';
+import { ProviderFactoryRegistry, type IProviderFactory } from './core/provider-registry';
+import { ModelRegistry } from './core/registry';
+import { registerAllProviders } from './providers';
 
 /**
- * 已激活的提供商
+ * 已激活的 Chat Provider 实例 (用于停用时清理)
  */
-let deepseekProvider: DeepSeekChatProvider | undefined;
+const chatProviders: Map<string, vscode.LanguageModelChatProvider> = new Map();
 
 /**
  * 扩展激活入口
@@ -22,71 +24,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	logger.core.info(`Extension path: ${context.extension.extensionPath}`);
 
 	try {
-		// 注册 DeepSeek 提供者
-		logger.core.info('Registering DeepSeek provider...');
-		deepseekProvider = registerDeepSeekProvider(context);
-		logger.core.info('DeepSeek provider registered successfully');
+		// 注册所有内置提供者
+		logger.core.info('Registering built-in providers...');
+		registerAllProviders();
 
-		// 注册语言模型提供者
-		logger.core.info('Registering language model chat provider...');
-		context.subscriptions.push(
-			vscode.lm.registerLanguageModelChatProvider('deepseek', deepseekProvider),
-		);
+		// 获取所有已启用的提供者并注册
+		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
+		logger.core.info(`Found ${factories.length} enabled provider(s)`);
 
-		// 注册命令
-		logger.core.info('Registering commands...');
-		context.subscriptions.push(
-			vscode.commands.registerCommand('copilot-models.setApiKey', async (vendor?: string) => {
-				const vendorId = vendor || 'deepseek';
-				logger.core.info(`setApiKey command invoked for vendor: ${vendorId}`);
-				if (vendorId === 'deepseek' && deepseekProvider) {
-					await deepseekProvider.configureApiKey();
-				}
-			}),
-			vscode.commands.registerCommand('copilot-models.clearApiKey', async (vendor?: string) => {
-				const vendorId = vendor || 'deepseek';
-				logger.core.info(`clearApiKey command invoked for vendor: ${vendorId}`);
-				if (vendorId === 'deepseek' && deepseekProvider) {
-					await deepseekProvider.clearApiKey();
-				}
-			}),
-			vscode.commands.registerCommand('copilot-models.openSettings', () => {
-				logger.core.info('openSettings command invoked');
-				vscode.commands.executeCommand('workbench.action.openSettings', 'copilot-models');
-			}),
-			vscode.commands.registerCommand('copilot-models.showLog', () => {
-				logger.core.info('showLog command invoked');
-				logger.show();
-			}),
-			vscode.commands.registerCommand('copilot-models.clearLog', () => {
-				logger.core.info('clearLog command invoked');
-				logger.clear();
-			}),
-		);
+		for (const factory of factories) {
+			registerProvider(factory, context);
+		}
 
-		// 注册清理命令
-		context.subscriptions.push(
-			vscode.commands.registerCommand('copilot-models.refreshModels', async () => {
-				logger.core.info('refreshModels command invoked');
-				if (deepseekProvider) {
-					await deepseekProvider.refreshModels();
-					logger.core.info('Models refreshed successfully');
-				}
-			}),
-		);
+		// 注册通用命令
+		registerCommands();
 
-		// 注册扩展停用时清理日志
-		context.subscriptions.push({
-			dispose: () => {
-				logger.core.info('Extension disposing...');
-			},
-		});
-
-		// 刷新模型选择器
-		logger.core.info('Refreshing model picker...');
-		deepseekProvider.refreshModelPicker();
-
-		logger.core.info('Extension activated successfully with DeepSeek provider');
+		logger.core.info(`Extension activated successfully with ${factories.length} provider(s): ${factories.map((f) => f.providerId).join(', ')}`);
 		logger.show(); // 自动显示日志面板
 	} catch (error) {
 		logger.core.error('Failed to activate extension:', error);
@@ -95,21 +48,118 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 }
 
 /**
+ * 注册单个提供者
+ */
+function registerProvider(factory: IProviderFactory, context: vscode.ExtensionContext): void {
+	const { providerId, providerName } = factory;
+
+	logger.core.info(`Registering provider: ${providerName} (${providerId})...`);
+
+	try {
+		// 创建 Chat Provider 并注册到 VS Code
+		const chatProvider = factory.createChatProvider(context);
+		const disposable = vscode.lm.registerLanguageModelChatProvider(providerId, chatProvider);
+		context.subscriptions.push(disposable);
+		chatProviders.set(providerId, chatProvider);
+
+		logger.core.info(`${providerName} provider registered successfully`);
+	} catch (error) {
+		logger.core.error(`Failed to register provider "${providerId}":`, error);
+	}
+}
+
+/**
+ * 注册通用命令
+ */
+function registerCommands(): void {
+	logger.core.info('Registering commands...');
+
+	// 设置 API 密钥
+	vscode.commands.registerCommand('copilot-models.setApiKey', async (vendorId?: string) => {
+		const targetVendor = vendorId || getDefaultVendorId();
+		logger.core.info(`setApiKey command invoked for vendor: ${targetVendor}`);
+
+		const provider = chatProviders.get(targetVendor);
+		if (provider) {
+			const chatProvider = provider as { configureApiKey?(): Promise<void> };
+			await chatProvider.configureApiKey?.();
+		} else {
+			logger.core.warn(`Provider not found: ${targetVendor}`);
+		}
+	});
+
+	// 清除 API 密钥
+	vscode.commands.registerCommand('copilot-models.clearApiKey', async (vendorId?: string) => {
+		const targetVendor = vendorId || getDefaultVendorId();
+		logger.core.info(`clearApiKey command invoked for vendor: ${targetVendor}`);
+
+		const provider = chatProviders.get(targetVendor);
+		if (provider) {
+			const chatProvider = provider as { clearApiKey?(): Promise<void> };
+			await chatProvider.clearApiKey?.();
+		}
+	});
+
+	// 打开设置
+	vscode.commands.registerCommand('copilot-models.openSettings', () => {
+		logger.core.info('openSettings command invoked');
+		vscode.commands.executeCommand('workbench.action.openSettings', 'copilot-models');
+	});
+
+	// 显示日志
+	vscode.commands.registerCommand('copilot-models.showLog', () => {
+		logger.core.info('showLog command invoked');
+		logger.show();
+	});
+
+	// 清除日志
+	vscode.commands.registerCommand('copilot-models.clearLog', () => {
+		logger.core.info('clearLog command invoked');
+		logger.clear();
+	});
+
+	// 刷新模型
+	vscode.commands.registerCommand('copilot-models.refreshModels', async () => {
+		logger.core.info('refreshModels command invoked');
+		// 触发所有已注册 provider 的模型选择器刷新
+		for (const [, provider] of chatProviders) {
+			const chatProvider = provider as { refreshModelPicker?(): void };
+			chatProvider.refreshModelPicker?.();
+		}
+		logger.core.info('Models refreshed successfully');
+	});
+}
+
+/**
+ * 获取默认提供商 ID
+ */
+function getDefaultVendorId(): string {
+	const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
+	return factories[0]?.providerId || '';
+}
+
+/**
  * 扩展停用入口
  */
 export async function deactivate(): Promise<void> {
 	logger.core.info('Deactivating extension...');
 
-	if (deepseekProvider) {
+	// 停用所有 Chat Provider
+	for (const [providerId, provider] of chatProviders) {
 		try {
-			await deepseekProvider.prepareForDeactivate();
-			deepseekProvider.dispose();
-			logger.core.info('DeepSeek provider deactivated');
+			const chatProvider = provider as { prepareForDeactivate?(): Promise<void>; dispose?(): void };
+			await chatProvider.prepareForDeactivate?.();
+			chatProvider.dispose?.();
+			logger.core.info(`Provider "${providerId}" deactivated`);
 		} catch (error) {
-			logger.core.error('Failed to deactivate DeepSeek provider:', error);
+			logger.core.error(`Failed to deactivate provider "${providerId}":`, error);
 		}
-		deepseekProvider = undefined;
 	}
+	chatProviders.clear();
+
+	// 清空注册表
+	ModelRegistry.getInstance().clear();
+	ProviderFactoryRegistry.getInstance().clear();
 
 	logger.core.info('Extension deactivated');
 	logger.dispose();

@@ -22,12 +22,11 @@ export interface IAuthManager {
 
 /**
  * 基础认证管理器实现
+ * 安全性：API 密钥仅存储在 VS Code SecretStorage 中，不支持明文配置回退
  */
 export class BaseAuthManager implements IAuthManager {
 	protected readonly secretStorage: vscode.SecretStorage;
-	protected readonly configSection: string;
 	protected readonly secretKey: string;
-	protected readonly configApiKeyField: string;
 	protected readonly providerId: string;
 
 	constructor(
@@ -36,32 +35,21 @@ export class BaseAuthManager implements IAuthManager {
 		providerId: string,
 	) {
 		this.secretStorage = context.secrets;
-		this.configSection = configSection;
 		this.providerId = providerId;
-		this.secretKey = `${this.configSection}.${providerId}.apiKey`;
-		this.configApiKeyField = `${configSection}.${providerId}ApiKey`;
-		logger.auth.info(`[${providerId}] AuthManager initialized, secretKey: ${this.secretKey}`);
+		this.secretKey = `${configSection}.${providerId}.apiKey`;
+		logger.auth.info(`[${providerId}] AuthManager initialized`);
 	}
 
 	/**
-	 * 获取 API 密钥。优先从 SecretStorage 获取，回退到设置。
+	 * 获取 API 密钥（仅从 SecretStorage 获取）
 	 */
 	async getApiKey(): Promise<string | undefined> {
 		logger.auth.debug(`[${this.providerId}] Getting API key...`);
 
-		// 优先从 SecretStorage 获取
-		const secretKey = await this.secretStorage.get(this.secretKey);
-		if (secretKey) {
-			logger.auth.debug(`[${this.providerId}] API key found in SecretStorage`);
-			return secretKey;
-		}
-
-		// 回退到配置设置
-		const config = vscode.workspace.getConfiguration(this.configSection);
-		const settingsKey = config.get<string>(this.configApiKeyField);
-		if (settingsKey?.trim()) {
-			logger.auth.debug(`[${this.providerId}] API key found in settings (deprecated)`);
-			return settingsKey.trim();
+		const apiKey = await this.secretStorage.get(this.secretKey);
+		if (apiKey) {
+			logger.auth.debug(`[${this.providerId}] API key found`);
+			return apiKey;
 		}
 
 		logger.auth.debug(`[${this.providerId}] No API key found`);

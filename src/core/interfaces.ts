@@ -2,6 +2,20 @@
  * 多模型 Copilot 扩展的核心接口定义
  */
 
+import vscode from 'vscode';
+
+/**
+ * Chat Provider 接口 (简化版，用于类型检查)
+ */
+export interface IChatProvider {
+	/** 刷新模型选择器 */
+	refreshModelPicker(): void;
+	/** 准备停用 */
+	prepareForDeactivate(): Promise<void>;
+	/** 释放资源 */
+	dispose(): void;
+}
+
 /**
  * 模型能力定义
  */

@@ -13,6 +13,7 @@ import type {
 } from '../../core/interfaces';
 import { logger } from '../../core/logger';
 import { ModelRegistry } from '../../core/registry';
+import { IProviderFactory, ProviderFactoryRegistry } from '../../core/provider-registry';
 import { BaseAuthManager } from '../base/auth-manager';
 import { BaseChatProvider, type ModelPickerChatInformation } from '../base/chat-provider';
 import { DeepSeekClient } from './client';
@@ -407,15 +408,45 @@ export class DeepSeekChatProvider extends BaseChatProvider {
 }
 
 /**
- * 注册 DeepSeek 提供者到全局注册表
+ * DeepSeek 提供者工厂 - 实现 IProviderFactory 接口
+ */
+export class DeepSeekProviderFactory implements IProviderFactory {
+	readonly providerId = DEEPSEEK_PROVIDER_ID;
+	readonly providerName = 'DeepSeek';
+
+	isEnabled(): boolean {
+		const config = vscode.workspace.getConfiguration(DEEPSEEK_CONFIG_SECTION);
+		return config.get<boolean>('enabled', true);
+	}
+
+	createChatProvider(context: vscode.ExtensionContext): DeepSeekChatProvider {
+		logger.deepseek.info('Creating DeepSeekChatProvider from factory...');
+		const chatProvider = new DeepSeekChatProvider(context);
+
+		// 注册到模型注册表
+		ModelRegistry.getInstance().registerProvider(chatProvider.modelProvider);
+
+		logger.deepseek.info('DeepSeek provider registered successfully');
+		return chatProvider;
+	}
+}
+
+/**
+ * DeepSeek 提供者工厂单例
+ */
+export const deepseekProviderFactory = new DeepSeekProviderFactory();
+
+/**
+ * 注册 DeepSeek 提供者到全局注册表 (兼容旧接口)
  */
 export function registerDeepSeekProvider(context: vscode.ExtensionContext): DeepSeekChatProvider {
-	logger.deepseek.info('Registering DeepSeek provider...');
-	const chatProvider = new DeepSeekChatProvider(context);
+	return deepseekProviderFactory.createChatProvider(context);
+}
 
-	// 注册到模型注册表
-	ModelRegistry.getInstance().registerProvider(chatProvider.modelProvider);
-
-	logger.deepseek.info('DeepSeek provider registered successfully');
-	return chatProvider;
+/**
+ * 初始化 DeepSeek 提供者注册
+ * 在模块加载时调用，将工厂注册到 ProviderFactoryRegistry
+ */
+export function registerDeepSeekProviderFactory(): void {
+	ProviderFactoryRegistry.getInstance().register(deepseekProviderFactory);
 }
