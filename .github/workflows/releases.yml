@@ -1,0 +1,34 @@
+name: releases
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: clone repo
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.32.0
+          
+      - name: Check pnpm version
+        run: pnpm -v
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm package
+
+      - name: Upload artifact
+        uses: chihqiang/upload-asset-action@main
+        with:
+          github_token: ${{ secrets.GH_TOKEN }}
+          files: ./*.vsix
