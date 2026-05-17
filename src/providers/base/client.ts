@@ -322,10 +322,16 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 				const reader = response.body.getReader();
 				const decoder = new TextDecoder();
 				let buffer = '';
+				const bufferChunks: string[] = [];
 				let totalTokensReceived = 0;
 
-				// 按索引累积工具调用增量
-				const pendingToolCalls = new Map<number, ApiToolCall>();
+				interface PendingToolCall {
+					id: string;
+					type: 'function';
+					function: { name: string[]; arguments: string[] };
+				}
+
+				const pendingToolCalls = new Map<number, PendingToolCall>();
 
 				logger.api.debug(`[${providerName}] Streaming started`);
 
@@ -342,10 +348,10 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 						break;
 					}
 
-					buffer += decoder.decode(value, { stream: true });
-
-					const lines = buffer.split('\n');
+					bufferChunks.push(decoder.decode(value, { stream: true }));
+					const lines = (buffer + bufferChunks.join('')).split('\n');
 					buffer = lines.pop() || '';
+					bufferChunks.length = 0;
 
 					for (const line of lines) {
 						const trimmed = line.trim();
@@ -357,7 +363,14 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 						if (trimmed === 'data: [DONE]') {
 							logger.api.debug(`[${providerName}] Received [DONE] signal`);
 							for (const tc of pendingToolCalls.values()) {
-								callbacks.onToolCall(tc);
+								callbacks.onToolCall({
+									id: tc.id,
+									type: tc.type,
+									function: {
+										name: tc.function.name.join(''),
+										arguments: tc.function.arguments.join(''),
+									},
+								});
 							}
 							pendingToolCalls.clear();
 							callbacks.onDone();
@@ -406,16 +419,16 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 											pending = {
 												id: tc.id,
 												type: 'function',
-												function: { name: '', arguments: '' },
+												function: { name: [], arguments: [] },
 											};
 											pendingToolCalls.set(tc.index, pending);
 										}
 										if (pending) {
 											if (tc.function?.name) {
-												pending.function.name += tc.function.name;
+												pending.function.name.push(tc.function.name);
 											}
 											if (tc.function?.arguments) {
-												pending.function.arguments += tc.function.arguments;
+												pending.function.arguments.push(tc.function.arguments);
 											}
 										}
 									}
@@ -424,7 +437,14 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 								// 完成时刷新待处理的工具调用
 								if (choice.finish_reason === 'tool_calls' || choice.finish_reason === 'stop') {
 									for (const tc of pendingToolCalls.values()) {
-										callbacks.onToolCall(tc);
+										callbacks.onToolCall({
+											id: tc.id,
+											type: tc.type,
+											function: {
+												name: tc.function.name.join(''),
+												arguments: tc.function.arguments.join(''),
+											},
+										});
 									}
 									pendingToolCalls.clear();
 								}
