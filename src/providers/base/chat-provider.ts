@@ -578,25 +578,25 @@ export abstract class BaseChatProvider implements vscode.LanguageModelChatProvid
 			onDone: () => {
 				// 打印完整响应内容
 				if (content) {
-					logger.stream.info(`[${this.providerId}] === Response Content ===\n${content}`);
+					logger.stream.debug(`[${this.providerId}] === Response Content ===\n${content}`);
 				}
 
 				// 打印思考内容
 				if (thinking) {
-					logger.stream.info(`[${this.providerId}] === Thinking Content ===\n${thinking}`);
+					logger.stream.debug(`[${this.providerId}] === Thinking Content ===\n${thinking}`);
 				}
 
 				// 打印工具调用
 				if (toolCalls.length > 0) {
-					logger.stream.info(`[${this.providerId}] === Tool Calls (${toolCalls.length}) ===`);
+					logger.stream.debug(`[${this.providerId}] === Tool Calls (${toolCalls.length}) ===`);
 					for (const tc of toolCalls) {
-						logger.stream.info(`  - ${tc.name}: ${tc.args}`);
+						logger.stream.debug(`  - ${tc.name}: ${tc.args}`);
 					}
 				}
 
 				// 打印 Token 使用统计
 				if (finalUsage) {
-					logger.stream.info(
+					logger.stream.debug(
 						`[${this.providerId}] === Token Usage ===\n` +
 							`  prompt_tokens: ${finalUsage.prompt_tokens}\n` +
 							`  completion_tokens: ${finalUsage.completion_tokens}\n` +
@@ -617,11 +617,13 @@ export abstract class BaseChatProvider implements vscode.LanguageModelChatProvid
 		progress: vscode.Progress<vscode.LanguageModelResponsePart>,
 		token: vscode.CancellationToken,
 	): Promise<void> {
+		const startTime = Date.now();
 		logger.chat.info(`[${this.providerId}] provideLanguageModelChatResponse called, model: ${modelInfo.id}`);
 		try {
 			const prepared = await this.prepareChatRequest(modelInfo, messages, options);
 			await this.sendStreamRequest(prepared.request, progress, token);
-			logger.chat.info(`[${this.providerId}] Chat response completed successfully`);
+			const duration = Date.now() - startTime;
+			logger.chat.info(`[${this.providerId}] Chat response completed successfully, duration: ${duration}ms`);
 		} catch (error) {
 			logger.chat.error(`[${this.providerId}] Chat response failed:`, error);
 			throw error;

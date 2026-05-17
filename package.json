@@ -118,7 +118,8 @@
     "test": "node out/test/runTest",
     "test:compile": "tsc -p ./",
     "check": "run-s lint lint:md compile",
-    "package": "npx vsce package"
+    "package:vsix": "npx vsce package",
+    "package": "run-s compile package:vsix"
   },
   "devDependencies": {
     "@types/glob": "^9.0.0",
