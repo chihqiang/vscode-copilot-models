@@ -23,7 +23,7 @@ export interface IProviderFactory {
  * 提供者注册表 - 管理所有已注册的使用者工厂
  */
 export class ProviderFactoryRegistry {
-	private static instance: ProviderFactoryRegistry;
+	private static instance: ProviderFactoryRegistry | undefined;
 	private factories: Map<string, IProviderFactory> = new Map();
 
 	private constructor() {}
@@ -33,6 +33,25 @@ export class ProviderFactoryRegistry {
 			ProviderFactoryRegistry.instance = new ProviderFactoryRegistry();
 		}
 		return ProviderFactoryRegistry.instance;
+	}
+
+	/**
+	 * 重置单例实例 (仅用于测试)
+	 * @internal
+	 */
+	static _resetInstance(): void {
+		if (ProviderFactoryRegistry.instance) {
+			ProviderFactoryRegistry.instance.clear();
+			ProviderFactoryRegistry.instance = undefined;
+		}
+	}
+
+	/**
+	 * 检查实例是否已初始化 (用于测试)
+	 * @internal
+	 */
+	static _isInitialized(): boolean {
+		return ProviderFactoryRegistry.instance !== undefined;
 	}
 
 	/**

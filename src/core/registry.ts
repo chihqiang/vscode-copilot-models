@@ -9,7 +9,7 @@ import { logger } from './logger';
  * 全局模型注册表
  */
 export class ModelRegistry {
-	private static instance: ModelRegistry;
+	private static instance: ModelRegistry | undefined;
 	private providers: Map<string, IModelProvider> = new Map();
 	private models: Map<string, ModelDefinition[]> = new Map();
 
@@ -25,6 +25,26 @@ export class ModelRegistry {
 			ModelRegistry.instance = new ModelRegistry();
 		}
 		return ModelRegistry.instance;
+	}
+
+	/**
+	 * 重置单例实例 (仅用于测试)
+	 * @internal
+	 */
+	static _resetInstance(): void {
+		if (ModelRegistry.instance) {
+			ModelRegistry.instance.clear();
+			ModelRegistry.instance = undefined;
+			logger.registry.debug('ModelRegistry instance reset');
+		}
+	}
+
+	/**
+	 * 检查实例是否已初始化 (用于测试)
+	 * @internal
+	 */
+	static _isInitialized(): boolean {
+		return ModelRegistry.instance !== undefined;
 	}
 
 	/**

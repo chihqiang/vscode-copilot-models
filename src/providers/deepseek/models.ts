@@ -41,11 +41,6 @@ export const DEEPSEEK_MODELS: ModelDefinition[] = [
 ];
 
 /**
- * DeepSeek 配置节
- */
-export const DEEPSEEK_CONFIG_SECTION = 'copilot-models';
-
-/**
  * DeepSeek 提供商 ID
  */
 export const DEEPSEEK_PROVIDER_ID = 'deepseek';

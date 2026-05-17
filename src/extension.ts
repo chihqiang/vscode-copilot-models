@@ -7,6 +7,7 @@
 
 import vscode from 'vscode';
 import { logger } from './core';
+import type { IChatProvider } from './core/interfaces';
 import { ProviderFactoryRegistry, type IProviderFactory } from './core/provider-registry';
 import { ModelRegistry } from './core/registry';
 import { registerAllProviders } from './providers';
@@ -14,7 +15,36 @@ import { registerAllProviders } from './providers';
 /**
  * 已激活的 Chat Provider 实例 (用于停用时清理)
  */
-const chatProviders: Map<string, vscode.LanguageModelChatProvider> = new Map();
+const chatProviders: Map<string, IChatProvider> = new Map();
+
+/**
+ * 选择提供者 (用于命令中提取重复逻辑)
+ * @param factories 提供者工厂列表
+ * @returns 选中的提供者工厂，或 undefined 表示取消选择
+ */
+async function selectProvider(factories: IProviderFactory[]): Promise<IProviderFactory | undefined> {
+	if (factories.length === 0) {
+		vscode.window.showWarningMessage('No model providers enabled');
+		return undefined;
+	}
+
+	// 如果只有一个提供商，直接返回
+	if (factories.length === 1) {
+		return factories[0];
+	}
+
+	// 多个提供商时，让用户选择
+	const selected = await vscode.window.showQuickPick(
+		factories.map((f) => ({ label: f.providerName, id: f.providerId })),
+		{ placeHolder: 'Select a model provider' },
+	);
+
+	if (!selected) {
+		return undefined;
+	}
+
+	return factories.find((f) => f.providerId === selected.id);
+}
 
 /**
  * 扩展激活入口
@@ -53,7 +83,7 @@ function registerProvider(factory: IProviderFactory, context: vscode.ExtensionCo
 
 	try {
 		// 创建 Chat Provider 并注册到 VS Code
-		const chatProvider = factory.createChatProvider(context);
+		const chatProvider = factory.createChatProvider(context) as unknown as IChatProvider;
 		const disposable = vscode.lm.registerLanguageModelChatProvider(providerId, chatProvider);
 		context.subscriptions.push(disposable);
 		chatProviders.set(providerId, chatProvider);
@@ -71,72 +101,22 @@ function registerCommands(): void {
 	// 设置 API 密钥（先选择服务商，再输入 token）
 	vscode.commands.registerCommand('copilot-models.setApiKey', async () => {
 		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
+		const factory = await selectProvider(factories);
 
-		if (factories.length === 0) {
-			vscode.window.showWarningMessage('No model providers enabled');
-			return;
-		}
-
-		// 如果只有一个提供商，直接设置
-		if (factories.length === 1) {
-			const factory = factories[0];
+		if (factory) {
 			const provider = chatProviders.get(factory.providerId);
-			if (provider) {
-				const chatProvider = provider as { configureApiKey?(): Promise<void> };
-				await chatProvider.configureApiKey?.();
-			}
-			return;
-		}
-
-		// 多个提供商时，先选择
-		const selected = await vscode.window.showQuickPick(
-			factories.map((f) => ({ label: f.providerName, id: f.providerId })),
-			{ placeHolder: 'Select a model provider' },
-		);
-
-		if (!selected) {
-			return;
-		}
-
-		const provider = chatProviders.get(selected.id);
-		if (provider) {
-			const chatProvider = provider as { configureApiKey?(): Promise<void> };
-			await chatProvider.configureApiKey?.();
+			await provider?.configureApiKey();
 		}
 	});
 
 	// 清除 API 密钥（先选择服务商）
 	vscode.commands.registerCommand('copilot-models.clearApiKey', async () => {
 		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
+		const factory = await selectProvider(factories);
 
-		if (factories.length === 0) {
-			vscode.window.showWarningMessage('No model providers enabled');
-			return;
-		}
-
-		if (factories.length === 1) {
-			const factory = factories[0];
+		if (factory) {
 			const provider = chatProviders.get(factory.providerId);
-			if (provider) {
-				const chatProvider = provider as { clearApiKey?(): Promise<void> };
-				await chatProvider.clearApiKey?.();
-			}
-			return;
-		}
-
-		const selected = await vscode.window.showQuickPick(
-			factories.map((f) => ({ label: f.providerName, id: f.providerId })),
-			{ placeHolder: 'Select a model provider' },
-		);
-
-		if (!selected) {
-			return;
-		}
-
-		const provider = chatProviders.get(selected.id);
-		if (provider) {
-			const chatProvider = provider as { clearApiKey?(): Promise<void> };
-			await chatProvider.clearApiKey?.();
+			await provider?.clearApiKey();
 		}
 	});
 
@@ -162,9 +142,8 @@ function registerCommands(): void {
 	vscode.commands.registerCommand('copilot-models.refreshModels', async () => {
 		logger.core.info('refreshModels command invoked');
 		// 触发所有已注册 provider 的模型选择器刷新
-		for (const [, provider] of chatProviders) {
-			const chatProvider = provider as { refreshModelPicker?(): void };
-			chatProvider.refreshModelPicker?.();
+		for (const provider of chatProviders.values()) {
+			provider.refreshModelPicker();
 		}
 		logger.core.info('Models refreshed successfully');
 	});
@@ -179,9 +158,8 @@ export async function deactivate(): Promise<void> {
 	// 停用所有 Chat Provider
 	for (const [providerId, provider] of chatProviders) {
 		try {
-			const chatProvider = provider as { prepareForDeactivate?(): Promise<void>; dispose?(): void };
-			await chatProvider.prepareForDeactivate?.();
-			chatProvider.dispose?.();
+			await provider.prepareForDeactivate();
+			provider.dispose();
 			logger.core.info(`Provider "${providerId}" deactivated`);
 		} catch (error) {
 			logger.core.error(`Failed to deactivate provider "${providerId}":`, error);

@@ -56,11 +56,6 @@ export const BIGMODEL_MODELS: ModelDefinition[] = [
 ];
 
 /**
- * BigModel 配置节
- */
-export const BIGMODEL_CONFIG_SECTION = 'copilot-models';
-
-/**
  * BigModel 提供商 ID
  */
 export const BIGMODEL_PROVIDER_ID = 'bigmodel';

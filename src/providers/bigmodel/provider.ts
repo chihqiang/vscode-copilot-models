@@ -13,12 +13,8 @@ import {
 } from '../base/chat-provider';
 import { BaseModelProvider, type ModelProviderConfig } from '../base/model-provider';
 import { createBigModelClient } from './client';
-import {
-	BIGMODEL_CONFIG_SECTION,
-	BIGMODEL_DEFAULT_BASE_URL,
-	BIGMODEL_MODELS,
-	BIGMODEL_PROVIDER_ID,
-} from './models';
+import { BIGMODEL_DEFAULT_BASE_URL, BIGMODEL_MODELS, BIGMODEL_PROVIDER_ID } from './models';
+import { CONFIG_SECTION } from '../../core/consts';
 
 /** BigModel 日志记录器 */
 const logger = createProviderLogger(BIGMODEL_PROVIDER_ID, 'BigModel');
@@ -29,7 +25,7 @@ const logger = createProviderLogger(BIGMODEL_PROVIDER_ID, 'BigModel');
 const bigmodelModelProviderConfig: ModelProviderConfig = {
 	providerId: BIGMODEL_PROVIDER_ID,
 	providerName: 'BigModel',
-	configSection: BIGMODEL_CONFIG_SECTION,
+	configSection: CONFIG_SECTION,
 	defaultBaseUrl: BIGMODEL_DEFAULT_BASE_URL,
 	models: BIGMODEL_MODELS,
 	apiKeyPrompt: 'Enter your BigModel API Key',
@@ -76,7 +72,7 @@ export class BigModelChatProvider extends BaseChatProvider {
 const bigmodelProviderFactory = createProviderFactory({
 	providerId: BIGMODEL_PROVIDER_ID,
 	providerName: 'BigModel',
-	configSection: BIGMODEL_CONFIG_SECTION,
+	configSection: CONFIG_SECTION,
 	createChatProvider: (context) => {
 		const chatProvider = new BigModelChatProvider(context);
 		ModelRegistry.getInstance().registerProvider(chatProvider.modelProvider as unknown as IModelProvider);
