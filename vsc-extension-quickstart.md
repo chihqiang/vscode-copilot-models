@@ -2,10 +2,10 @@
 
 ## 项目架构
 
-```
+```text
 src/
 ├── core/                           # 核心模块
-│   ├── interfaces.ts              # 核心接口定义 (IModelProvider, IApiClient, ModelDefinition 等)
+│   ├── interfaces.ts              # 核心接口定义
 │   ├── consts.ts                   # 常量定义
 │   ├── registry.ts                 # 模型注册表 (ModelRegistry 单例)
 │   ├── provider-registry.ts        # 提供者工厂注册表 (ProviderFactoryRegistry)
@@ -42,7 +42,7 @@ src/
 ## 核心接口
 
 | 接口 | 说明 |
-|:-----|:-----|
+| :----- | :----- |
 | `IModelProvider` | 模型提供商接口，定义获取 API 密钥、模型列表等方法 |
 | `IApiClient` | API 客户端接口，定义流式请求方法 |
 | `ModelDefinition` | 模型定义结构，包含 ID、名称、能力等 |
@@ -78,7 +78,7 @@ logger.debug('调试信息');   // 仅开发模式输出
 日志系统支持 **4 个日志级别**，自动区分开发环境和生产环境：
 
 | 级别 | 说明 | 开发模式 | 生产模式 |
-|:-----|:-----|:-------:|:-------:|
+| :----- | :----- | :-------: | :-------: |
 | `debug` | 详细调试信息 | ✅ 输出 | ❌ 不输出 |
 | `info` | 一般信息 | ✅ 输出 | ✅ 输出 |
 | `warn` | 警告信息 | ✅ 输出 | ✅ 输出 |
@@ -95,7 +95,7 @@ logger.debug('调试信息');   // 仅开发模式输出
 
 ### 注册流程
 
-```
+```text
 模块加载 → registerAllProviders() → 注册所有 IProviderFactory → ProviderFactoryRegistry
                                                       ↓
 扩展激活 → getEnabledFactories() → 遍历注册 → vscode.lm.registerLanguageModelChatProvider()
@@ -219,7 +219,8 @@ export class OpenAIProviderFactory implements IProviderFactory {
 
   isEnabled(): boolean {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    return config.get<boolean>('enabledProviders')?.includes(this.providerId) ?? false;
+    return config.get<boolean>('enabledProviders')
+      ?.includes(this.providerId) ?? false;
   }
 
   createChatProvider(context: vscode.ExtensionContext) {
@@ -251,7 +252,7 @@ export function registerAllProviders(): void {
 #### 基类功能一览
 
 | 基类 | 功能 |
-|:-----|:-----|
+| :----- | :----- |
 | `BaseModelProvider` | API Key 管理、配置读取、模型 ID 覆盖、客户端创建 |
 | `BaseChatProvider` | 消息转换、角色映射、流式回调、请求发送、API Key 配置、模型选择器 |
 
@@ -270,16 +271,18 @@ pnpm run test:compile
 ### 测试文件结构
 
 | 文件 | 说明 |
-|:-----|:-----|
+| :----- | :----- |
 | `registry.test.ts` | ModelRegistry 单例测试：提供者注册/注销、模型列表管理 |
-| `provider-registry.test.ts` | ProviderFactoryRegistry 测试：工厂注册、启用/禁用状态过滤 |
-| `interfaces.test.ts` | 接口和数据结构测试：ModelDefinition、ApiMessage、StreamCallbacks 等 |
+| `provider-registry.test.ts` | ProviderFactoryRegistry 测试：工厂注册、 |
+| | 启用/禁用状态过滤 |
+| `interfaces.test.ts` | 接口和数据结构测试： |
+| | ModelDefinition、ApiMessage、StreamCallbacks 等 |
 | `utils.test.ts` | 工具函数测试：safeStringify、sanitizeForLog、isSensitiveKey |
 | `extension.test.ts` | 扩展集成测试：命令注册、配置验证、语言模型提供者声明 |
 
 ### 测试覆盖
 
-```
+```text
 Registry Tests (11 cases)
 ├── Singleton pattern
 ├── Provider registration/removal
@@ -314,10 +317,11 @@ Extension Tests (5 cases)
 ### 运行测试
 
 1. **VS Code 调试面板**
-   - 选择 "Run Tests" 配置
-   - 按 `F5` 开始调试测试
+     - 选择 "Run Tests" 配置
+     - 按 `F5` 开始调试测试
 
 2. **命令行**
+
    ```bash
    pnpm run test:compile  # 编译
    pnpm run test          # 运行测试
@@ -333,10 +337,10 @@ import * as assert from 'assert';
 import { MyClass } from '../core/myclass';
 
 suite('MyClass', () => {
-	test('should do something', () => {
-		const instance = new MyClass();
-		assert.strictEqual(instance.method(), expected);
-	});
+  test('should do something', () => {
+    const instance = new MyClass();
+    assert.strictEqual(instance.method(), expected);
+  });
 });
 ```
 
