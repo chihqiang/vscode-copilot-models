@@ -114,10 +114,11 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
+    "lint:md": "markdownlint \"**/*.md\" --ignore node_modules",
     "test": "node out/test/runTest",
     "test:compile": "tsc -p ./",
-    "package": "npx vsce package",
-    "vscode:prepublish": "run-s lint compile"
+    "check": "run-s lint lint:md compile",
+    "package": "npx vsce package"
   },
   "devDependencies": {
     "@types/glob": "^9.0.0",
@@ -128,6 +129,7 @@
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.3",
     "glob": "^13.0.6",
+    "markdownlint-cli": "^0.48.0",
     "mocha": "^11.7.5",
     "npm-run-all2": "^8.0.4",
     "typescript": "^5.9.3",
