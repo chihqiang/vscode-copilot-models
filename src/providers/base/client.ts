@@ -12,6 +12,148 @@ import { logger } from '../../core/logger';
  */
 const DEFAULT_TIMEOUT_MS = 60_000; // 60 秒
 
+// ============================================================================
+// 自定义错误类型
+// ============================================================================
+
+/**
+ * API 错误基类
+ */
+export class ApiError extends Error {
+	constructor(
+		message: string,
+		public readonly statusCode: number,
+		public readonly providerId: string,
+		public readonly responseBody?: string,
+	) {
+		super(message);
+		this.name = 'ApiError';
+	}
+
+	/**
+	 * 是否为客户端错误 (4xx)
+	 */
+	get isClientError(): boolean {
+		return this.statusCode >= 400 && this.statusCode < 500;
+	}
+
+	/**
+	 * 是否为服务端错误 (5xx)
+	 */
+	get isServerError(): boolean {
+		return this.statusCode >= 500;
+	}
+}
+
+/**
+ * 认证错误 (401)
+ */
+export class AuthenticationError extends ApiError {
+	constructor(providerId: string, responseBody?: string) {
+		super(`Authentication failed for ${providerId}. Please check your API key.`, 401, providerId, responseBody);
+		this.name = 'AuthenticationError';
+	}
+}
+
+/**
+ * 权限错误 (403)
+ */
+export class PermissionError extends ApiError {
+	constructor(providerId: string, responseBody?: string) {
+		super(`Permission denied for ${providerId}. Please check your API permissions.`, 403, providerId, responseBody);
+		this.name = 'PermissionError';
+	}
+}
+
+/**
+ * 资源未找到错误 (404)
+ */
+export class NotFoundError extends ApiError {
+	constructor(resource: string, providerId: string, responseBody?: string) {
+		super(`Resource not found: ${resource}`, 404, providerId, responseBody);
+		this.name = 'NotFoundError';
+	}
+}
+
+/**
+ * 速率限制错误 (429)
+ */
+export class RateLimitError extends ApiError {
+	constructor(providerId: string, public readonly retryAfter?: number, responseBody?: string) {
+		super(
+			`Rate limit exceeded for ${providerId}. Please try again later${retryAfter ? ` after ${retryAfter} seconds` : ''}.`,
+			429,
+			providerId,
+			responseBody,
+		);
+		this.name = 'RateLimitError';
+	}
+}
+
+/**
+ * 网络错误
+ */
+export class NetworkError extends Error {
+	constructor(
+		message: string,
+		public readonly providerId: string,
+		public readonly cause?: Error,
+	) {
+		super(`Network error for ${providerId}: ${message}`);
+		this.name = 'NetworkError';
+	}
+}
+
+/**
+ * 请求超时错误
+ */
+export class TimeoutError extends Error {
+	constructor(
+		public readonly providerId: string,
+		public readonly timeoutMs: number,
+	) {
+		super(`Request timeout for ${providerId} after ${timeoutMs}ms`);
+		this.name = 'TimeoutError';
+	}
+}
+
+/**
+ * 请求取消错误
+ */
+export class CancelledError extends Error {
+	constructor(public readonly providerId: string) {
+		super(`Request cancelled for ${providerId}`);
+		this.name = 'CancelledError';
+	}
+}
+
+/**
+ * 根据 HTTP 状态码创建适当的错误类型
+ */
+function createApiError(statusCode: number, providerId: string, errorBody: string, responseBody?: string): ApiError {
+	switch (statusCode) {
+		case 401:
+			return new AuthenticationError(providerId, responseBody);
+		case 403:
+			return new PermissionError(providerId, responseBody);
+		case 404:
+			return new NotFoundError('API endpoint', providerId, responseBody);
+		case 429:
+			return new RateLimitError(providerId, undefined, responseBody);
+		default:
+			return new ApiError(
+				`${providerId} API error (${statusCode}): ${errorBody}`,
+				statusCode,
+				providerId,
+				responseBody,
+			);
+	}
+}
+
+// ============================================================================
+// 工具函数
+// ============================================================================
+
 /**
  * 安全地将对象序列化为 JSON，处理循环引用
  */
@@ -169,21 +311,27 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 						errorMessage = errorText;
 					}
 					logger.api.error(`[${providerName}] API error (${response.status}): ${errorMessage}`);
-					throw new Error(`${providerName} API error (${response.status}): ${errorMessage}`);
+					throw createApiError(response.status, providerName, errorMessage, errorText);
 				}
 
 				if (!response.body) {
 					logger.api.error(`[${providerName}] No response body received`);
-					throw new Error('No response body received');
+					throw new ApiError('No response body received', 0, providerName);
 				}
 
 				const reader = response.body.getReader();
 				const decoder = new TextDecoder();
 				let buffer = '';
+				const bufferChunks: string[] = [];
 				let totalTokensReceived = 0;
 
-				// 按索引累积工具调用增量
-				const pendingToolCalls = new Map<number, ApiToolCall>();
+				interface PendingToolCall {
+					id: string;
+					type: 'function';
+					function: { name: string[]; arguments: string[] };
+				}
+
+				const pendingToolCalls = new Map<number, PendingToolCall>();
 
 				logger.api.debug(`[${providerName}] Streaming started`);
 
@@ -200,10 +348,10 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 						break;
 					}
 
-					buffer += decoder.decode(value, { stream: true });
-
-					const lines = buffer.split('\n');
+					bufferChunks.push(decoder.decode(value, { stream: true }));
+					const lines = (buffer + bufferChunks.join('')).split('\n');
 					buffer = lines.pop() || '';
+					bufferChunks.length = 0;
 
 					for (const line of lines) {
 						const trimmed = line.trim();
@@ -215,7 +363,14 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 						if (trimmed === 'data: [DONE]') {
 							logger.api.debug(`[${providerName}] Received [DONE] signal`);
 							for (const tc of pendingToolCalls.values()) {
-								callbacks.onToolCall(tc);
+								callbacks.onToolCall({
+									id: tc.id,
+									type: tc.type,
+									function: {
+										name: tc.function.name.join(''),
+										arguments: tc.function.arguments.join(''),
+									},
+								});
 							}
 							pendingToolCalls.clear();
 							callbacks.onDone();
@@ -264,16 +419,16 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 											pending = {
 												id: tc.id,
 												type: 'function',
-												function: { name: '', arguments: '' },
+												function: { name: [], arguments: [] },
 											};
 											pendingToolCalls.set(tc.index, pending);
 										}
 										if (pending) {
 											if (tc.function?.name) {
-												pending.function.name += tc.function.name;
+												pending.function.name.push(tc.function.name);
 											}
 											if (tc.function?.arguments) {
-												pending.function.arguments += tc.function.arguments;
+												pending.function.arguments.push(tc.function.arguments);
 											}
 										}
 									}
@@ -282,7 +437,14 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 								// 完成时刷新待处理的工具调用
 								if (choice.finish_reason === 'tool_calls' || choice.finish_reason === 'stop') {
 									for (const tc of pendingToolCalls.values()) {
-										callbacks.onToolCall(tc);
+										callbacks.onToolCall({
+											id: tc.id,
+											type: tc.type,
+											function: {
+												name: tc.function.name.join(''),
+												arguments: tc.function.arguments.join(''),
+											},
+										});
 									}
 									pendingToolCalls.clear();
 								}
@@ -296,27 +458,35 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 				logger.api.info(`[${providerName}] Stream completed, total chunks: ${totalTokensReceived}`);
 				callbacks.onDone();
 			} catch (error) {
-				clearTimeout(timeoutId);
-
-				// 检查是否为超时错误
-				if (isAbortError(error)) {
-					const errMsg = error instanceof Error ? error.message.toLowerCase() : '';
-					if (errMsg.includes('timeout') || errMsg.includes('aborted')) {
-						if (!cancellationToken?.isCancellationRequested) {
-							logger.api.error(`[${providerName}] Request timeout after ${timeoutMs}ms`);
-							callbacks.onError(new Error(`${providerName} request timeout`));
-						} else {
-							logger.api.info(`[${providerName}] Stream aborted due to cancellation`);
-						}
-						return;
-					}
-				}
-
-				if (isAbortError(error) && cancellationToken?.isCancellationRequested) {
+				// 处理取消请求
+				if (cancellationToken?.isCancellationRequested) {
 					logger.api.info(`[${providerName}] Stream aborted due to cancellation`);
+					callbacks.onError(new CancelledError(providerName));
 					return;
 				}
 
+				// 处理超时
+				if (isAbortError(error)) {
+					logger.api.error(`[${providerName}] Request timeout after ${timeoutMs}ms`);
+					callbacks.onError(new TimeoutError(providerName, timeoutMs));
+					return;
+				}
+
+				// 处理网络错误
+				if (error instanceof TypeError && error.message.includes('fetch')) {
+					logger.api.error(`[${providerName}] Network error:`, error);
+					callbacks.onError(new NetworkError(error.message, providerName, error));
+					return;
+				}
+
+				// 处理已知的 API 错误
+				if (error instanceof ApiError) {
+					logger.api.error(`[${providerName}] API error (${error.statusCode}): ${error.message}`);
+					callbacks.onError(error);
+					return;
+				}
+
+				// 处理其他错误
 				const errorMsg = error instanceof Error ? error : new Error(String(error));
 				logger.api.error(`[${providerName}] Stream error:`, errorMsg);
 				callbacks.onError(errorMsg);

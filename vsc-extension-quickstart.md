@@ -103,149 +103,133 @@ logger.debug('调试信息');   // 仅开发模式输出
 
 ### 添加新模型提供商
 
-使用 `BaseModelProvider` + `BaseChatProvider` 基类，只需约 **90 行代码**即可添加新提供商。
+使用 `BaseModelProvider` + `BaseChatProvider` 基类，可快速新增一个符合 Copilot Chat 的第三方模型提供者。
 
 #### 步骤
 
-1. 在 `providers/` 下创建新目录（如 `providers/openai/`）
+1. 在 `providers/` 下创建新目录（如 `providers/example/`）
 2. 创建模型定义 `models.ts`
 3. 创建 API 客户端，继承 `BaseApiClient`
 4. 创建 Provider 配置 + `BaseModelProvider` 子类
 5. 创建 ChatProvider，继承 `BaseChatProvider`
 6. 实现 `IProviderFactory` 接口
-7. 在 `providers/index.ts` 中导出并注册
-8. 在 `package.json` 的 `languageModelChatProviders` 中添加配置
+7. 在 `providers/<vendor>/index.ts` 中导出模块
+8. 在 `src/providers/index.ts` 的 `registerAllProviders()` 中注册工厂
 
 #### 示例代码
 
 ```typescript
-// ============================================
-// 1. models.ts - 定义模型列表
-// ============================================
+// providers/example/models.ts
 import { ModelDefinition } from '../../core/interfaces';
 
-export const OPENAI_MODELS: ModelDefinition[] = [
+export const EXAMPLE_MODELS: ModelDefinition[] = [
   {
-    id: 'gpt-4',
-    name: 'GPT-4',
-    family: 'openai',
+    id: 'example-v1',
+    name: 'Example V1',
+    family: 'example',
     version: '1.0',
-    detail: 'GPT-4 by OpenAI',
-    maxInputTokens: 128000,
-    maxOutputTokens: 4096,
+    detail: 'Example API model',
+    maxInputTokens: 8192,
+    maxOutputTokens: 2048,
     capabilities: {
-      toolCalling: true,
-      imageInput: true,
+      toolCalling: false,
+      imageInput: false,
       thinking: false,
     },
   },
 ];
+```
 
-// ============================================
-// 2. client.ts - API 客户端
-// ============================================
-import { BaseApiClient, ApiResponse, StreamCallbacks } from '../base/client';
+```typescript
+// providers/example/client.ts
+import { BaseApiClient } from '../base/client';
 
-export class OpenAIClient extends BaseApiClient {
-  // 如有特殊处理需求可覆写，如：
-  // protected override mapRole(role: string): string { ... }
+export class ExampleClient extends BaseApiClient {
+  // 如果目标 API 需要特殊转换，可覆写 BaseApiClient 方法。
 }
+```
 
-// ============================================
-// 3. provider.ts - Provider 实现（核心约 90 行）
-// ============================================
+```typescript
+// providers/example/provider.ts
 import * as vscode from 'vscode';
 import { BaseModelProvider } from '../base/model-provider';
 import { BaseChatProvider } from '../base/chat-provider';
-import { IProviderFactory, ProviderFactoryRegistry } from '../../core/provider-registry';
+import { ProviderFactoryRegistry, type IProviderFactory } from '../../core/provider-registry';
 import { createProviderLogger, logger as globalLogger } from '../../core/logger';
-import { ModelProviderConfig } from '../base/model-provider';
-import { OPENAI_MODELS } from './models';
-import { OpenAIClient } from './client';
+import { CONFIG_SECTION } from '../../core/consts';
+import { EXAMPLE_MODELS } from './models';
+import { ExampleClient } from './client';
 
-const PROVIDER_ID = 'openai';
-const CONFIG_SECTION = 'copilot-models';
-const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+const PROVIDER_ID = 'example';
+const DEFAULT_BASE_URL = 'https://api.example.com';
 
-// 日志
 const logger = {
-  ...createProviderLogger(PROVIDER_ID, 'OpenAI'),
+  ...createProviderLogger(PROVIDER_ID, 'Example'),
   chat: globalLogger.chat,
   stream: globalLogger.stream,
 };
 
-// ============================================
-// 3.1 ModelProvider 配置
-// ============================================
-const modelProviderConfig: ModelProviderConfig = {
+const modelProviderConfig = {
   providerId: PROVIDER_ID,
-  providerName: 'OpenAI',
+  providerName: 'Example',
   configSection: CONFIG_SECTION,
   defaultBaseUrl: DEFAULT_BASE_URL,
-  models: OPENAI_MODELS,
-  apiKeyPrompt: 'Enter your OpenAI API Key',
-  apiKeyPlaceholder: 'sk-...',
-  createClient: (baseUrl, apiKey) => new OpenAIClient(baseUrl, apiKey),
+  models: EXAMPLE_MODELS,
+  apiKeyPrompt: 'Enter your Example API Key',
+  apiKeyPlaceholder: 'example-sk-...',
+  createClient: (
+    baseUrl: string,
+    apiKey: string,
+  ) => new ExampleClient(baseUrl, apiKey),
 };
 
-// ============================================
-// 3.2 ModelProvider 子类
-// ============================================
-class OpenAIModelProvider extends BaseModelProvider {
+class ExampleModelProvider extends BaseModelProvider {
   constructor(context: vscode.ExtensionContext) {
     super(context, modelProviderConfig);
   }
 }
 
-// ============================================
-// 3.3 ChatProvider 子类（仅需覆写特殊逻辑）
-// ============================================
-export class OpenAIChatProvider extends BaseChatProvider {
+export class ExampleChatProvider extends BaseChatProvider {
   constructor(context: vscode.ExtensionContext) {
-    super(context, new OpenAIModelProvider(context));
-    logger.info('OpenAIChatProvider created');
+    super(context, new ExampleModelProvider(context));
+    logger.info('ExampleChatProvider created');
   }
-
-  // 如有特殊消息转换需求可覆写，如：
-  // protected override convertMessages(request: ApiRequest): void { ... }
 }
 
-// ============================================
-// 3.4 ProviderFactory 实现
-// ============================================
-export class OpenAIProviderFactory implements IProviderFactory {
+export class ExampleProviderFactory implements IProviderFactory {
   readonly providerId = PROVIDER_ID;
-  readonly providerName = 'OpenAI';
+  readonly providerName = 'Example';
 
   isEnabled(): boolean {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    return config.get<boolean>('enabledProviders')
-      ?.includes(this.providerId) ?? false;
+    return (
+      config.get<string[]>('enabledProviders')?.includes(this.providerId) ?? false
+    );
   }
 
   createChatProvider(context: vscode.ExtensionContext) {
-    return new OpenAIChatProvider(context);
+    return new ExampleChatProvider(context);
   }
 }
 
-// 注册工厂
-export function registerOpenAIProviderFactory(): void {
-  ProviderFactoryRegistry.getInstance().register(new OpenAIProviderFactory());
+export function registerExampleProviderFactory(): void {
+  ProviderFactoryRegistry.getInstance().register(new ExampleProviderFactory());
 }
+```
 
-// ============================================
-// 4. providers/index.ts - 统一注册
-// ============================================
+`src/providers/index.ts` 中的内置注册逻辑示例如下：
+
+```typescript
+export * from './base';
+export * from './deepseek';
+export * from './bigmodel';
+
 export function registerAllProviders(): void {
   const { registerDeepSeekProviderFactory } = require('./deepseek');
   registerDeepSeekProviderFactory();
 
   const { registerBigModelProviderFactory } = require('./bigmodel');
   registerBigModelProviderFactory();
-
-  // 添加新提供商
-  const { registerOpenAIProviderFactory } = require('./openai');
-  registerOpenAIProviderFactory();
 }
 ```
 

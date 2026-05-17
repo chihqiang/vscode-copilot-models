@@ -11,13 +11,3 @@ import type { IApiClient } from '../../core/interfaces';
 export function createBigModelClient(baseUrl: string, apiKey: string): IApiClient {
 	return createApiClient({ baseUrl, apiKey, providerName: 'BigModel' });
 }
-
-/**
- * @deprecated 使用 createBigModelClient 代替
- */
-export class BigModelClient {
-	constructor(baseUrl: string, apiKey: string) {
-		console.warn('BigModelClient is deprecated, use createBigModelClient instead');
-		return createBigModelClient(baseUrl, apiKey) as unknown as BigModelClient;
-	}
-}

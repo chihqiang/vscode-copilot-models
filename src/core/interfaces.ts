@@ -6,14 +6,19 @@ import vscode from 'vscode';
 
 /**
  * Chat Provider 接口 (简化版，用于类型检查)
+ * 继承 VS Code LanguageModelChatProvider 并扩展额外方法
  */
-export interface IChatProvider {
+export interface IChatProvider extends vscode.LanguageModelChatProvider {
 	/** 刷新模型选择器 */
 	refreshModelPicker(): void;
 	/** 准备停用 */
 	prepareForDeactivate(): Promise<void>;
 	/** 释放资源 */
 	dispose(): void;
+	/** 配置 API 密钥 */
+	configureApiKey(): Promise<void>;
+	/** 清除 API 密钥 */
+	clearApiKey(): Promise<void>;
 }
 
 /**

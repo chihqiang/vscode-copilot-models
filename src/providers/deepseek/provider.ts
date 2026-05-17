@@ -13,12 +13,8 @@ import {
 } from '../base/chat-provider';
 import { BaseModelProvider, type ModelProviderConfig } from '../base/model-provider';
 import { createDeepSeekClient } from './client';
-import {
-	DEEPSEEK_CONFIG_SECTION,
-	DEEPSEEK_DEFAULT_BASE_URL,
-	DEEPSEEK_MODELS,
-	DEEPSEEK_PROVIDER_ID,
-} from './models';
+import { DEEPSEEK_DEFAULT_BASE_URL, DEEPSEEK_MODELS, DEEPSEEK_PROVIDER_ID } from './models';
+import { CONFIG_SECTION } from '../../core/consts';
 
 /** DeepSeek 日志记录器 */
 const logger = createProviderLogger(DEEPSEEK_PROVIDER_ID, 'DeepSeek');
@@ -29,7 +25,7 @@ const logger = createProviderLogger(DEEPSEEK_PROVIDER_ID, 'DeepSeek');
 const deepseekModelProviderConfig: ModelProviderConfig = {
 	providerId: DEEPSEEK_PROVIDER_ID,
 	providerName: 'DeepSeek',
-	configSection: DEEPSEEK_CONFIG_SECTION,
+	configSection: CONFIG_SECTION,
 	defaultBaseUrl: DEEPSEEK_DEFAULT_BASE_URL,
 	models: DEEPSEEK_MODELS,
 	apiKeyPrompt: 'Enter your DeepSeek API Key',
@@ -76,7 +72,7 @@ export class DeepSeekChatProvider extends BaseChatProvider {
 const deepseekProviderFactory = createProviderFactory({
 	providerId: DEEPSEEK_PROVIDER_ID,
 	providerName: 'DeepSeek',
-	configSection: DEEPSEEK_CONFIG_SECTION,
+	configSection: CONFIG_SECTION,
 	createChatProvider: (context) => {
 		const chatProvider = new DeepSeekChatProvider(context);
 		ModelRegistry.getInstance().registerProvider(chatProvider.modelProvider as unknown as IModelProvider);

@@ -7,12 +7,11 @@ import type {
 	ApiMessage,
 	ApiRequest,
 	ApiTool,
-	ApiToolCall,
-	ApiUsage,
 	IModelProvider,
 	ModelDefinition,
 } from '../../core/interfaces';
 import type { StreamCallbacks } from '../../core/interfaces';
+import { ApiError, CancelledError, TimeoutError } from './client';
 import { logger } from '../../core/logger';
 
 /**
@@ -522,10 +521,26 @@ export abstract class BaseChatProvider implements vscode.LanguageModelChatProvid
 			const callbacks = this.createStreamCallbacks(progress);
 			await client.streamChatCompletion(request, callbacks, token);
 		} catch (error) {
+			if (error instanceof TimeoutError) {
+				logger.chat.error(`[${this.providerId}] Request timeout`);
+				throw error;
+			}
+
+			if (error instanceof CancelledError) {
+				logger.chat.info(`[${this.providerId}] Request cancelled`);
+				throw error;
+			}
+
+			if (error instanceof ApiError) {
+				logger.chat.error(`[${this.providerId}] API error: ${error.message}`);
+				throw error;
+			}
+
 			if (error instanceof Error && error.message.includes('timeout')) {
 				logger.chat.error(`[${this.providerId}] Request timeout`);
-				throw new Error(`${this.providerName} request timeout, please try again`);
+				throw new TimeoutError(this.providerName, 0);
 			}
+
 			throw error;
 		}
 	}

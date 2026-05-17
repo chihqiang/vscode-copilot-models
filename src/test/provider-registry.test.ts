@@ -29,6 +29,19 @@ suite('ProviderFactoryRegistry Test Suite', () => {
 		assert.strictEqual(instance1, instance2, 'getInstance should return same singleton instance');
 	});
 
+	test('resetInstance clears singleton state', () => {
+		const instance1 = ProviderFactoryRegistry.getInstance();
+		instance1.register(createMockFactory('factory-reset', 'Factory Reset'));
+		assert.strictEqual(instance1.count, 1);
+
+		ProviderFactoryRegistry._resetInstance();
+		assert.strictEqual(ProviderFactoryRegistry._isInitialized(), false);
+
+		const instance2 = ProviderFactoryRegistry.getInstance();
+		assert.notStrictEqual(instance1, instance2);
+		assert.strictEqual(instance2.count, 0);
+	});
+
 	test('register adds factory to registry', () => {
 		const registry = ProviderFactoryRegistry.getInstance();
 		const factory = createMockFactory('test-factory', 'Test Factory');

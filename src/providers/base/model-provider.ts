@@ -42,6 +42,7 @@ export class BaseModelProvider implements IModelProvider {
 	private readonly _apiKeyPrompt: string;
 	private readonly _apiKeyPlaceholder: string;
 	private readonly _createClient: (baseUrl: string, apiKey: string) => IApiClient;
+	private readonly _lowerId: string;
 
 	constructor(context: vscode.ExtensionContext, config: ModelProviderConfig) {
 		this._context = context;
@@ -52,14 +53,14 @@ export class BaseModelProvider implements IModelProvider {
 		this._apiKeyPrompt = config.apiKeyPrompt ?? `Enter your ${config.providerName} API Key`;
 		this._apiKeyPlaceholder = config.apiKeyPlaceholder ?? 'your-api-key-here';
 		this._createClient = config.createClient;
+		this._lowerId = this.toLowerCaseFirstChar(config.providerId);
 
-		const lowerId = this.toLowerCaseFirstChar(config.providerId);
 		this.config = {
 			vendorId: config.providerId,
 			vendorName: config.providerName,
 			baseUrl: config.defaultBaseUrl,
-			apiKeyConfigKey: `${config.configSection}.${lowerId}ApiKey`,
-			apiKeySecretKey: `${config.configSection}.${lowerId}.apiKey`,
+			apiKeyConfigKey: `${config.configSection}.${this._lowerId}ApiKey`,
+			apiKeySecretKey: `${config.configSection}.${this._lowerId}.apiKey`,
 			modelIdOverridesConfigKey: `${config.configSection}.modelIdOverrides`,
 		};
 

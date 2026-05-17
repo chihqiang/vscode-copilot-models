@@ -9,7 +9,7 @@ import { logger } from './logger';
  * 全局模型注册表
  */
 export class ModelRegistry {
-	private static instance: ModelRegistry;
+	private static instance: ModelRegistry | undefined;
 	private providers: Map<string, IModelProvider> = new Map();
 	private models: Map<string, ModelDefinition[]> = new Map();
 
@@ -28,6 +28,26 @@ export class ModelRegistry {
 	}
 
 	/**
+	 * 重置单例实例 (仅用于测试)
+	 * @internal
+	 */
+	static _resetInstance(): void {
+		if (ModelRegistry.instance) {
+			ModelRegistry.instance.clear();
+			ModelRegistry.instance = undefined;
+			logger.registry.debug('ModelRegistry instance reset');
+		}
+	}
+
+	/**
+	 * 检查实例是否已初始化 (用于测试)
+	 * @internal
+	 */
+	static _isInitialized(): boolean {
+		return ModelRegistry.instance !== undefined;
+	}
+
+	/**
 	 * 注册模型提供商
 	 */
 	registerProvider(provider: IModelProvider): void {
@@ -35,12 +55,12 @@ export class ModelRegistry {
 			logger.registry.warn(`Provider "${provider.id}" is already registered, skipping`);
 			return;
 		}
+		const models = provider.getModels();
 		this.providers.set(provider.id, provider);
-		this.models.set(provider.id, provider.getModels());
-		logger.registry.info(`Registered provider: ${provider.id} with ${provider.getModels().length} models`);
+		this.models.set(provider.id, models);
+		logger.registry.info(`Registered provider: ${provider.id} with ${models.length} models`);
 
-		// 打印注册的模型列表
-		for (const model of provider.getModels()) {
+		for (const model of models) {
 			logger.registry.debug(`  - Model: ${model.id} (${model.family})`);
 		}
 	}

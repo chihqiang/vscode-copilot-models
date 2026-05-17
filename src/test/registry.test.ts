@@ -59,6 +59,20 @@ suite('ModelRegistry Test Suite', () => {
 		assert.strictEqual(instance1, instance2, 'getInstance should return same singleton instance');
 	});
 
+	test('resetInstance clears singleton state', () => {
+		const instance1 = ModelRegistry.getInstance();
+		const provider = createMockProvider('test-provider', testModels);
+		instance1.registerProvider(provider);
+		assert.strictEqual(instance1.hasProviders(), true);
+
+		ModelRegistry._resetInstance();
+		assert.strictEqual(ModelRegistry._isInitialized(), false);
+
+		const instance2 = ModelRegistry.getInstance();
+		assert.notStrictEqual(instance1, instance2);
+		assert.strictEqual(instance2.hasProviders(), false);
+	});
+
 	test('registerProvider adds provider to registry', () => {
 		const registry = ModelRegistry.getInstance();
 		const provider = createMockProvider('test-provider', testModels);
