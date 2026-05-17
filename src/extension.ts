@@ -21,13 +21,9 @@ const chatProviders: Map<string, vscode.LanguageModelChatProvider> = new Map();
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	logger.core.info(`Activating extension: ${context.extension.packageJSON.displayName} v${context.extension.packageJSON.version}`);
-	logger.core.info(`Extension path: ${context.extension.extensionPath}`);
-
 	try {
 		// 注册所有内置提供者
-		logger.core.info('Registering built-in providers...');
 		registerAllProviders();
-
 		// 获取所有已启用的提供者并注册
 		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
 		logger.core.info(`Found ${factories.length} enabled provider(s)`);
@@ -72,8 +68,6 @@ function registerProvider(factory: IProviderFactory, context: vscode.ExtensionCo
  * 注册通用命令
  */
 function registerCommands(): void {
-	logger.core.info('Registering commands...');
-
 	// 设置 API 密钥（先选择服务商，再输入 token）
 	vscode.commands.registerCommand('copilot-models.setApiKey', async () => {
 		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
