@@ -3,7 +3,7 @@
  */
 
 import vscode from 'vscode';
-import type { ApiRequest, IModelProvider, ModelDefinition } from '../../core/interfaces';
+import type { ApiRequest, ModelDefinition } from '../../core/interfaces';
 import { createProviderLogger } from '../../core/logger';
 import { ModelRegistry } from '../../core/registry';
 import { ProviderFactoryRegistry, createProviderFactory } from '../../core/provider-registry';

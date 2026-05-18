@@ -3,7 +3,7 @@
  */
 
 import vscode from 'vscode';
-import type { ApiRequest, IApiClient, IModelProvider, ModelDefinition, ProviderConfig } from '../../core/interfaces';
+import type { IApiClient, IModelProvider, ModelDefinition, ProviderConfig } from '../../core/interfaces';
 import { logger } from '../../core/logger';
 
 /**
