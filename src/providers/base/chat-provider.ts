@@ -233,7 +233,7 @@ export abstract class BaseChatProvider implements vscode.LanguageModelChatProvid
 			statusIcon: hasApiKey ? undefined : new vscode.ThemeIcon('warning'),
 			maxInputTokens: model.maxInputTokens,
 			maxOutputTokens: model.maxOutputTokens,
-			isUserSelectable: true,
+			isUserSelectable: hasApiKey,
 			capabilities: {
 				toolCalling: model.capabilities.toolCalling,
 				imageInput: model.capabilities.imageInput,
