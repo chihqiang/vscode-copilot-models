@@ -83,7 +83,7 @@ function registerProvider(factory: IProviderFactory, context: vscode.ExtensionCo
 
 	try {
 		// 创建 Chat Provider 并注册到 VS Code
-		const chatProvider = factory.createChatProvider(context) as unknown as IChatProvider;
+		const chatProvider = factory.createChatProvider(context);
 		const disposable = vscode.lm.registerLanguageModelChatProvider(providerId, chatProvider);
 		context.subscriptions.push(disposable);
 		chatProviders.set(providerId, chatProvider);

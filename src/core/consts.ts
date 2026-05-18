@@ -13,15 +13,6 @@ export const LANGUAGE_MODEL_CHAT_SYSTEM_ROLE = 3;
 /** SecretStorage 中 API 密钥的键名前缀 */
 export const API_KEY_SECRET_PREFIX = 'copilot-models';
 
-/** 欢迎引导显示状态键名 */
-export const WELCOME_SHOWN_KEY = 'copilot-models.welcomeShown';
-
-/** 欢迎引导 ID */
-export const WALKTHROUGH_ID = 'copilot-models#gettingStarted';
-
-/** 请求转储文件夹名称 */
-export const REQUEST_DUMP_FOLDER = 'request-dumps';
-
 /** 注册的模型定义 */
 export interface RegisteredModels {
 	[key: string]: ModelDefinition[];

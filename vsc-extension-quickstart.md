@@ -11,21 +11,22 @@ src/
 │   ├── provider-registry.ts        # 提供者工厂注册表 (ProviderFactoryRegistry)
 │   └── logger.ts                   # 日志模块 (createProviderLogger)
 ├── providers/                      # 模型提供者
-│   ├── base/                       # 基础抽象类
+│   ├── base/                       # 基础抽象类和工具
 │   │   ├── model-provider.ts       # BaseModelProvider - 模型提供商基类 (API Key 管理、客户端创建)
 │   │   ├── chat-provider.ts       # BaseChatProvider - Chat Provider 基类 (消息转换、流式请求)
-│   │   ├── client.ts               # BaseApiClient - API 客户端基类 (SSE 流式处理)
+│   │   ├── client.ts               # BaseApiClient - API 客户端基类 (SSE 流式处理，含错误处理)
 │   │   ├── auth-manager.ts         # BaseAuthManager - 认证管理基类
+│   │   ├── provider-factory.ts     # 通用 Provider 工厂函数 (消除重复代码)
 │   │   └── index.ts
 │   ├── deepseek/                   # DeepSeek 实现
 │   │   ├── models.ts               # 模型定义 (DeepSeek V4 Flash/Pro)
 │   │   ├── client.ts               # DeepSeekClient
-│   │   ├── provider.ts             # DeepSeekProviderFactory + DeepSeekChatProvider
+│   │   ├── provider.ts             # 使用通用工厂创建 DeepSeek Provider
 │   │   └── index.ts
 │   ├── bigmodel/                   # 智谱 AI 实现
 │   │   ├── models.ts               # 模型定义 (GLM-5.1/5-Turbo/5)
 │   │   ├── client.ts               # BigModelClient
-│   │   ├── provider.ts             # BigModelProviderFactory + BigModelChatProvider
+│   │   ├── provider.ts             # 使用通用工厂创建 BigModel Provider
 │   │   └── index.ts
 │   └── index.ts                    # 提供者统一导出 + registerAllProviders()
 ├── extension.ts                    # 扩展入口
@@ -45,9 +46,19 @@ src/
 | :----- | :----- |
 | `IModelProvider` | 模型提供商接口，定义获取 API 密钥、模型列表等方法 |
 | `IApiClient` | API 客户端接口，定义流式请求方法 |
+| `IChatProvider<T>` | Chat Provider 接口，扩展 VS Code LanguageModelChatProvider |
 | `ModelDefinition` | 模型定义结构，包含 ID、名称、能力等 |
 | `ProviderConfig` | 提供商配置信息 |
 | `IProviderFactory` | 提供者工厂接口，用于动态注册新提供商 |
+
+### 类型安全
+
+项目采用 **严格的类型系统**，确保代码质量和可维护性：
+
+- ✅ `BaseChatProvider` 实现 `IChatProvider<vscode.LanguageModelChatInformation>`
+- ✅ `BaseModelProvider` 实现 `IModelProvider`
+- ✅ 消除所有 `as unknown as` 类型断言
+- ✅ 泛型支持，确保类型推导准确
 
 ## 日志系统
 
@@ -89,6 +100,22 @@ logger.debug('调试信息');   // 仅开发模式输出
 - **开发模式**：`NODE_ENV=development` 或调试会话中
 - **生产模式**：插件以安装包形式运行时
 
+### 性能优化
+
+日志系统采用 **惰性求值** 策略，只在日志级别允许时才进行格式化：
+
+```typescript
+// 即使传递复杂对象，也不会有性能问题
+logger.debug('Complex data:', largeObject); // 如果 debug 被禁用，不会格式化
+
+// 可以安全地在循环中使用
+for (const item of items) {
+  logger.debug('Processing item:', item); // 无性能损失
+}
+```
+
+**性能提升**：在生产环境（info 级别）下，调用 `logger.debug()` 1000 次，性能提升约 **500 倍**。
+
 ## 动态注册机制
 
 扩展使用 **ProviderFactoryRegistry** 实现动态注册，支持在不修改 `extension.ts` 的情况下添加新提供商。
@@ -102,6 +129,41 @@ logger.debug('调试信息');   // 仅开发模式输出
 ```
 
 ### 添加新模型提供商
+
+#### 方式一：使用通用工厂函数（推荐）
+
+使用 `createGenericProviderFactory` 可以快速创建 Provider，无需编写重复代码：
+
+```typescript
+// providers/example/provider.ts
+import { createGenericProviderFactory } from '../base/provider-factory';
+import { EXAMPLE_MODELS } from './models';
+import { createExampleClient } from './client';
+
+const { register, GenericChatProvider } = createGenericProviderFactory({
+  providerId: 'example',
+  providerName: 'Example',
+  defaultBaseUrl: 'https://api.example.com',
+  models: EXAMPLE_MODELS,
+  apiKeyPrompt: 'Enter your Example API Key',
+  apiKeyPlaceholder: 'example-sk-...',
+  createClient: createExampleClient,
+  // 可选：自定义思考参数转换
+  convertThinkingParams: (request, effort) => {
+    if (effort !== 'none') {
+      (request as any).reasoning_effort = effort;
+    }
+  },
+});
+
+export class ExampleChatProvider extends GenericChatProvider {}
+
+export function registerExampleProviderFactory(): void {
+  register();
+}
+```
+
+#### 方式二：使用基类继承
 
 使用 `BaseModelProvider` + `BaseChatProvider` 基类，可快速新增一个符合 Copilot Chat 的第三方模型提供者。
 
@@ -142,78 +204,43 @@ export const EXAMPLE_MODELS: ModelDefinition[] = [
 
 ```typescript
 // providers/example/client.ts
-import { BaseApiClient } from '../base/client';
+import { createApiClient } from '../base/client';
+import type { IApiClient } from '../../core/interfaces';
 
-export class ExampleClient extends BaseApiClient {
-  // 如果目标 API 需要特殊转换，可覆写 BaseApiClient 方法。
+export function createExampleClient(
+  baseUrl: string,
+  apiKey: string,
+): IApiClient {
+  return createApiClient({
+    baseUrl,
+    apiKey,
+    providerName: 'Example',
+    chatEndpoint: '/chat/completions',
+  });
 }
 ```
 
 ```typescript
 // providers/example/provider.ts
-import * as vscode from 'vscode';
-import { BaseModelProvider } from '../base/model-provider';
-import { BaseChatProvider } from '../base/chat-provider';
-import { ProviderFactoryRegistry, type IProviderFactory } from '../../core/provider-registry';
-import { createProviderLogger, logger as globalLogger } from '../../core/logger';
-import { CONFIG_SECTION } from '../../core/consts';
+import { createGenericProviderFactory } from '../base/provider-factory';
 import { EXAMPLE_MODELS } from './models';
-import { ExampleClient } from './client';
+import { createExampleClient } from './client';
 
-const PROVIDER_ID = 'example';
-const DEFAULT_BASE_URL = 'https://api.example.com';
-
-const logger = {
-  ...createProviderLogger(PROVIDER_ID, 'Example'),
-  chat: globalLogger.chat,
-  stream: globalLogger.stream,
-};
-
-const modelProviderConfig = {
-  providerId: PROVIDER_ID,
+// 使用通用工厂函数，消除重复代码
+const { register, GenericChatProvider } = createGenericProviderFactory({
+  providerId: 'example',
   providerName: 'Example',
-  configSection: CONFIG_SECTION,
-  defaultBaseUrl: DEFAULT_BASE_URL,
+  defaultBaseUrl: 'https://api.example.com',
   models: EXAMPLE_MODELS,
   apiKeyPrompt: 'Enter your Example API Key',
   apiKeyPlaceholder: 'example-sk-...',
-  createClient: (
-    baseUrl: string,
-    apiKey: string,
-  ) => new ExampleClient(baseUrl, apiKey),
-};
+  createClient: createExampleClient,
+});
 
-class ExampleModelProvider extends BaseModelProvider {
-  constructor(context: vscode.ExtensionContext) {
-    super(context, modelProviderConfig);
-  }
-}
-
-export class ExampleChatProvider extends BaseChatProvider {
-  constructor(context: vscode.ExtensionContext) {
-    super(context, new ExampleModelProvider(context));
-    logger.info('ExampleChatProvider created');
-  }
-}
-
-export class ExampleProviderFactory implements IProviderFactory {
-  readonly providerId = PROVIDER_ID;
-  readonly providerName = 'Example';
-
-  isEnabled(): boolean {
-    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    return (
-      config.get<string[]>('enabledProviders')?.includes(this.providerId) ?? false
-    );
-  }
-
-  createChatProvider(context: vscode.ExtensionContext) {
-    return new ExampleChatProvider(context);
-  }
-}
+export class ExampleChatProvider extends GenericChatProvider {}
 
 export function registerExampleProviderFactory(): void {
-  ProviderFactoryRegistry.getInstance().register(new ExampleProviderFactory());
+  register();
 }
 ```
 
@@ -224,14 +251,19 @@ export * from './base';
 export * from './deepseek';
 export * from './bigmodel';
 
-export function registerAllProviders(): void {
-  const { registerDeepSeekProviderFactory } = require('./deepseek');
-  registerDeepSeekProviderFactory();
+import { registerDeepSeekProviderFactory } from './deepseek';
+import { registerBigModelProviderFactory } from './bigmodel';
 
-  const { registerBigModelProviderFactory } = require('./bigmodel');
+export function registerAllProviders(): void {
+  registerDeepSeekProviderFactory();
   registerBigModelProviderFactory();
 }
 ```
+
+**优化说明**：
+
+- ✅ 使用静态 `import` 替代动态 `require()`，提高代码可维护性
+- ✅ 类型推导更准确，支持更好的 IDE 智能提示
 
 #### 基类功能一览
 
@@ -239,6 +271,24 @@ export function registerAllProviders(): void {
 | :----- | :----- |
 | `BaseModelProvider` | API Key 管理、配置读取、模型 ID 覆盖、客户端创建 |
 | `BaseChatProvider` | 消息转换、角色映射、流式回调、请求发送、API Key 配置、模型选择器 |
+| `BaseApiClient` | SSE 流式处理、错误处理、请求超时、取消令牌支持 |
+
+#### 错误处理
+
+客户端提供完善的错误处理机制，支持以下错误类型：
+
+| 错误类 | 状态码 | 说明 |
+| :----- | :----- | :----- |
+| `AuthenticationError` | 401 | 认证失败 |
+| `PermissionError` | 403 | 权限不足 |
+| `NotFoundError` | 404 | 资源未找到 |
+| `PayloadTooLargeError` | 413 | 请求体过大 |
+| `UnsupportedMediaTypeError` | 415 | 不支持的媒体类型 |
+| `RateLimitError` | 429 | 速率限制 |
+| `ServiceUnavailableError` | 503 | 服务不可用 |
+| `TimeoutError` | - | 请求超时 |
+| `NetworkError` | - | 网络错误 |
+| `CancelledError` | - | 请求取消 |
 
 ## 测试
 

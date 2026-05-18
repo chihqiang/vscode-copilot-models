@@ -7,6 +7,7 @@ import type {
 	ApiMessage,
 	ApiRequest,
 	ApiTool,
+	IChatProvider,
 	IModelProvider,
 	ModelDefinition,
 } from '../../core/interfaces';
@@ -45,6 +46,10 @@ export interface ConversationSegment {
 	index: number;
 	id: string;
 	timestamp: number;
+}
+
+function hasTimestamp(msg: unknown): msg is { timestamp: number } {
+	return typeof msg === 'object' && msg !== null && 'timestamp' in msg && typeof (msg as Record<string, unknown>)['timestamp'] === 'number';
 }
 
 /**
@@ -100,7 +105,7 @@ export interface ChatProviderConfig {
 /**
  * 基础 Chat Provider 实现
  */
-export abstract class BaseChatProvider implements vscode.LanguageModelChatProvider, vscode.Disposable {
+export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageModelChatInformation>, vscode.Disposable {
 	protected readonly globalStorageUri: vscode.Uri;
 	protected readonly onDidChangeLanguageModelChatInformationEmitter = new vscode.EventEmitter<void>();
 	protected readonly providerId: string;
@@ -233,7 +238,7 @@ export abstract class BaseChatProvider implements vscode.LanguageModelChatProvid
 			statusIcon: hasApiKey ? undefined : new vscode.ThemeIcon('warning'),
 			maxInputTokens: model.maxInputTokens,
 			maxOutputTokens: model.maxOutputTokens,
-			isUserSelectable: true,
+			isUserSelectable: hasApiKey,
 			capabilities: {
 				toolCalling: model.capabilities.toolCalling,
 				imageInput: model.capabilities.imageInput,
@@ -255,9 +260,7 @@ export abstract class BaseChatProvider implements vscode.LanguageModelChatProvid
 		let index = 0;
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const msg = messages[i];
-			// @ts-expect-error timestamp 是内部属性
-			if (msg.timestamp && typeof msg.timestamp === 'number') {
-				// @ts-expect-error timestamp 是内部属性
+			if (hasTimestamp(msg)) {
 				latestTimestamp = msg.timestamp;
 				index = i;
 				break;

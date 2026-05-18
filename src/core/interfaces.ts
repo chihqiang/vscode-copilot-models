@@ -8,7 +8,7 @@ import vscode from 'vscode';
  * Chat Provider 接口 (简化版，用于类型检查)
  * 继承 VS Code LanguageModelChatProvider 并扩展额外方法
  */
-export interface IChatProvider extends vscode.LanguageModelChatProvider {
+export interface IChatProvider<T extends vscode.LanguageModelChatInformation = vscode.LanguageModelChatInformation> extends vscode.LanguageModelChatProvider<T> {
 	/** 刷新模型选择器 */
 	refreshModelPicker(): void;
 	/** 准备停用 */
