@@ -3,6 +3,7 @@
  */
 
 import vscode from 'vscode';
+import type { IChatProvider } from './interfaces';
 
 /**
  * 提供者工厂接口
@@ -16,7 +17,7 @@ export interface IProviderFactory {
 	/** 是否启用此提供者 (可通过配置控制) */
 	isEnabled(): boolean;
 	/** 创建 Chat Provider 实例 */
-	createChatProvider(context: vscode.ExtensionContext): vscode.LanguageModelChatProvider;
+	createChatProvider(context: vscode.ExtensionContext): IChatProvider;
 }
 
 /**
@@ -143,7 +144,7 @@ export interface ProviderFactoryConfig {
 	providerName: string;
 	configSection: string;
 	enabledByDefault?: boolean;
-	createChatProvider: (context: vscode.ExtensionContext) => vscode.LanguageModelChatProvider;
+	createChatProvider: (context: vscode.ExtensionContext) => IChatProvider;
 }
 
 /**

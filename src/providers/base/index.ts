@@ -5,3 +5,4 @@
 export * from './auth-manager';
 export * from './client';
 export * from './chat-provider';
+export * from './provider-factory';

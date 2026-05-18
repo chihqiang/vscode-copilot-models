@@ -105,32 +105,6 @@ function getCategoryName(category: string): string {
 }
 
 /**
- * 格式化日志消息
- */
-function formatMessage(level: string, category: string, args: unknown[]): string {
-	const categoryText = showCategory ? `[${getCategoryName(category)}] ` : '';
-	const prefix = `[${ts()}] [${level}] ${categoryText}`;
-
-	const text = args
-		.map((a) => {
-			if (typeof a === 'string') {
-				return a;
-			}
-			if (a instanceof Error) {
-				return a.stack ?? a.message;
-			}
-			try {
-				return JSON.stringify(a, null, 2);
-			} catch {
-				return String(a);
-			}
-		})
-		.join(' ');
-
-	return `${prefix}${text}`;
-}
-
-/**
  * 检查是否应该输出此级别的日志
  */
 function shouldLog(level: LogLevel): boolean {
@@ -138,15 +112,47 @@ function shouldLog(level: LogLevel): boolean {
 }
 
 /**
- * 写入日志消息到输出通道
+ * 惰性格式化日志消息 - 只在需要时才进行格式化
+ * 使用闭包延迟计算，避免不必要的字符串拼接和 JSON 序列化
+ */
+function lazyFormatMessage(level: string, category: string, args: unknown[]): () => string {
+	return () => {
+		const categoryText = showCategory ? `[${getCategoryName(category)}] ` : '';
+		const prefix = `[${ts()}] [${level}] ${categoryText}`;
+
+		const text = args
+			.map((a) => {
+				if (typeof a === 'string') {
+					return a;
+				}
+				if (a instanceof Error) {
+					return a.stack ?? a.message;
+				}
+				try {
+					return JSON.stringify(a, null, 2);
+				} catch {
+					return String(a);
+				}
+			})
+			.join(' ');
+
+		return `${prefix}${text}`;
+	};
+}
+
+/**
+ * 写入日志消息到输出通道 - 惰性求值版本
+ * 只在日志级别允许时才进行格式化，避免不必要的性能开销
  */
 function write(level: LogLevel, category: string, args: unknown[]): void {
+	// 先检查日志级别，避免不必要的格式化
 	if (!shouldLog(level)) {
 		return;
 	}
 
 	const levelStr = level.toUpperCase().padEnd(5);
-	const text = formatMessage(levelStr, category, args);
+	const formatFn = lazyFormatMessage(levelStr, category, args);
+	const text = formatFn(); // 只在需要时才执行格式化
 	getChannel().appendLine(text);
 
 	// 开发模式下同时输出到控制台

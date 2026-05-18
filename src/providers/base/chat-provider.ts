@@ -7,6 +7,7 @@ import type {
 	ApiMessage,
 	ApiRequest,
 	ApiTool,
+	IChatProvider,
 	IModelProvider,
 	ModelDefinition,
 } from '../../core/interfaces';
@@ -100,7 +101,7 @@ export interface ChatProviderConfig {
 /**
  * 基础 Chat Provider 实现
  */
-export abstract class BaseChatProvider implements vscode.LanguageModelChatProvider, vscode.Disposable {
+export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageModelChatInformation>, vscode.Disposable {
 	protected readonly globalStorageUri: vscode.Uri;
 	protected readonly onDidChangeLanguageModelChatInformationEmitter = new vscode.EventEmitter<void>();
 	protected readonly providerId: string;

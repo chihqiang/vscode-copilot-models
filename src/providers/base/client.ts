@@ -128,6 +128,51 @@ export class CancelledError extends Error {
 }
 
 /**
+ * 请求体过大错误 (413)
+ */
+export class PayloadTooLargeError extends ApiError {
+    constructor(providerId: string, responseBody?: string) {
+        super(
+            `Request payload too large for ${providerId}. Please reduce the input size.`,
+            413,
+            providerId,
+            responseBody,
+        );
+        this.name = 'PayloadTooLargeError';
+    }
+}
+
+/**
+ * 不支持的媒体类型错误 (415)
+ */
+export class UnsupportedMediaTypeError extends ApiError {
+    constructor(providerId: string, responseBody?: string) {
+        super(
+            `Unsupported media type for ${providerId}. Please check the request format.`,
+            415,
+            providerId,
+            responseBody,
+        );
+        this.name = 'UnsupportedMediaTypeError';
+    }
+}
+
+/**
+ * 服务不可用错误 (503)
+ */
+export class ServiceUnavailableError extends ApiError {
+    constructor(providerId: string, responseBody?: string) {
+        super(
+            `Service temporarily unavailable for ${providerId}. Please try again later.`,
+            503,
+            providerId,
+            responseBody,
+        );
+        this.name = 'ServiceUnavailableError';
+    }
+}
+
+/**
  * 根据 HTTP 状态码创建适当的错误类型
  */
 function createApiError(statusCode: number, providerId: string, errorBody: string, responseBody?: string): ApiError {
@@ -138,8 +183,14 @@ function createApiError(statusCode: number, providerId: string, errorBody: strin
             return new PermissionError(providerId, responseBody);
         case 404:
             return new NotFoundError('API endpoint', providerId, responseBody);
+        case 413:
+            return new PayloadTooLargeError(providerId, responseBody);
+        case 415:
+            return new UnsupportedMediaTypeError(providerId, responseBody);
         case 429:
             return new RateLimitError(providerId, undefined, responseBody);
+        case 503:
+            return new ServiceUnavailableError(providerId, responseBody);
         default:
             return new ApiError(
                 `${providerId} API error (${statusCode}): ${errorBody}`,
