@@ -204,10 +204,19 @@ export const EXAMPLE_MODELS: ModelDefinition[] = [
 
 ```typescript
 // providers/example/client.ts
-import { BaseApiClient } from '../base/client';
+import { createApiClient } from '../base/client';
+import type { IApiClient } from '../../core/interfaces';
 
-export class ExampleClient extends BaseApiClient {
-  // 如果目标 API 需要特殊转换，可覆写 BaseApiClient 方法。
+export function createExampleClient(
+  baseUrl: string,
+  apiKey: string,
+): IApiClient {
+  return createApiClient({
+    baseUrl,
+    apiKey,
+    providerName: 'Example',
+    chatEndpoint: '/chat/completions',
+  });
 }
 ```
 

@@ -48,6 +48,10 @@ export interface ConversationSegment {
 	timestamp: number;
 }
 
+function hasTimestamp(msg: unknown): msg is { timestamp: number } {
+	return typeof msg === 'object' && msg !== null && 'timestamp' in msg && typeof (msg as Record<string, unknown>)['timestamp'] === 'number';
+}
+
 /**
  * 准备好的聊天请求
  */
@@ -256,9 +260,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 		let index = 0;
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const msg = messages[i];
-			// @ts-expect-error timestamp 是内部属性
-			if (msg.timestamp && typeof msg.timestamp === 'number') {
-				// @ts-expect-error timestamp 是内部属性
+			if (hasTimestamp(msg)) {
 				latestTimestamp = msg.timestamp;
 				index = i;
 				break;

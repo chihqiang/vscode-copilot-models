@@ -5,6 +5,7 @@
 import vscode from 'vscode';
 import type { IApiClient, IModelProvider, ModelDefinition, ProviderConfig } from '../../core/interfaces';
 import { logger } from '../../core/logger';
+import { BaseAuthManager } from './auth-manager';
 
 /**
  * ModelProvider 配置
@@ -43,6 +44,7 @@ export class BaseModelProvider implements IModelProvider {
 	private readonly _apiKeyPlaceholder: string;
 	private readonly _createClient: (baseUrl: string, apiKey: string) => IApiClient;
 	private readonly _lowerId: string;
+	private readonly _authManager: BaseAuthManager;
 
 	constructor(context: vscode.ExtensionContext, config: ModelProviderConfig) {
 		this._context = context;
@@ -54,6 +56,7 @@ export class BaseModelProvider implements IModelProvider {
 		this._apiKeyPlaceholder = config.apiKeyPlaceholder ?? 'your-api-key-here';
 		this._createClient = config.createClient;
 		this._lowerId = this.toLowerCaseFirstChar(config.providerId);
+		this._authManager = new BaseAuthManager(context, config.configSection, config.providerId);
 
 		this.config = {
 			vendorId: config.providerId,
@@ -72,41 +75,19 @@ export class BaseModelProvider implements IModelProvider {
 	}
 
 	getApiKey(): Promise<string | undefined> {
-		return Promise.resolve(this._context.secrets.get(this.config.apiKeySecretKey));
+		return this._authManager.getApiKey();
 	}
 
 	async hasApiKey(): Promise<boolean> {
-		const key = await this.getApiKey();
-		return key !== undefined && key.length > 0;
+		return this._authManager.hasApiKey();
 	}
 
 	async promptForApiKey(): Promise<boolean> {
-		logger.auth.info(`[${this.id}] Prompting for API key...`);
-		const apiKey = await vscode.window.showInputBox({
-			title: this._apiKeyPrompt,
-			password: true,
-			ignoreFocusOut: true,
-			placeHolder: this._apiKeyPlaceholder,
-			prompt: this._apiKeyPrompt,
-		});
-
-		if (apiKey === undefined) {
-			logger.auth.info(`[${this.id}] API key input cancelled`);
-			return false;
-		}
-
-		if (apiKey.trim().length === 0) {
-			vscode.window.showWarningMessage('API key cannot be empty');
-			return false;
-		}
-
-		await this._context.secrets.store(this.config.apiKeySecretKey, apiKey.trim());
-		logger.auth.info(`[${this.id}] API key saved successfully`);
-		return true;
+		return this._authManager.promptForApiKey(this._apiKeyPrompt, this._apiKeyPlaceholder);
 	}
 
 	deleteApiKey(): Promise<void> {
-		return Promise.resolve(this._context.secrets.delete(this.config.apiKeySecretKey));
+		return this._authManager.deleteApiKey();
 	}
 
 	getModels(): ModelDefinition[] {
