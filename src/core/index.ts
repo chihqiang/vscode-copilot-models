@@ -6,4 +6,4 @@ export * from './interfaces';
 export * from './consts';
 export * from './registry';
 export * from './logger';
-export { default as logger } from './logger';
+export { default as logger, initLogger } from './logger';

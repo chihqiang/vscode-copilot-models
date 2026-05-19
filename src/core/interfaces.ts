@@ -187,6 +187,16 @@ export interface ProviderConfig {
 }
 
 /**
+ * 客户端配置选项
+ */
+export interface ClientOptions {
+	/** API 请求超时时间（毫秒） */
+	timeoutMs?: number;
+	/** 最大重试次数 */
+	maxRetries?: number;
+}
+
+/**
  * 模型提供商接口
  */
 export interface IModelProvider {
@@ -205,7 +215,7 @@ export interface IModelProvider {
 	/** 获取该提供商的模型列表 */
 	getModels(): ModelDefinition[];
 	/** 获取 API 客户端 */
-	createClient(apiKey: string): IApiClient;
+	createClient(apiKey: string, options?: ClientOptions): IApiClient;
 }
 
 /**

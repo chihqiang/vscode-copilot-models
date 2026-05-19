@@ -58,6 +58,21 @@
         "command": "copilot-models.openSettings",
         "title": "Open Settings",
         "description": "Open extension settings"
+      },
+      {
+        "command": "copilot-models.showLog",
+        "title": "Show Log",
+        "description": "Show the Copilot Models log panel"
+      },
+      {
+        "command": "copilot-models.clearLog",
+        "title": "Clear Log",
+        "description": "Clear the Copilot Models log panel"
+      },
+      {
+        "command": "copilot-models.refreshModels",
+        "title": "Refresh Models",
+        "description": "Refresh the model list"
       }
     ],
     "configuration": {
@@ -101,6 +116,19 @@
             "verbose"
           ],
           "description": "Debug mode for logging"
+        },
+        "copilot-models.timeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 5000,
+          "description": "API request timeout in milliseconds (default: 60000)"
+        },
+        "copilot-models.maxRetries": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Maximum number of API request retries (default: 1)"
         },
         "copilot-models.bigmodelBaseUrl": {
           "type": "string",

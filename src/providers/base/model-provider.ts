@@ -26,7 +26,7 @@ export interface ModelProviderConfig {
 	/** API 密钥 placeholder */
 	readonly apiKeyPlaceholder?: string;
 	/** 创建 API 客户端工厂函数 */
-	createClient(baseUrl: string, apiKey: string): IApiClient;
+	createClient(baseUrl: string, apiKey: string, options?: { timeoutMs?: number; maxRetries?: number }): IApiClient;
 }
 
 /**
@@ -42,7 +42,7 @@ export class BaseModelProvider implements IModelProvider {
 	private readonly _configSection: string;
 	private readonly _apiKeyPrompt: string;
 	private readonly _apiKeyPlaceholder: string;
-	private readonly _createClient: (baseUrl: string, apiKey: string) => IApiClient;
+	private readonly _createClient: (baseUrl: string, apiKey: string, options?: { timeoutMs?: number; maxRetries?: number }) => IApiClient;
 	private readonly _lowerId: string;
 	private readonly _authManager: BaseAuthManager;
 
@@ -95,10 +95,18 @@ export class BaseModelProvider implements IModelProvider {
 		return this._models;
 	}
 
-	createClient(apiKey: string): IApiClient {
+	createClient(apiKey: string, options?: { timeoutMs?: number; maxRetries?: number }): IApiClient {
 		const baseUrl = this.getBaseUrl();
 		logger.provider.debug(`[${this.id}] Creating client, baseUrl: ${baseUrl}`);
-		return this._createClient(baseUrl, apiKey);
+
+		const config = vscode.workspace.getConfiguration(this._configSection);
+		const clientOptions: { timeoutMs?: number; maxRetries?: number } = {};
+		const timeoutMs = options?.timeoutMs ?? config.get<number>('timeoutMs');
+		const maxRetries = options?.maxRetries ?? config.get<number>('maxRetries');
+		if (timeoutMs !== undefined) clientOptions.timeoutMs = timeoutMs;
+		if (maxRetries !== undefined) clientOptions.maxRetries = maxRetries;
+
+		return this._createClient(baseUrl, apiKey, clientOptions);
 	}
 
 	getBaseUrl(): string {

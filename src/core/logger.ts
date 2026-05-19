@@ -48,24 +48,6 @@ let currentLogLevel: LogLevel = 'info';
 let isDevelopmentMode = false;
 
 /**
- * 检测是否为开发模式
- */
-function detectDevelopmentMode(): boolean {
-	try {
-		if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
-			return true;
-		}
-		if (typeof process !== 'undefined' && process.env?.NODE_ENV === undefined) {
-			const isDebug = typeof (globalThis as Record<string, unknown>)['__vscdebug'] !== 'undefined';
-			if (isDebug) { return true; }
-		}
-		return false;
-	} catch {
-		return false;
-	}
-}
-
-/**
  * 获取默认日志级别
  */
 function getDefaultLogLevel(): LogLevel {
@@ -76,10 +58,13 @@ function getDefaultLogLevel(): LogLevel {
 }
 
 /** 初始化日志模块 */
-function initLogger(): void {
-	isDevelopmentMode = detectDevelopmentMode();
+export function initLogger(context: vscode.ExtensionContext): void {
+	isDevelopmentMode = context.extensionMode === vscode.ExtensionMode.Development
+		|| process.env.NODE_ENV === 'development'
+		|| context.extensionMode === vscode.ExtensionMode.Test;
 	currentLogLevel = getDefaultLogLevel();
 }
+
 
 /** 获取或创建输出通道 */
 function getChannel(): vscode.OutputChannel {
@@ -222,9 +207,6 @@ export function createProviderLogger(providerId: string, providerName: string): 
 		debug: (...args: unknown[]) => write('debug', providerId, args),
 	};
 }
-
-// 初始化日志模块
-initLogger();
 
 /**
  * 日志记录器导出对象

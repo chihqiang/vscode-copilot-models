@@ -32,7 +32,7 @@ export interface GenericProviderOptions<TClient extends IApiClient = IApiClient>
 	/** 配置节名称 */
 	configSection?: string;
 	/** 创建 API 客户端函数 */
-	createClient: (baseUrl: string, apiKey: string) => TClient;
+	createClient: (baseUrl: string, apiKey: string, options?: { timeoutMs?: number; maxRetries?: number }) => TClient;
 	/** 转换思考参数函数（可选） */
 	convertThinkingParams?: (request: ApiRequest, effort: ThinkingEffort) => void;
 }

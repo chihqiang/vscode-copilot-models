@@ -159,7 +159,7 @@ export function createProviderFactory(config: ProviderFactoryConfig): IProviderF
 		providerName,
 		isEnabled: () => {
 			const cfg = vscode.workspace.getConfiguration(configSection);
-			return cfg.get<boolean>('enabled', enabledByDefault);
+			return cfg.get<boolean>(`${providerId}.enabled`, enabledByDefault);
 		},
 		createChatProvider,
 	};
