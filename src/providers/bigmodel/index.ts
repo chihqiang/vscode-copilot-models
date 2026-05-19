@@ -68,7 +68,13 @@ export function createBigModelClient(
 	apiKey: string,
 	options?: { timeoutMs?: number; maxRetries?: number },
 ): IApiClient {
-	return createApiClient({ baseUrl, apiKey, providerName: 'BigModel', ...options });
+	return createApiClient({
+		baseUrl,
+		apiKey,
+		providerName: 'BigModel',
+		timeoutMs: options?.timeoutMs ?? 60_000,
+		maxRetries: options?.maxRetries ?? 1,
+	});
 }
 
 // ── Provider 注册 ─────────────────────────────────────

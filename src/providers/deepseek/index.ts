@@ -53,7 +53,13 @@ export function createDeepSeekClient(
 	apiKey: string,
 	options?: { timeoutMs?: number; maxRetries?: number },
 ): IApiClient {
-	return createApiClient({ baseUrl, apiKey, providerName: 'DeepSeek', ...options });
+	return createApiClient({
+		baseUrl,
+		apiKey,
+		providerName: 'DeepSeek',
+		timeoutMs: options?.timeoutMs ?? 60_000,
+		maxRetries: options?.maxRetries ?? 1,
+	});
 }
 
 // ── Provider 注册 ─────────────────────────────────────

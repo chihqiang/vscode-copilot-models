@@ -235,8 +235,8 @@ export interface ApiClientConfig {
     baseUrl: string;
     apiKey: string;
     providerName: string;
-    timeoutMs?: number;
-    maxRetries?: number;
+    timeoutMs: number;
+    maxRetries: number;
 }
 
 export function createApiClient(config: ApiClientConfig): IApiClient {
@@ -251,8 +251,8 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
             this.baseUrl = config.baseUrl;
             this.apiKey = config.apiKey;
             this.providerName = config.providerName;
-            this.timeoutMs = config.timeoutMs ?? 60_000;
-            const maxRetries = config.maxRetries ?? 1;
+            this.timeoutMs = config.timeoutMs;
+            const maxRetries = config.maxRetries;
 
             this.openai = new OpenAI({
                 apiKey: this.apiKey,

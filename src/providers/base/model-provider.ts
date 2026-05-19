@@ -100,13 +100,10 @@ export class BaseModelProvider implements IModelProvider {
 		logger.provider.debug(`[${this.id}] Creating client, baseUrl: ${baseUrl}`);
 
 		const config = vscode.workspace.getConfiguration(this._configSection);
-		const clientOptions: { timeoutMs?: number; maxRetries?: number } = {};
-		const timeoutMs = options?.timeoutMs ?? config.get<number>('timeoutMs');
-		const maxRetries = options?.maxRetries ?? config.get<number>('maxRetries');
-		if (timeoutMs !== undefined) clientOptions.timeoutMs = timeoutMs;
-		if (maxRetries !== undefined) clientOptions.maxRetries = maxRetries;
+		const timeoutMs = options?.timeoutMs ?? config.get<number>('timeoutMs') ?? 60_000;
+		const maxRetries = options?.maxRetries ?? config.get<number>('maxRetries') ?? 1;
 
-		return this._createClient(baseUrl, apiKey, clientOptions);
+		return this._createClient(baseUrl, apiKey, { timeoutMs, maxRetries });
 	}
 
 	getBaseUrl(): string {
