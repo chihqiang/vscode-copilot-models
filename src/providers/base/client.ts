@@ -1,24 +1,13 @@
 /**
- * 基础 API 客户端 - SSE 流式 API 客户端的通用实现
+ * 基础 API 客户端 - 使用 OpenAI SDK 实现
  */
 
 import type {CancellationToken} from 'vscode';
-import type {ApiRequest, StreamCallbacks, StreamChunk} from '../../core/interfaces';
+import type {ApiMessage, ApiRequest, ApiTool, StreamCallbacks} from '../../core/interfaces';
 import {IApiClient} from '../../core/interfaces';
 import {logger} from '../../core/logger';
+import OpenAI from 'openai';
 
-/**
- * 默认请求超时时间（毫秒）
- */
-const DEFAULT_TIMEOUT_MS = 60_000; // 60 秒
-const DEFAULT_CHAT_ENDPOINT = '/chat/completions';
-// ============================================================================
-// 自定义错误类型
-// ============================================================================
-
-/**
- * API 错误基类
- */
 export class ApiError extends Error {
     constructor(
         message: string,
@@ -30,24 +19,15 @@ export class ApiError extends Error {
         this.name = 'ApiError';
     }
 
-    /**
-     * 是否为客户端错误 (4xx)
-     */
     get isClientError(): boolean {
         return this.statusCode >= 400 && this.statusCode < 500;
     }
 
-    /**
-     * 是否为服务端错误 (5xx)
-     */
     get isServerError(): boolean {
         return this.statusCode >= 500;
     }
 }
 
-/**
- * 认证错误 (401)
- */
 export class AuthenticationError extends ApiError {
     constructor(providerId: string, responseBody?: string) {
         super(`Authentication failed for ${providerId}. Please check your API key.`, 401, providerId, responseBody);
@@ -55,9 +35,6 @@ export class AuthenticationError extends ApiError {
     }
 }
 
-/**
- * 权限错误 (403)
- */
 export class PermissionError extends ApiError {
     constructor(providerId: string, responseBody?: string) {
         super(`Permission denied for ${providerId}. Please check your API permissions.`, 403, providerId, responseBody);
@@ -65,9 +42,6 @@ export class PermissionError extends ApiError {
     }
 }
 
-/**
- * 资源未找到错误 (404)
- */
 export class NotFoundError extends ApiError {
     constructor(resource: string, providerId: string, responseBody?: string) {
         super(`Resource not found: ${resource}`, 404, providerId, responseBody);
@@ -75,9 +49,6 @@ export class NotFoundError extends ApiError {
     }
 }
 
-/**
- * 速率限制错误 (429)
- */
 export class RateLimitError extends ApiError {
     constructor(providerId: string, public readonly retryAfter?: number, responseBody?: string) {
         super(
@@ -90,9 +61,6 @@ export class RateLimitError extends ApiError {
     }
 }
 
-/**
- * 网络错误
- */
 export class NetworkError extends Error {
     constructor(
         message: string,
@@ -104,9 +72,6 @@ export class NetworkError extends Error {
     }
 }
 
-/**
- * 请求超时错误
- */
 export class TimeoutError extends Error {
     constructor(
         public readonly providerId: string,
@@ -117,9 +82,6 @@ export class TimeoutError extends Error {
     }
 }
 
-/**
- * 请求取消错误
- */
 export class CancelledError extends Error {
     constructor(public readonly providerId: string) {
         super(`Request cancelled for ${providerId}`);
@@ -127,9 +89,6 @@ export class CancelledError extends Error {
     }
 }
 
-/**
- * 请求体过大错误 (413)
- */
 export class PayloadTooLargeError extends ApiError {
     constructor(providerId: string, responseBody?: string) {
         super(
@@ -142,9 +101,6 @@ export class PayloadTooLargeError extends ApiError {
     }
 }
 
-/**
- * 不支持的媒体类型错误 (415)
- */
 export class UnsupportedMediaTypeError extends ApiError {
     constructor(providerId: string, responseBody?: string) {
         super(
@@ -157,9 +113,6 @@ export class UnsupportedMediaTypeError extends ApiError {
     }
 }
 
-/**
- * 服务不可用错误 (503)
- */
 export class ServiceUnavailableError extends ApiError {
     constructor(providerId: string, responseBody?: string) {
         super(
@@ -172,9 +125,6 @@ export class ServiceUnavailableError extends ApiError {
     }
 }
 
-/**
- * 根据 HTTP 状态码创建适当的错误类型
- */
 function createApiError(statusCode: number, providerId: string, errorBody: string, responseBody?: string): ApiError {
     switch (statusCode) {
         case 401:
@@ -201,28 +151,6 @@ function createApiError(statusCode: number, providerId: string, errorBody: strin
     }
 }
 
-// ============================================================================
-// 工具函数
-// ============================================================================
-
-/**
- * 安全地将对象序列化为 JSON，处理循环引用
- */
-function safeStringify(obj: unknown): string {
-    return JSON.stringify(obj, (_, value) => {
-        if (typeof value === 'object' && value !== null && !(value instanceof Array)) {
-            // 只有 Map 类型才需要转换（其他对象保持原样）
-            if (value instanceof Map) {
-                return Object.fromEntries(value);
-            }
-        }
-        return value;
-    });
-}
-
-/**
- * 深度复制对象并脱敏敏感字段
- */
 function sanitizeForLog(obj: unknown): unknown {
     if (typeof obj !== 'object' || obj === null) {
         return obj;
@@ -233,7 +161,7 @@ function sanitizeForLog(obj: unknown): unknown {
     }
 
     const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    for (const [key, value] of Object.entries(obj)) {
         if (isSensitiveKey(key)) {
             result[key] = '[REDACTED]';
         } else if (typeof value === 'object' && value !== null) {
@@ -245,63 +173,95 @@ function sanitizeForLog(obj: unknown): unknown {
     return result;
 }
 
-/**
- * 判断是否为敏感字段
- */
 function isSensitiveKey(key: string): boolean {
-    const sensitivePatterns = [
-        'api[_-]?key',
-        'authorization',
-        ' bearer',
-        'password',
-        'token',
-        'secret',
-    ];
+    const sensitivePatterns = ['api[_-]?key', 'authorization', ' bearer', 'password', 'token', 'secret'];
     const lowerKey = key.toLowerCase();
     return sensitivePatterns.some((pattern) => lowerKey.includes(pattern.toLowerCase()));
 }
 
-/**
- * 判断是否为中止错误
- */
-function isAbortError(error: unknown): boolean {
-    return error instanceof Error && error.name === 'AbortError';
+function toChatCompletionMessageParam(message: ApiMessage): OpenAI.ChatCompletionMessageParam {
+    switch (message.role) {
+        case 'system':
+            return {
+                role: 'system',
+                content: message.content,
+            };
+        case 'user':
+            return {
+                role: 'user',
+                content: message.content,
+            };
+        case 'assistant': {
+            const assistantMessage: OpenAI.ChatCompletionAssistantMessageParam = {
+                role: 'assistant',
+                content: message.content,
+            };
+            if (message.tool_calls && message.tool_calls.length > 0) {
+                assistantMessage.tool_calls = message.tool_calls.map((toolCall) => ({
+                    id: toolCall.id,
+                    type: toolCall.type,
+                    function: {
+                        name: toolCall.function.name,
+                        arguments: toolCall.function.arguments,
+                    },
+                }));
+            }
+            return assistantMessage;
+        }
+        case 'tool':
+            return {
+                role: 'tool',
+                content: message.content,
+                tool_call_id: message.tool_call_id ?? '',
+            };
+        default:
+            throw new Error('Unsupported message role');
+    }
 }
 
-/**
- * API 客户端配置
- */
+function toChatCompletionTool(tool: ApiTool): OpenAI.ChatCompletionTool {
+    const toolDefinition: OpenAI.ChatCompletionTool = {
+        type: tool.type,
+        function: {
+            name: tool.function.name,
+            ...(tool.function.description ? { description: tool.function.description } : {}),
+            ...(tool.function.parameters ? { parameters: tool.function.parameters } : {}),
+        },
+    };
+    return toolDefinition;
+}
+
 export interface ApiClientConfig {
-    /** 基础 URL */
     baseUrl: string;
-    /** API 密钥 */
     apiKey: string;
-    /** 提供商名称 */
     providerName: string;
-    /** 聊天补全端点（必须传入） */
-    chatEndpoint: string;
-    /** 请求超时（毫秒），可选 */
-    timeoutMs?: number;
+    timeoutMs: number;
+    maxRetries: number;
 }
 
-/**
- * 创建 API 客户端实例
- */
 export function createApiClient(config: ApiClientConfig): IApiClient {
     return new (class implements IApiClient {
         readonly baseUrl: string;
         readonly apiKey: string;
-        readonly chatEndpoint: string;
         private readonly providerName: string;
         private readonly timeoutMs: number;
+        private readonly openai: OpenAI;
 
         constructor() {
             this.baseUrl = config.baseUrl;
             this.apiKey = config.apiKey;
-            this.chatEndpoint = config.chatEndpoint ?? DEFAULT_CHAT_ENDPOINT;
             this.providerName = config.providerName;
-            this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-            logger.api.debug(`[${this.providerName}] ApiClient created`);
+            this.timeoutMs = config.timeoutMs;
+            const maxRetries = config.maxRetries;
+
+            this.openai = new OpenAI({
+                apiKey: this.apiKey,
+                baseURL: this.baseUrl,
+                timeout: this.timeoutMs,
+                maxRetries,
+            });
+            
+            logger.api.debug(`[${this.providerName}] ApiClient created with OpenAI SDK`);
         }
 
         async streamChatCompletion(
@@ -309,8 +269,8 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
             callbacks: StreamCallbacks,
             cancellationToken?: CancellationToken,
         ): Promise<void> {
-            const {providerName, timeoutMs} = this;
-            logger.api.info(`[${providerName}] Starting streamChatCompletion, model: ${request.model}, timeout: ${timeoutMs}ms`);
+            const {providerName, openai} = this;
+            logger.api.info(`[${providerName}] Starting streamChatCompletion, model: ${request.model}`);
 
             const controller = new AbortController();
             const cancelListener = cancellationToken?.onCancellationRequested(() => {
@@ -323,230 +283,124 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
                 controller.abort();
             }
 
-            // 设置请求超时
-            const timeoutId = setTimeout(() => {
-                logger.api.warn(`[${providerName}] Request timeout after ${timeoutMs}ms`);
-                controller.abort();
-            }, timeoutMs);
-
             try {
-                const requestBody = {
-                    ...request,
+                const messages: OpenAI.ChatCompletionMessageParam[] = request.messages.map(toChatCompletionMessageParam);
+                const tools: OpenAI.ChatCompletionTool[] | undefined = request.tools?.map(toChatCompletionTool);
+
+                const requestBody: OpenAI.ChatCompletionCreateParamsStreaming = {
+                    model: request.model,
+                    messages,
+                    stream: true,
                     stream_options: {include_usage: true},
+                    ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+                    ...(request.top_p !== undefined ? { top_p: request.top_p } : {}),
+                    ...(request.max_tokens !== undefined ? { max_tokens: request.max_tokens } : {}),
+                    ...(tools ? { tools } : {}),
+                    ...(request.tool_choice ? { tool_choice: request.tool_choice } : {}),
                 };
 
-                // 打印脱敏后的请求体用于调试
-                logger.api.debug(`[${providerName}] Request body: ${safeStringify(sanitizeForLog(requestBody))}`);
+                logger.api.debug(`[${providerName}] Request body: ${JSON.stringify(sanitizeForLog(requestBody))}`);
 
-                const endpoint = `${this.baseUrl}${this.chatEndpoint}`;
-                logger.api.debug(`[${providerName}] POST ${endpoint}`);
-
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${this.apiKey}`,
-                    },
-                    body: safeStringify(requestBody),
+                const stream = await openai.chat.completions.create(requestBody, {
                     signal: controller.signal,
                 });
 
-                // 请求成功，清除超时
-                clearTimeout(timeoutId);
-
-                logger.api.debug(`[${providerName}] Response status: ${response.status}`);
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    let errorMessage: string;
-                    try {
-                        const errorJson = JSON.parse(errorText);
-                        errorMessage = errorJson.error?.message || errorJson.message || errorText;
-                    } catch {
-                        errorMessage = errorText;
-                    }
-                    logger.api.error(`[${providerName}] API error (${response.status}): ${errorMessage}`);
-                    throw createApiError(response.status, providerName, errorMessage, errorText);
-                }
-
-                if (!response.body) {
-                    logger.api.error(`[${providerName}] No response body received`);
-                    throw new ApiError('No response body received', 0, providerName);
-                }
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-                const bufferChunks: string[] = [];
-                let totalTokensReceived = 0;
-
-                interface PendingToolCall {
-                    id: string;
-                    type: 'function';
-                    function: { name: string[]; arguments: string[] };
-                }
-
-                const pendingToolCalls = new Map<number, PendingToolCall>();
+                const pendingToolCalls = new Map<number, { id: string; type: 'function'; function: { name: string; arguments: string } }>();
 
                 logger.api.debug(`[${providerName}] Streaming started`);
 
-                while (true) {
+                for await (const chunk of stream) {
                     if (cancellationToken?.isCancellationRequested) {
                         logger.api.info(`[${providerName}] Cancellation requested, stopping stream`);
-                        controller.abort();
                         return;
                     }
 
-                    const {done, value} = await reader.read();
-                    if (done) {
-                        logger.api.debug(`[${providerName}] Stream reader done`);
-                        break;
+                    const choice = chunk.choices?.[0];
+                    if (!choice) {
+                        continue;
                     }
 
-                    bufferChunks.push(decoder.decode(value, {stream: true}));
-                    const lines = (buffer + bufferChunks.join('')).split('\n');
-                    buffer = lines.pop() || '';
-                    bufferChunks.length = 0;
+                    const delta = choice.delta;
 
-                    for (const line of lines) {
-                        const trimmed = line.trim();
+                    if ('reasoning_content' in delta && typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+                        callbacks.onThinking(delta.reasoning_content);
+                    }
 
-                        if (!trimmed || trimmed.startsWith(':')) {
-                            continue;
+                    if (delta.content) {
+                        callbacks.onContent(delta.content);
+                    }
+
+                    if (delta.tool_calls) {
+                        for (const tc of delta.tool_calls) {
+                            let pending = pendingToolCalls.get(tc.index);
+                            if (!pending && tc.id) {
+                                pending = { id: tc.id, type: 'function', function: { name: '', arguments: '' } };
+                                pendingToolCalls.set(tc.index, pending);
+                            }
+                            if (pending) {
+                                if (tc.function?.name) {
+                                    pending.function.name += tc.function.name;
+                                }
+                                if (tc.function?.arguments) {
+                                    pending.function.arguments += tc.function.arguments;
+                                }
+                            }
                         }
+                    }
 
-                        if (trimmed === 'data: [DONE]') {
-                            logger.api.debug(`[${providerName}] Received [DONE] signal`);
-                            for (const tc of pendingToolCalls.values()) {
+                    if (choice.finish_reason === 'tool_calls' || choice.finish_reason === 'stop') {
+                        for (const tc of pendingToolCalls.values()) {
+                            if (tc.function.name) {
                                 callbacks.onToolCall({
                                     id: tc.id,
                                     type: tc.type,
-                                    function: {
-                                        name: tc.function.name.join(''),
-                                        arguments: tc.function.arguments.join(''),
-                                    },
+                                    function: { name: tc.function.name, arguments: tc.function.arguments },
                                 });
                             }
-                            pendingToolCalls.clear();
-                            callbacks.onDone();
-                            return;
                         }
+                        pendingToolCalls.clear();
+                    }
 
-                        if (!trimmed.startsWith('data: ')) {
-                            continue;
-                        }
-
-                        const jsonStr = trimmed.slice(6);
-                        try {
-                            const chunk = JSON.parse(jsonStr) as StreamChunk;
-
-                            // 统计 token
-                            if (chunk.usage) {
-                                totalTokensReceived++;
-                                if (totalTokensReceived % 50 === 0) {
-                                    logger.api.debug(`[${providerName}] Received ${totalTokensReceived} chunks`);
-                                }
-                            }
-
-                            // 捕获使用统计
-                            if (chunk.usage && callbacks.onUsage) {
-                                callbacks.onUsage(chunk.usage);
-                            }
-
-                            const choice = chunk.choices?.[0];
-                            if (choice) {
-                                // 思考内容
-                                const reasoning = choice.delta.reasoning_content;
-                                if (reasoning) {
-                                    callbacks.onThinking(reasoning);
-                                }
-
-                                // 普通内容
-                                if (choice.delta.content) {
-                                    callbacks.onContent(choice.delta.content);
-                                }
-
-                                // 工具调用
-                                if (choice.delta.tool_calls) {
-                                    for (const tc of choice.delta.tool_calls) {
-                                        let pending = pendingToolCalls.get(tc.index);
-                                        if (!pending && tc.id) {
-                                            pending = {
-                                                id: tc.id,
-                                                type: 'function',
-                                                function: {name: [], arguments: []},
-                                            };
-                                            pendingToolCalls.set(tc.index, pending);
-                                        }
-                                        if (pending) {
-                                            if (tc.function?.name) {
-                                                pending.function.name.push(tc.function.name);
-                                            }
-                                            if (tc.function?.arguments) {
-                                                pending.function.arguments.push(tc.function.arguments);
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 完成时刷新待处理的工具调用
-                                if (choice.finish_reason === 'tool_calls' || choice.finish_reason === 'stop') {
-                                    for (const tc of pendingToolCalls.values()) {
-                                        callbacks.onToolCall({
-                                            id: tc.id,
-                                            type: tc.type,
-                                            function: {
-                                                name: tc.function.name.join(''),
-                                                arguments: tc.function.arguments.join(''),
-                                            },
-                                        });
-                                    }
-                                    pendingToolCalls.clear();
-                                }
-                            }
-                        } catch (e) {
-                            logger.api.warn(`[${providerName}] Failed to parse SSE chunk:`, e);
-                        }
+                    if (chunk.usage && callbacks.onUsage) {
+                        callbacks.onUsage({
+                            prompt_tokens: chunk.usage.prompt_tokens,
+                            completion_tokens: chunk.usage.completion_tokens,
+                            total_tokens: chunk.usage.total_tokens,
+                        });
                     }
                 }
 
-                logger.api.info(`[${providerName}] Stream completed, total chunks: ${totalTokensReceived}`);
+                logger.api.info(`[${providerName}] Stream completed`);
                 callbacks.onDone();
             } catch (error) {
-                // 处理取消请求
                 if (cancellationToken?.isCancellationRequested) {
                     logger.api.info(`[${providerName}] Stream aborted due to cancellation`);
                     callbacks.onError(new CancelledError(providerName));
                     return;
                 }
 
-                // 处理超时
-                if (isAbortError(error)) {
-                    logger.api.error(`[${providerName}] Request timeout after ${timeoutMs}ms`);
-                    callbacks.onError(new TimeoutError(providerName, timeoutMs));
+                if (error instanceof Error && error.name === 'AbortError') {
+                    logger.api.error(`[${providerName}] Request timeout`);
+                    callbacks.onError(new TimeoutError(providerName, this.timeoutMs));
                     return;
                 }
 
-                // 处理网络错误
+                if (error instanceof OpenAI.APIError) {
+                    logger.api.error(`[${providerName}] API error (${error.status}): ${error.message}`);
+                    callbacks.onError(createApiError(error.status ?? 0, providerName, error.message, error.message));
+                    return;
+                }
+
                 if (error instanceof TypeError && error.message.includes('fetch')) {
                     logger.api.error(`[${providerName}] Network error:`, error);
                     callbacks.onError(new NetworkError(error.message, providerName, error));
                     return;
                 }
 
-                // 处理已知的 API 错误
-                if (error instanceof ApiError) {
-                    logger.api.error(`[${providerName}] API error (${error.statusCode}): ${error.message}`);
-                    callbacks.onError(error);
-                    return;
-                }
-
-                // 处理其他错误
                 const errorMsg = error instanceof Error ? error : new Error(String(error));
                 logger.api.error(`[${providerName}] Stream error:`, errorMsg);
                 callbacks.onError(errorMsg);
             } finally {
-                clearTimeout(timeoutId);
                 cancelListener?.dispose();
             }
         }

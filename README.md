@@ -38,16 +38,22 @@ Install the "Copilot Models" extension from the [VS Code Extension Marketplace](
 3. Press Enter, then enter the provider name (e.g., `deepseek` or `bigmodel`)
 4. Enter the corresponding API key
 
+> DeepSeek API Key can be obtained from [DeepSeek Platform](https://platform.deepseek.com/)
+> Zhipu AI API Key can be obtained from [Zhipu AI Open Platform](https://open.bigmodel.cn/)
+
 #### Method 2: Settings Page
 
 1. Press `Ctrl+,` to open VS Code settings
 2. Search for `copilot-models`
-3. Enter the API key in the corresponding provider's API Key field
+3. Configure provider enablement, base URLs, and debug options
 
-> **Tips**:
->
-> - DeepSeek API Key can be obtained from [DeepSeek Platform](https://platform.deepseek.com/)
-> - Zhipu AI API Key can be obtained from [Zhipu AI Open Platform](https://open.bigmodel.cn/)
+**Note:** API keys are managed through the command palette.
+They are stored in VS Code SecretStorage, not as plain settings.
+
+**Tips:**
+
+- DeepSeek API Key can be obtained from [DeepSeek Platform](https://platform.deepseek.com/)
+- Zhipu AI API Key can be obtained from [Zhipu AI Open Platform](https://open.bigmodel.cn/)
 
 ### 3. Start Using
 
@@ -77,14 +83,27 @@ Install the "Copilot Models" extension from the [VS Code Extension Marketplace](
 
 The following configuration options are available in VS Code settings:
 
-| Setting | Description | Default |
-| :------ | :----- | :------- |
-| DeepSeek API Key | DeepSeek API key | - |
-| DeepSeek Base URL | DeepSeek API base URL | `https://api.deepseek.com` |
-| BigModel API Key | Zhipu AI API key | - |
-| BigModel Base URL | Zhipu AI API | `https://open.bigmodel.cn/api/paas/v4` |
-| Max Tokens | Maximum generated tokens | 0 (unlimited) |
-| Debug Mode | Log level | `minimal` |
+- `copilot-models.deepseek.enabled`: Enable the DeepSeek provider.
+  Default: `true`.
+- `copilot-models.deepseekBaseUrl`: DeepSeek API base URL.
+  Default: `https://api.deepseek.com`.
+- `copilot-models.bigmodel.enabled`: Enable the BigModel provider.
+  Default: `true`.
+- `copilot-models.bigmodelBaseUrl`: BigModel API base URL.
+  Default: `https://open.bigmodel.cn/api/paas/v4`.
+- `copilot-models.modelIdOverrides`: Override model IDs for custom endpoints.
+  Default: `{}`.
+- `copilot-models.maxTokens`: Maximum generated tokens.
+  Default: `0` (unlimited).
+- `copilot-models.timeoutMs`: API request timeout in milliseconds.
+  Default: `60000`.
+- `copilot-models.maxRetries`: Maximum number of API request retries.
+  Default: `1`.
+- `copilot-models.debugMode`: Log level.
+  Default: `minimal`.
+
+> **Note**: API keys are managed through the command palette.
+> They are stored in VS Code SecretStorage, not as plain settings.
 
 ## Commands
 

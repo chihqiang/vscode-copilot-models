@@ -58,6 +58,21 @@
         "command": "copilot-models.openSettings",
         "title": "Open Settings",
         "description": "Open extension settings"
+      },
+      {
+        "command": "copilot-models.showLog",
+        "title": "Show Log",
+        "description": "Show the Copilot Models log panel"
+      },
+      {
+        "command": "copilot-models.clearLog",
+        "title": "Clear Log",
+        "description": "Clear the Copilot Models log panel"
+      },
+      {
+        "command": "copilot-models.refreshModels",
+        "title": "Refresh Models",
+        "description": "Refresh the model list"
       }
     ],
     "configuration": {
@@ -76,16 +91,21 @@
             "type": "string"
           }
         },
+        "copilot-models.deepseek.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the DeepSeek provider"
+        },
+        "copilot-models.bigmodel.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the BigModel provider"
+        },
         "copilot-models.maxTokens": {
           "type": "number",
           "default": 0,
           "minimum": 0,
           "description": "Maximum tokens to generate (0 = unlimited)"
-        },
-        "copilot-models.deepseekApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "DeepSeek API key (for CI/automation only, prefer secure storage)"
         },
         "copilot-models.debugMode": {
           "type": "string",
@@ -97,15 +117,23 @@
           ],
           "description": "Debug mode for logging"
         },
+        "copilot-models.timeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 5000,
+          "description": "API request timeout in milliseconds (default: 60000)"
+        },
+        "copilot-models.maxRetries": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Maximum number of API request retries (default: 1)"
+        },
         "copilot-models.bigmodelBaseUrl": {
           "type": "string",
           "default": "https://open.bigmodel.cn/api/paas/v4",
           "description": "BigModel API base URL"
-        },
-        "copilot-models.bigmodelApiKey": {
-          "type": "string",
-          "default": "",
-          "description": "BigModel API key (for CI/automation only, prefer secure storage)"
         }
       }
     }
@@ -114,10 +142,11 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
+    "lint:ts": "eslint \"src/**/*.ts\" --ext .ts",
     "lint:md": "markdownlint \"**/*.md\" --ignore node_modules",
     "test": "node out/test/runTest",
     "test:compile": "tsc -p ./",
-    "check": "run-s lint lint:md compile",
+    "check": "run-s lint lint:ts lint:md compile",
     "package:vsix": "npx vsce package",
     "package": "run-s compile package:vsix"
   },
@@ -135,6 +164,7 @@
     "npm-run-all2": "^8.0.4",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
-    "vsce": "^2.15.0"
+    "vsce": "^2.15.0",
+    "openai": "^6.38.0"
   }
 }

@@ -7,6 +7,7 @@ import type {
 	ApiMessage,
 	ApiRequest,
 	ApiTool,
+	ApiToolCall,
 	IChatProvider,
 	IModelProvider,
 	ModelDefinition,
@@ -49,7 +50,26 @@ export interface ConversationSegment {
 }
 
 function hasTimestamp(msg: unknown): msg is { timestamp: number } {
-	return typeof msg === 'object' && msg !== null && 'timestamp' in msg && typeof (msg as Record<string, unknown>)['timestamp'] === 'number';
+	if (typeof msg !== 'object' || msg === null) {
+		return false;
+	}
+
+	const timestamp = Reflect.get(msg, 'timestamp');
+	return typeof timestamp === 'number';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
+}
+
+function reportThinkingPart(progress: vscode.Progress<vscode.LanguageModelResponsePart>, text: string): void {
+	const ThinkingPartConstructor = (vscode as any).LanguageModelThinkingPart;
+	if (typeof ThinkingPartConstructor === 'function') {
+		progress.report(new ThinkingPartConstructor(text));
+		return;
+	}
+
+	progress.report(new vscode.LanguageModelTextPart(text));
 }
 
 /**
@@ -181,8 +201,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 		const lowerId = this.providerId.charAt(0).toLowerCase() + this.providerId.slice(1);
 		return (
 			e.affectsConfiguration(`${this.configSection}.${lowerId}BaseUrl`) ||
-			e.affectsConfiguration(`${this.configSection}.modelIdOverrides`) ||
-			e.affectsConfiguration(`${this.configSection}.${lowerId}ApiKey`)
+			e.affectsConfiguration(`${this.configSection}.modelIdOverrides`)
 		);
 	}
 
@@ -234,8 +253,8 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			family: model.family,
 			version: model.version,
 			detail: hasApiKey ? model.detail : 'API key required',
-			tooltip: hasApiKey ? undefined : 'Please configure API key',
-			statusIcon: hasApiKey ? undefined : new vscode.ThemeIcon('warning'),
+			tooltip: hasApiKey ? '' : 'Please configure API key',
+			statusIcon: new vscode.ThemeIcon(hasApiKey ? 'check' : 'warning'),
 			maxInputTokens: model.maxInputTokens,
 			maxOutputTokens: model.maxOutputTokens,
 			isUserSelectable: hasApiKey,
@@ -294,7 +313,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 
 		const modelDefinition = this.modelProvider.getModels().find((m) => m.id === modelInfo.id);
 		const isThinkingModel = modelDefinition?.capabilities.thinking ?? false;
-		const thinkingEffort = this.getConfiguredThinkingEffort(options as ModelConfigurationOptions);
+		const thinkingEffort = this.getConfiguredThinkingEffort(options);
 
 		logger.chat.debug(`[${this.providerId}] Model: ${modelInfo.id}, isThinkingModel: ${isThinkingModel}, thinkingEffort: ${thinkingEffort}`);
 
@@ -309,8 +328,8 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			model: this.getApiModelId(modelInfo.id),
 			messages: apiMessages,
 			stream: true,
-			tools,
-			tool_choice: tools && tools.length > 0 ? 'auto' : undefined,
+			...(tools ? { tools } : {}),
+			...(tools && tools.length > 0 ? { tool_choice: 'auto' } : {}),
 		};
 
 		// 如果是思考模型，添加思考相关参数
@@ -324,7 +343,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			request,
 			modelDefinition,
 			apiMessages,
-			tools,
+			...(tools ? { tools } : {}),
 			isThinkingModel,
 			thinkingEffort,
 		};
@@ -368,7 +387,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	protected convertThinkingParams(request: ApiRequest, effort: ThinkingEffort): void {
 		// 默认实现：使用 reasoning_effort 参数
 		if (effort !== 'none') {
-			(request as ApiRequest & { reasoning_effort?: string }).reasoning_effort = effort;
+			request.reasoning_effort = effort;
 		}
 	}
 
@@ -404,7 +423,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 		for (const message of messages) {
 			const role = this.mapRole(message.role);
 			let content = '';
-			let toolCalls: ApiMessage['tool_calls'] = [];
+			const toolCalls: ApiToolCall[] = [];
 			const toolResults: Array<{ callId: string; content: string }> = [];
 
 			for (const part of message.content) {
@@ -441,7 +460,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 					};
 
 					if (toolCalls.length > 0) {
-						msg.tool_calls = toolCalls as NonNullable<ApiMessage['tool_calls']>;
+						msg.tool_calls = toolCalls;
 					}
 
 					result.push(msg);
@@ -449,8 +468,8 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			} else {
 				if (content) {
 					result.push({
-						role: role as 'user' | 'assistant',
-						content: content,
+						role,
+						content,
 					});
 				}
 			}
@@ -472,7 +491,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	/**
 	 * 映射 VS Code 消息角色到 API 角色
 	 */
-	protected mapRole(role: vscode.LanguageModelChatMessageRole): string {
+	protected mapRole(role: vscode.LanguageModelChatMessageRole): 'user' | 'assistant' {
 		switch (role) {
 			case vscode.LanguageModelChatMessageRole.User:
 				return 'user';
@@ -494,11 +513,11 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 		}
 
 		return tools.map((tool) => ({
-			type: 'function' as const,
+			type: 'function',
 			function: {
 				name: tool.name,
-				description: tool.description,
-				parameters: tool.inputSchema as Record<string, unknown> | undefined,
+				...(tool.description ? { description: tool.description } : {}),
+				...(isRecord(tool.inputSchema) ? { parameters: tool.inputSchema } : {}),
 			},
 		}));
 	}
@@ -564,9 +583,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			},
 			onThinking: (text: string) => {
 				thinking += text;
-				// 使用 proposed API: LanguageModelThinkingPart
-				// @ts-expect-error LanguageModelThinkingPart is a proposed API
-				progress.report(new vscode.LanguageModelThinkingPart(text));
+				reportThinkingPart(progress, text);
 			},
 			onToolCall: (toolCall) => {
 				try {
@@ -657,7 +674,44 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 		_token: vscode.CancellationToken,
 	): Promise<number> {
 		const content = typeof text === 'string' ? text : this.extractTextFromMessage(text);
-		return Math.ceil(content.length / 4); // 简单估算：4 字符约等于 1 token
+		return this.estimateTokenCount(content);
+	}
+
+	/**
+	 * 估算文本的 token 数量
+	 * 使用 cl100k_base 编码的近似算法：
+	 *   - 英文单词: ~1.3 tokens/word
+	 *   - CJK 字符: ~2 tokens/char
+	 *   - 数字: ~0.25 tokens/digit
+	 *   - 其余字符 (标点/空格): ~0.25 tokens/char
+	 */
+	private estimateTokenCount(text: string): number {
+		let tokens = 0;
+
+		// 英文单词：按空格分词，每个词约 1.3 tokens
+		const words = text.match(/[a-zA-Z]+/g);
+		if (words) {
+			tokens += words.length * 1.3;
+		}
+
+		// CJK 字符：中/日/韩文字，每个约 2 tokens
+		const cjk = text.match(/[\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf\uf900-\ufaff]/g);
+		if (cjk) {
+			tokens += cjk.length * 2;
+		}
+
+		// 数字：每位数约 0.25 tokens
+		const digits = text.match(/[0-9]+/g);
+		if (digits) {
+			tokens += digits.reduce((s, n) => s + n.length * 0.25, 0);
+		}
+
+		// 剩余字符（标点、空格等）：每个约 0.25 tokens
+		const remaining = text.replace(/[a-zA-Z\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf\uf900-\ufaff0-9]/g, '');
+		tokens += remaining.length * 0.25;
+
+		// +1 安全边际
+		return Math.max(1, Math.ceil(tokens + 1));
 	}
 
 	/**

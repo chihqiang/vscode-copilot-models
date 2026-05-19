@@ -6,7 +6,7 @@
  */
 
 import vscode from 'vscode';
-import { logger } from './core';
+import { initLogger, logger } from './core';
 import type { IChatProvider } from './core/interfaces';
 import { ProviderFactoryRegistry, type IProviderFactory } from './core/provider-registry';
 import { ModelRegistry } from './core/registry';
@@ -16,6 +16,11 @@ import { registerAllProviders } from './providers';
  * 已激活的 Chat Provider 实例 (用于停用时清理)
  */
 const chatProviders: Map<string, IChatProvider> = new Map();
+
+/**
+ * 已注册的 Provider 注册 Disposables (用于动态启停)
+ */
+const registrationDisposables: Map<string, vscode.Disposable> = new Map();
 
 /**
  * 选择提供者 (用于命令中提取重复逻辑)
@@ -52,6 +57,7 @@ async function selectProvider(factories: IProviderFactory[]): Promise<IProviderF
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	logger.core.info(`Activating extension: ${context.extension.packageJSON.displayName} v${context.extension.packageJSON.version}`);
 	try {
+		initLogger(context);
 		// 注册所有内置提供者
 		registerAllProviders();
 		// 获取所有已启用的提供者并注册
@@ -64,6 +70,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 		// 注册通用命令
 		registerCommands();
+
+		// 监听配置变化，动态启停 Provider
+		context.subscriptions.push(
+			vscode.workspace.onDidChangeConfiguration((e) => {
+				if (!e.affectsConfiguration('copilot-models')) {
+					return;
+				}
+
+				const allFactories = ProviderFactoryRegistry.getInstance().getAllFactories();
+				for (const factory of allFactories) {
+					const isNowEnabled = factory.isEnabled();
+					const isCurrentlyRegistered = registrationDisposables.has(factory.providerId);
+
+					if (isNowEnabled && !isCurrentlyRegistered) {
+						logger.core.info(`Config changed: enabling provider "${factory.providerId}"`);
+						registerProvider(factory, context);
+					} else if (!isNowEnabled && isCurrentlyRegistered) {
+						logger.core.info(`Config changed: disabling provider "${factory.providerId}"`);
+						unregisterProvider(factory.providerId);
+					}
+				}
+			}),
+		);
 
 		logger.core.info(`Extension activated successfully with ${factories.length} provider(s): ${factories.map((f) => f.providerId).join(', ')}`);
 		logger.show(); // 自动显示日志面板
@@ -86,12 +115,32 @@ function registerProvider(factory: IProviderFactory, context: vscode.ExtensionCo
 		const chatProvider = factory.createChatProvider(context);
 		const disposable = vscode.lm.registerLanguageModelChatProvider(providerId, chatProvider);
 		context.subscriptions.push(disposable);
+		registrationDisposables.set(providerId, disposable);
 		chatProviders.set(providerId, chatProvider);
 
 		logger.core.info(`${providerName} provider registered successfully`);
 	} catch (error) {
 		logger.core.error(`Failed to register provider "${providerId}":`, error);
 	}
+}
+
+/**
+ * 注销单个提供者
+ */
+function unregisterProvider(providerId: string): void {
+	const disposable = registrationDisposables.get(providerId);
+	if (disposable) {
+		disposable.dispose();
+		registrationDisposables.delete(providerId);
+	}
+
+	const provider = chatProviders.get(providerId);
+	if (provider) {
+		provider.dispose();
+		chatProviders.delete(providerId);
+	}
+
+	logger.core.info(`Provider "${providerId}" unregistered`);
 }
 
 /**

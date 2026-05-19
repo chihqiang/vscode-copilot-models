@@ -34,16 +34,21 @@
 3. 按回车，输入服务商名称（如 `deepseek` 或 `bigmodel`）
 4. 输入对应的 API 密钥
 
+- DeepSeek API Key 可在 [DeepSeek 平台](https://platform.deepseek.com/) 获取
+- 智谱 AI API Key 可在 [智谱 AI 开放平台](https://open.bigmodel.cn/) 获取
+
 #### 方法二：设置页面
 
 1. 按 `Ctrl+,` 打开 VS Code 设置
 2. 搜索 `copilot-models`
-3. 在对应服务商的 API Key 字段输入密钥
+3. 配置服务商启用状态、基础 URL 和调试选项
 
-> **提示**:
->
-> - DeepSeek API Key 可在 [DeepSeek 平台](https://platform.deepseek.com/) 获取
-> - 智谱 AI API Key 可在 [智谱 AI 开放平台](https://open.bigmodel.cn/) 获取
+**注意**：API 密钥通过命令面板进行设置，并安全存储在 SecretStorage 中。
+
+**提示**:
+
+- DeepSeek API Key 可在 [DeepSeek 平台](https://platform.deepseek.com/) 获取
+- 智谱 AI API Key 可在 [智谱 AI 开放平台](https://open.bigmodel.cn/) 获取
 
 ### 3. 开始使用
 
@@ -71,16 +76,28 @@
 
 ## 配置选项
 
-在 VS Code 设置中可以找到以下配置项：
+以下配置项可在 VS Code 设置中找到：
 
-| 配置项 | 说明 | 默认值 |
-| :------ | :----- | :------- |
-| DeepSeek API Key | DeepSeek API 密钥 | - |
-| DeepSeek Base URL | DeepSeek API 基础地址 | `https://api.deepseek.com` |
-| BigModel API Key | 智谱 AI API 密钥 | - |
-| BigModel Base URL | 智谱 AI API 地址 | `https://open.bigmodel.cn/api/paas/v4` |
-| Max Tokens | 最大生成令牌数 | 0（无限制） |
-| Debug Mode | 日志级别 | `minimal` |
+- `copilot-models.deepseek.enabled`：启用 DeepSeek 提供者。
+  默认：`true`。
+- `copilot-models.deepseekBaseUrl`：DeepSeek API 基础地址。
+  默认：`https://api.deepseek.com`。
+- `copilot-models.bigmodel.enabled`：启用 BigModel 提供者。
+  默认：`true`。
+- `copilot-models.bigmodelBaseUrl`：BigModel API 基础地址。
+  默认：`https://open.bigmodel.cn/api/paas/v4`。
+- `copilot-models.modelIdOverrides`：覆盖模型 ID（用于自定义 API 端点）。
+  默认：`{}`。
+- `copilot-models.maxTokens`：最大生成令牌数。
+  默认：`0`（无限制）。
+- `copilot-models.timeoutMs`：API 请求超时时间（毫秒）。
+  默认：`60000`。
+- `copilot-models.maxRetries`：API 请求最大重试次数。
+  默认：`1`。
+- `copilot-models.debugMode`：日志级别。
+  默认：`minimal`。
+
+> **注意**：API 密钥通过命令面板设置，并安全存储在 SecretStorage 中。
 
 ## 命令
 
@@ -101,8 +118,8 @@
 2. 日志会输出到 "Copilot Models" 输出面板
 3. 如果需要更详细的日志，可在设置中将 `Debug Mode` 改为 `verbose`
 
+[marketplace]: https://marketplace.visualstudio.com/items?itemName=chihqiang.vscode-copilot-models
+
 ## 许可证
 
 Apache-2.0
-
-[marketplace]: https://marketplace.visualstudio.com/items?itemName=chihqiang.vscode-copilot-models

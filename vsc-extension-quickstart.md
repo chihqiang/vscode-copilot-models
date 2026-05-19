@@ -14,7 +14,7 @@ src/
 │   ├── base/                       # 基础抽象类和工具
 │   │   ├── model-provider.ts       # BaseModelProvider - 模型提供商基类 (API Key 管理、客户端创建)
 │   │   ├── chat-provider.ts       # BaseChatProvider - Chat Provider 基类 (消息转换、流式请求)
-│   │   ├── client.ts               # BaseApiClient - API 客户端基类 (SSE 流式处理，含错误处理)
+│   │   ├── client.ts               # BaseApiClient - API 客户端基类 (使用 OpenAI SDK 处理流式请求)
 │   │   ├── auth-manager.ts         # BaseAuthManager - 认证管理基类
 │   │   ├── provider-factory.ts     # 通用 Provider 工厂函数 (消除重复代码)
 │   │   └── index.ts
@@ -39,6 +39,19 @@ src/
     ├── interfaces.test.ts          # 接口和数据结构测试
     └── utils.test.ts               # 工具函数测试
 ```
+
+## 配置与 API Key
+
+- API 密钥通过命令面板设置：使用 `Copilot Models: Set API Key`，
+  选择提供者并输入密钥。密钥存储在 VS Code `SecretStorage` 中。
+- 扩展提供以下设置项（示例）：
+  - `copilot-models.deepseek.enabled`（是否启用 DeepSeek）
+  - `copilot-models.deepseekBaseUrl`（DeepSeek API 基础地址）
+  - `copilot-models.bigmodel.enabled`（是否启用 BigModel）
+  - `copilot-models.bigmodelBaseUrl`（BigModel API 基础地址）
+  - `copilot-models.modelIdOverrides`（模型 ID 覆盖映射）
+  - `copilot-models.maxTokens`（最大生成令牌，0 表示无限制）
+  - `copilot-models.debugMode`（日志级别：`minimal|metadata|verbose`）
 
 ## 核心接口
 
@@ -215,7 +228,6 @@ export function createExampleClient(
     baseUrl,
     apiKey,
     providerName: 'Example',
-    chatEndpoint: '/chat/completions',
   });
 }
 ```
@@ -271,7 +283,7 @@ export function registerAllProviders(): void {
 | :----- | :----- |
 | `BaseModelProvider` | API Key 管理、配置读取、模型 ID 覆盖、客户端创建 |
 | `BaseChatProvider` | 消息转换、角色映射、流式回调、请求发送、API Key 配置、模型选择器 |
-| `BaseApiClient` | SSE 流式处理、错误处理、请求超时、取消令牌支持 |
+| `BaseApiClient` | 基于 OpenAI SDK 的流式请求处理、错误处理、取消令牌支持、工具调用处理 |
 
 #### 错误处理
 
@@ -337,7 +349,6 @@ Interfaces Tests (10+ cases)
 └── StreamCallbacks
 
 Utils Tests (15+ cases)
-├── safeStringify (Map, circular ref)
 ├── sanitizeForLog (sensitive data redaction)
 └── isSensitiveKey patterns
 

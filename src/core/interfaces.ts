@@ -60,13 +60,18 @@ export interface ModelDefinition {
 /**
  * API 消息格式
  */
-export interface ApiMessage {
-	role: 'system' | 'user' | 'assistant' | 'tool';
-	content: string;
-	tool_call_id?: string;
-	tool_calls?: ApiToolCall[];
-	reasoning_content?: string;
-}
+export type ApiMessage =
+	| {
+		role: 'tool';
+		content: string;
+		tool_call_id: string;
+	}
+	| {
+		role: 'system' | 'user' | 'assistant';
+		content: string;
+		tool_calls?: ApiToolCall[];
+		reasoning_content?: string;
+	};
 
 /**
  * API 工具调用格式
@@ -173,12 +178,18 @@ export interface ProviderConfig {
 	vendorName: string;
 	/** API 基础 URL */
 	baseUrl: string;
-	/** API 密钥配置项名称 */
-	apiKeyConfigKey: string;
 	/** SecretStorage 键名 */
 	apiKeySecretKey: string;
-	/** 模型 ID 覆盖配置键 */
-	modelIdOverridesConfigKey?: string;
+}
+
+/**
+ * 客户端配置选项
+ */
+export interface ClientOptions {
+	/** API 请求超时时间（毫秒） */
+	timeoutMs?: number;
+	/** 最大重试次数 */
+	maxRetries?: number;
 }
 
 /**
@@ -200,7 +211,7 @@ export interface IModelProvider {
 	/** 获取该提供商的模型列表 */
 	getModels(): ModelDefinition[];
 	/** 获取 API 客户端 */
-	createClient(apiKey: string): IApiClient;
+	createClient(apiKey: string, options?: ClientOptions): IApiClient;
 }
 
 /**
