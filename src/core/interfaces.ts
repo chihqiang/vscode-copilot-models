@@ -60,13 +60,18 @@ export interface ModelDefinition {
 /**
  * API 消息格式
  */
-export interface ApiMessage {
-	role: 'system' | 'user' | 'assistant' | 'tool';
-	content: string;
-	tool_call_id?: string;
-	tool_calls?: ApiToolCall[];
-	reasoning_content?: string;
-}
+export type ApiMessage =
+	| {
+		role: 'tool';
+		content: string;
+		tool_call_id: string;
+	}
+	| {
+		role: 'system' | 'user' | 'assistant';
+		content: string;
+		tool_calls?: ApiToolCall[];
+		reasoning_content?: string;
+	};
 
 /**
  * API 工具调用格式

@@ -22,7 +22,7 @@ const { register, GenericChatProvider } = createGenericProviderFactory({
 	createClient: createDeepSeekClient,
 	convertThinkingParams: (request: ApiRequest, effort: ThinkingEffort) => {
 		if (effort !== 'none') {
-			(request as ApiRequest & { reasoning_effort?: string }).reasoning_effort = effort;
+			request.reasoning_effort = effort;
 		}
 	},
 });

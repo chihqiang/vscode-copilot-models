@@ -7,6 +7,7 @@ import type {
 	ApiMessage,
 	ApiRequest,
 	ApiTool,
+	ApiToolCall,
 	IChatProvider,
 	IModelProvider,
 	ModelDefinition,
@@ -49,7 +50,26 @@ export interface ConversationSegment {
 }
 
 function hasTimestamp(msg: unknown): msg is { timestamp: number } {
-	return typeof msg === 'object' && msg !== null && 'timestamp' in msg && typeof (msg as Record<string, unknown>)['timestamp'] === 'number';
+	if (typeof msg !== 'object' || msg === null) {
+		return false;
+	}
+
+	const timestamp = Reflect.get(msg, 'timestamp');
+	return typeof timestamp === 'number';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
+}
+
+function reportThinkingPart(progress: vscode.Progress<vscode.LanguageModelResponsePart>, text: string): void {
+	const ThinkingPartConstructor = (vscode as any).LanguageModelThinkingPart;
+	if (typeof ThinkingPartConstructor === 'function') {
+		progress.report(new ThinkingPartConstructor(text));
+		return;
+	}
+
+	progress.report(new vscode.LanguageModelTextPart(text));
 }
 
 /**
@@ -234,8 +254,8 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			family: model.family,
 			version: model.version,
 			detail: hasApiKey ? model.detail : 'API key required',
-			tooltip: hasApiKey ? undefined : 'Please configure API key',
-			statusIcon: hasApiKey ? undefined : new vscode.ThemeIcon('warning'),
+			tooltip: hasApiKey ? '' : 'Please configure API key',
+			statusIcon: new vscode.ThemeIcon(hasApiKey ? 'check' : 'warning'),
 			maxInputTokens: model.maxInputTokens,
 			maxOutputTokens: model.maxOutputTokens,
 			isUserSelectable: hasApiKey,
@@ -294,7 +314,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 
 		const modelDefinition = this.modelProvider.getModels().find((m) => m.id === modelInfo.id);
 		const isThinkingModel = modelDefinition?.capabilities.thinking ?? false;
-		const thinkingEffort = this.getConfiguredThinkingEffort(options as ModelConfigurationOptions);
+		const thinkingEffort = this.getConfiguredThinkingEffort(options);
 
 		logger.chat.debug(`[${this.providerId}] Model: ${modelInfo.id}, isThinkingModel: ${isThinkingModel}, thinkingEffort: ${thinkingEffort}`);
 
@@ -309,8 +329,8 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			model: this.getApiModelId(modelInfo.id),
 			messages: apiMessages,
 			stream: true,
-			tools,
-			tool_choice: tools && tools.length > 0 ? 'auto' : undefined,
+			...(tools ? { tools } : {}),
+			...(tools && tools.length > 0 ? { tool_choice: 'auto' } : {}),
 		};
 
 		// 如果是思考模型，添加思考相关参数
@@ -324,7 +344,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			request,
 			modelDefinition,
 			apiMessages,
-			tools,
+			...(tools ? { tools } : {}),
 			isThinkingModel,
 			thinkingEffort,
 		};
@@ -368,7 +388,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	protected convertThinkingParams(request: ApiRequest, effort: ThinkingEffort): void {
 		// 默认实现：使用 reasoning_effort 参数
 		if (effort !== 'none') {
-			(request as ApiRequest & { reasoning_effort?: string }).reasoning_effort = effort;
+			request.reasoning_effort = effort;
 		}
 	}
 
@@ -404,7 +424,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 		for (const message of messages) {
 			const role = this.mapRole(message.role);
 			let content = '';
-			let toolCalls: ApiMessage['tool_calls'] = [];
+			const toolCalls: ApiToolCall[] = [];
 			const toolResults: Array<{ callId: string; content: string }> = [];
 
 			for (const part of message.content) {
@@ -441,7 +461,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 					};
 
 					if (toolCalls.length > 0) {
-						msg.tool_calls = toolCalls as NonNullable<ApiMessage['tool_calls']>;
+						msg.tool_calls = toolCalls;
 					}
 
 					result.push(msg);
@@ -449,8 +469,8 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			} else {
 				if (content) {
 					result.push({
-						role: role as 'user' | 'assistant',
-						content: content,
+						role,
+						content,
 					});
 				}
 			}
@@ -472,7 +492,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	/**
 	 * 映射 VS Code 消息角色到 API 角色
 	 */
-	protected mapRole(role: vscode.LanguageModelChatMessageRole): string {
+	protected mapRole(role: vscode.LanguageModelChatMessageRole): 'user' | 'assistant' {
 		switch (role) {
 			case vscode.LanguageModelChatMessageRole.User:
 				return 'user';
@@ -494,11 +514,11 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 		}
 
 		return tools.map((tool) => ({
-			type: 'function' as const,
+			type: 'function',
 			function: {
 				name: tool.name,
-				description: tool.description,
-				parameters: tool.inputSchema as Record<string, unknown> | undefined,
+				...(tool.description ? { description: tool.description } : {}),
+				...(isRecord(tool.inputSchema) ? { parameters: tool.inputSchema } : {}),
 			},
 		}));
 	}
@@ -564,9 +584,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			},
 			onThinking: (text: string) => {
 				thinking += text;
-				// 使用 proposed API: LanguageModelThinkingPart
-				// @ts-expect-error LanguageModelThinkingPart is a proposed API
-				progress.report(new vscode.LanguageModelThinkingPart(text));
+				reportThinkingPart(progress, text);
 			},
 			onToolCall: (toolCall) => {
 				try {

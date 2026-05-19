@@ -3,7 +3,7 @@
  */
 
 import vscode from 'vscode';
-import type { ApiRequest, ModelDefinition } from '../../core/interfaces';
+import type { ApiRequest, IApiClient, ModelDefinition } from '../../core/interfaces';
 import { createProviderLogger } from '../../core/logger';
 import { ModelRegistry } from '../../core/registry';
 import { ProviderFactoryRegistry, createProviderFactory } from '../../core/provider-registry';
@@ -16,7 +16,7 @@ export type { ThinkingEffort } from './chat-provider';
 /**
  * 通用 Provider 配置选项
  */
-export interface GenericProviderOptions {
+export interface GenericProviderOptions<TClient extends IApiClient = IApiClient> {
 	/** 提供商 ID */
 	providerId: string;
 	/** 提供商显示名称 */
@@ -32,7 +32,7 @@ export interface GenericProviderOptions {
 	/** 配置节名称 */
 	configSection?: string;
 	/** 创建 API 客户端函数 */
-	createClient: (baseUrl: string, apiKey: string) => unknown;
+	createClient: (baseUrl: string, apiKey: string) => TClient;
 	/** 转换思考参数函数（可选） */
 	convertThinkingParams?: (request: ApiRequest, effort: ThinkingEffort) => void;
 }
@@ -90,7 +90,7 @@ export function createGenericProviderFactory(options: GenericProviderOptions): G
 		models: options.models,
 		apiKeyPrompt: options.apiKeyPrompt,
 		apiKeyPlaceholder: options.apiKeyPlaceholder,
-		createClient: options.createClient as ModelProviderConfig['createClient'],
+		createClient: options.createClient,
 	};
 
 	/**
@@ -125,7 +125,7 @@ export function createGenericProviderFactory(options: GenericProviderOptions): G
 			} else {
 				// 默认实现：使用 reasoning_effort 参数
 				if (effort !== 'none') {
-					(request as ApiRequest & { reasoning_effort?: string }).reasoning_effort = effort;
+					request.reasoning_effort = effort;
 				}
 			}
 		}

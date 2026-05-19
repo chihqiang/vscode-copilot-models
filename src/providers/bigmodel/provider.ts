@@ -21,7 +21,7 @@ const { register, GenericChatProvider } = createGenericProviderFactory({
 	configSection: CONFIG_SECTION,
 	createClient: createBigModelClient,
 	convertThinkingParams: (request: ApiRequest, effort: ThinkingEffort) => {
-		(request as ApiRequest & { thinking?: { type: 'enabled' | 'disabled' } }).thinking = {
+		request.thinking = {
 			type: effort === 'none' ? 'disabled' : 'enabled',
 		};
 	},
