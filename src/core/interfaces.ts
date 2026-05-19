@@ -178,12 +178,8 @@ export interface ProviderConfig {
 	vendorName: string;
 	/** API 基础 URL */
 	baseUrl: string;
-	/** API 密钥配置项名称 */
-	apiKeyConfigKey: string;
 	/** SecretStorage 键名 */
 	apiKeySecretKey: string;
-	/** 模型 ID 覆盖配置键 */
-	modelIdOverridesConfigKey?: string;
 }
 
 /**

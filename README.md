@@ -95,6 +95,10 @@ The following configuration options are available in VS Code settings:
   Default: `{}`.
 - `copilot-models.maxTokens`: Maximum generated tokens.
   Default: `0` (unlimited).
+- `copilot-models.timeoutMs`: API request timeout in milliseconds.
+  Default: `60000`.
+- `copilot-models.maxRetries`: Maximum number of API request retries.
+  Default: `1`.
 - `copilot-models.debugMode`: Log level.
   Default: `minimal`.
 

@@ -201,8 +201,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 		const lowerId = this.providerId.charAt(0).toLowerCase() + this.providerId.slice(1);
 		return (
 			e.affectsConfiguration(`${this.configSection}.${lowerId}BaseUrl`) ||
-			e.affectsConfiguration(`${this.configSection}.modelIdOverrides`) ||
-			e.affectsConfiguration(`${this.configSection}.${lowerId}ApiKey`)
+			e.affectsConfiguration(`${this.configSection}.modelIdOverrides`)
 		);
 	}
 
@@ -675,7 +674,44 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 		_token: vscode.CancellationToken,
 	): Promise<number> {
 		const content = typeof text === 'string' ? text : this.extractTextFromMessage(text);
-		return Math.ceil(content.length / 4); // 简单估算：4 字符约等于 1 token
+		return this.estimateTokenCount(content);
+	}
+
+	/**
+	 * 估算文本的 token 数量
+	 * 使用 cl100k_base 编码的近似算法：
+	 *   - 英文单词: ~1.3 tokens/word
+	 *   - CJK 字符: ~2 tokens/char
+	 *   - 数字: ~0.25 tokens/digit
+	 *   - 其余字符 (标点/空格): ~0.25 tokens/char
+	 */
+	private estimateTokenCount(text: string): number {
+		let tokens = 0;
+
+		// 英文单词：按空格分词，每个词约 1.3 tokens
+		const words = text.match(/[a-zA-Z]+/g);
+		if (words) {
+			tokens += words.length * 1.3;
+		}
+
+		// CJK 字符：中/日/韩文字，每个约 2 tokens
+		const cjk = text.match(/[\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf\uf900-\ufaff]/g);
+		if (cjk) {
+			tokens += cjk.length * 2;
+		}
+
+		// 数字：每位数约 0.25 tokens
+		const digits = text.match(/[0-9]+/g);
+		if (digits) {
+			tokens += digits.reduce((s, n) => s + n.length * 0.25, 0);
+		}
+
+		// 剩余字符（标点、空格等）：每个约 0.25 tokens
+		const remaining = text.replace(/[a-zA-Z\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf\uf900-\ufaff0-9]/g, '');
+		tokens += remaining.length * 0.25;
+
+		// +1 安全边际
+		return Math.max(1, Math.ceil(tokens + 1));
 	}
 
 	/**

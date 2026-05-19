@@ -277,7 +277,6 @@ suite('Interfaces Test Suite', () => {
 					vendorId: 'deepseek',
 					vendorName: 'DeepSeek',
 					baseUrl: 'https://api.deepseek.com',
-					apiKeyConfigKey: 'config.apiKey',
 					apiKeySecretKey: 'secret.apiKey',
 				},
 				getApiKey: async () => 'sk-test',

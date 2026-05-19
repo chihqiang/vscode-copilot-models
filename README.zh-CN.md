@@ -76,15 +76,26 @@
 
 ## 配置选项
 
-- 在 VS Code 设置中可以找到以下配置项：
--
-- **copilot-models.deepseek.enabled**：启用 DeepSeek 提供者（默认：`true`）。
-- **copilot-models.deepseekBaseUrl**：DeepSeek API 基础地址（默认：`https://api.deepseek.com`）。
-- **copilot-models.bigmodel.enabled**：启用 BigModel 提供者（默认：`true`）。
-- **copilot-models.bigmodelBaseUrl**：BigModel API 基础地址（默认：`https://open.bigmodel.cn/api/paas/v4`）。
-- **copilot-models.modelIdOverrides**：用于自定义 API 端点的模型 ID 覆盖（默认：`{}`）。
-- `copilot-models.maxTokens`: 最大生成令牌数（默认：`0`，无限制）。
-- `copilot-models.debugMode`: 日志级别（默认：`minimal`）。
+以下配置项可在 VS Code 设置中找到：
+
+- `copilot-models.deepseek.enabled`：启用 DeepSeek 提供者。
+  默认：`true`。
+- `copilot-models.deepseekBaseUrl`：DeepSeek API 基础地址。
+  默认：`https://api.deepseek.com`。
+- `copilot-models.bigmodel.enabled`：启用 BigModel 提供者。
+  默认：`true`。
+- `copilot-models.bigmodelBaseUrl`：BigModel API 基础地址。
+  默认：`https://open.bigmodel.cn/api/paas/v4`。
+- `copilot-models.modelIdOverrides`：覆盖模型 ID（用于自定义 API 端点）。
+  默认：`{}`。
+- `copilot-models.maxTokens`：最大生成令牌数。
+  默认：`0`（无限制）。
+- `copilot-models.timeoutMs`：API 请求超时时间（毫秒）。
+  默认：`60000`。
+- `copilot-models.maxRetries`：API 请求最大重试次数。
+  默认：`1`。
+- `copilot-models.debugMode`：日志级别。
+  默认：`minimal`。
 
 > **注意**：API 密钥通过命令面板设置，并安全存储在 SecretStorage 中。
 
@@ -107,8 +118,8 @@
 2. 日志会输出到 "Copilot Models" 输出面板
 3. 如果需要更详细的日志，可在设置中将 `Debug Mode` 改为 `verbose`
 
+[marketplace]: https://marketplace.visualstudio.com/items?itemName=chihqiang.vscode-copilot-models
+
 ## 许可证
 
 Apache-2.0
-
-[marketplace]: https://marketplace.visualstudio.com/items?itemName=chihqiang.vscode-copilot-models

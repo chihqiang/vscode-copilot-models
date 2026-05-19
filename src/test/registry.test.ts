@@ -33,7 +33,6 @@ suite('ModelRegistry Test Suite', () => {
 			vendorId: id,
 			vendorName: `Test ${id}`,
 			baseUrl: `https://api.${id}.com`,
-			apiKeyConfigKey: `config.${id}ApiKey`,
 			apiKeySecretKey: `secret.${id}ApiKey`,
 		},
 		getModels: () => models,

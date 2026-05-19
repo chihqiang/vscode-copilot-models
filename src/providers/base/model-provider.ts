@@ -62,9 +62,7 @@ export class BaseModelProvider implements IModelProvider {
 			vendorId: config.providerId,
 			vendorName: config.providerName,
 			baseUrl: config.defaultBaseUrl,
-			apiKeyConfigKey: `${config.configSection}.${this._lowerId}ApiKey`,
 			apiKeySecretKey: `${config.configSection}.${this._lowerId}.apiKey`,
-			modelIdOverridesConfigKey: `${config.configSection}.modelIdOverrides`,
 		};
 
 		logger.provider.info(`[${this.id}] BaseModelProvider created`);
