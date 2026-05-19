@@ -3,8 +3,8 @@
  */
 
 import vscode from 'vscode';
-import { CONFIG_SECTION } from '../../core/consts';
-import { logger } from '../../core/logger';
+import { CONFIG_SECTION } from './models';
+import { logger } from './logger';
 
 /**
  * 认证管理器接口

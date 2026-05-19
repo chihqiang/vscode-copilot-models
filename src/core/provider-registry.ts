@@ -3,7 +3,7 @@
  */
 
 import vscode from 'vscode';
-import type { IChatProvider } from './interfaces';
+import type { IChatProvider } from './chat-provider';
 
 /**
  * 提供者工厂接口

@@ -6,10 +6,7 @@
  */
 
 import vscode from 'vscode';
-import { initLogger, logger } from './core';
-import type { IChatProvider } from './core/interfaces';
-import { ProviderFactoryRegistry, type IProviderFactory } from './core/provider-registry';
-import { ModelRegistry } from './core/registry';
+import { IChatProvider, initLogger, IProviderFactory, logger, ModelRegistry, ProviderFactoryRegistry } from './core';
 import { registerAllProviders } from './providers';
 
 /**

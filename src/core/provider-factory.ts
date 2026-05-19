@@ -3,12 +3,13 @@
  */
 
 import vscode from 'vscode';
-import type { ApiRequest, IApiClient, ModelDefinition } from '../../core/interfaces';
-import { createProviderLogger } from '../../core/logger';
-import { ModelRegistry } from '../../core/registry';
-import { ProviderFactoryRegistry, createProviderFactory } from '../../core/provider-registry';
+import {  CONFIG_SECTION, type ModelDefinition } from './models';
+import { createProviderLogger } from './logger';
+import { ModelRegistry } from './model-registry';
+import { ProviderFactoryRegistry, createProviderFactory } from './provider-registry';
 import { BaseChatProvider, type ThinkingEffort } from './chat-provider';
 import { BaseModelProvider, type ModelProviderConfig } from './model-provider';
+import { ApiRequest, ClientOptions, IApiClient } from './client';
 
 // 重新导出 ThinkingEffort 类型
 export type { ThinkingEffort } from './chat-provider';
@@ -32,7 +33,7 @@ export interface GenericProviderOptions<TClient extends IApiClient = IApiClient>
 	/** 配置节名称 */
 	configSection?: string;
 	/** 创建 API 客户端函数 */
-	createClient: (baseUrl: string, apiKey: string, options?: { timeoutMs?: number; maxRetries?: number }) => TClient;
+	createClient: (baseUrl: string, apiKey: string, options?: ClientOptions) => TClient;
 	/** 转换思考参数函数（可选） */
 	convertThinkingParams?: (request: ApiRequest, effort: ThinkingEffort) => void;
 }
@@ -79,7 +80,7 @@ export interface GenericProviderFactoryResult {
  * }
  */
 export function createGenericProviderFactory(options: GenericProviderOptions): GenericProviderFactoryResult {
-	const configSection = options.configSection || 'copilot-models';
+	const configSection = options.configSection || CONFIG_SECTION;
 	const logger = createProviderLogger(options.providerId, options.providerName);
 
 	const modelProviderConfig: ModelProviderConfig = {

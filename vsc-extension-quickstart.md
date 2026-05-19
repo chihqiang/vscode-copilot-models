@@ -4,32 +4,25 @@
 
 ```text
 src/
-├── core/                           # 核心模块
-│   ├── interfaces.ts              # 核心接口定义
-│   ├── consts.ts                   # 常量定义
+├── core/                           # 核心模块（API 客户端、Provider 基类、工厂函数）
+│   ├── consts.ts                   # 常量 + 核心接口定义 (ModelDefinition, ApiRequest 等)
 │   ├── registry.ts                 # 模型注册表 (ModelRegistry 单例)
 │   ├── provider-registry.ts        # 提供者工厂注册表 (ProviderFactoryRegistry)
-│   └── logger.ts                   # 日志模块 (createProviderLogger)
+│   ├── logger.ts                   # 日志模块 (createProviderLogger)
+│   ├── auth-manager.ts             # BaseAuthManager - 认证管理基类
+│   ├── chat-provider.ts            # BaseChatProvider - Chat Provider 基类 (消息转换、流式请求)
+│   ├── client.ts                   # BaseApiClient - API 客户端基类 (使用 OpenAI SDK 处理流式请求)
+│   ├── model-provider.ts           # BaseModelProvider - 模型提供商基类 (API Key 管理、客户端创建)
+│   ├── model-registry.ts           # 模型注册表扩展
+│   ├── provider-factory.ts         # 通用 Provider 工厂函数 (消除重复代码)
+│   └── index.ts                    # 核心模块统一导出
 ├── providers/                      # 模型提供者
-│   ├── base/                       # 基础抽象类和工具
-│   │   ├── model-provider.ts       # BaseModelProvider - 模型提供商基类 (API Key 管理、客户端创建)
-│   │   ├── chat-provider.ts       # BaseChatProvider - Chat Provider 基类 (消息转换、流式请求)
-│   │   ├── client.ts               # BaseApiClient - API 客户端基类 (使用 OpenAI SDK 处理流式请求)
-│   │   ├── auth-manager.ts         # BaseAuthManager - 认证管理基类
-│   │   ├── provider-factory.ts     # 通用 Provider 工厂函数 (消除重复代码)
-│   │   └── index.ts
 │   ├── deepseek/                   # DeepSeek 实现
-│   │   ├── models.ts               # 模型定义 (DeepSeek V4 Flash/Pro)
-│   │   ├── client.ts               # DeepSeekClient
-│   │   ├── provider.ts             # 使用通用工厂创建 DeepSeek Provider
-│   │   └── index.ts
+│   │   └── index.ts                # 模型定义 + Provider 注册
 │   ├── bigmodel/                   # 智谱 AI 实现
-│   │   ├── models.ts               # 模型定义 (GLM-5.1/5-Turbo/5)
-│   │   ├── client.ts               # BigModelClient
-│   │   ├── provider.ts             # 使用通用工厂创建 BigModel Provider
-│   │   └── index.ts
+│   │   └── index.ts                # 模型定义 + Provider 注册
 │   └── index.ts                    # 提供者统一导出 + registerAllProviders()
-├── extension.ts                    # 扩展入口
+├── extension.ts                     # 扩展入口
 └── test/                           # 测试文件
     ├── index.ts                    # 测试入口
     ├── runTest.ts                  # 测试运行器
@@ -63,15 +56,6 @@ src/
 | `ModelDefinition` | 模型定义结构，包含 ID、名称、能力等 |
 | `ProviderConfig` | 提供商配置信息 |
 | `IProviderFactory` | 提供者工厂接口，用于动态注册新提供商 |
-
-### 类型安全
-
-项目采用 **严格的类型系统**，确保代码质量和可维护性：
-
-- ✅ `BaseChatProvider` 实现 `IChatProvider<vscode.LanguageModelChatInformation>`
-- ✅ `BaseModelProvider` 实现 `IModelProvider`
-- ✅ 消除所有 `as unknown as` 类型断言
-- ✅ 泛型支持，确保类型推导准确
 
 ## 日志系统
 
@@ -143,59 +127,25 @@ for (const item of items) {
 
 ### 添加新模型提供商
 
-#### 方式一：使用通用工厂函数（推荐）
-
-使用 `createGenericProviderFactory` 可以快速创建 Provider，无需编写重复代码：
+使用 `createGenericProviderFactory` 可以快速创建 Provider，所有代码集中在一个文件中：
 
 ```typescript
-// providers/example/provider.ts
-import { createGenericProviderFactory } from '../base/provider-factory';
-import { EXAMPLE_MODELS } from './models';
-import { createExampleClient } from './client';
+// providers/example/index.ts
+/**
+ * Example 模型提供者模块
+ */
 
-const { register, GenericChatProvider } = createGenericProviderFactory({
-  providerId: 'example',
-  providerName: 'Example',
-  defaultBaseUrl: 'https://api.example.com',
-  models: EXAMPLE_MODELS,
-  apiKeyPrompt: 'Enter your Example API Key',
-  apiKeyPlaceholder: 'example-sk-...',
-  createClient: createExampleClient,
-  // 可选：自定义思考参数转换
-  convertThinkingParams: (request, effort) => {
-    if (effort !== 'none') {
-      (request as any).reasoning_effort = effort;
-    }
-  },
-});
+import {
+  ApiRequest,
+  ClientOptions,
+  CONFIG_SECTION,
+  createApiClient,
+  createGenericProviderFactory,
+  ModelDefinition,
+  ThinkingEffort,
+} from "../../core";
 
-export class ExampleChatProvider extends GenericChatProvider {}
-
-export function registerExampleProviderFactory(): void {
-  register();
-}
-```
-
-#### 方式二：使用基类继承
-
-使用 `BaseModelProvider` + `BaseChatProvider` 基类，可快速新增一个符合 Copilot Chat 的第三方模型提供者。
-
-#### 步骤
-
-1. 在 `providers/` 下创建新目录（如 `providers/example/`）
-2. 创建模型定义 `models.ts`
-3. 创建 API 客户端，继承 `BaseApiClient`
-4. 创建 Provider 配置 + `BaseModelProvider` 子类
-5. 创建 ChatProvider，继承 `BaseChatProvider`
-6. 实现 `IProviderFactory` 接口
-7. 在 `providers/<vendor>/index.ts` 中导出模块
-8. 在 `src/providers/index.ts` 的 `registerAllProviders()` 中注册工厂
-
-#### 示例代码
-
-```typescript
-// providers/example/models.ts
-import { ModelDefinition } from '../../core/interfaces';
+// ── 模型定义 ──────────────────────────────────────────
 
 export const EXAMPLE_MODELS: ModelDefinition[] = [
   {
@@ -213,53 +163,49 @@ export const EXAMPLE_MODELS: ModelDefinition[] = [
     },
   },
 ];
-```
 
-```typescript
-// providers/example/client.ts
-import { createApiClient } from '../base/client';
-import type { IApiClient } from '../../core/interfaces';
+export const EXAMPLE_PROVIDER_ID = "example";
 
-export function createExampleClient(
-  baseUrl: string,
-  apiKey: string,
-): IApiClient {
-  return createApiClient({
-    baseUrl,
-    apiKey,
-    providerName: 'Example',
-  });
-}
-```
+export const EXAMPLE_DEFAULT_BASE_URL = "https://api.example.com";
 
-```typescript
-// providers/example/provider.ts
-import { createGenericProviderFactory } from '../base/provider-factory';
-import { EXAMPLE_MODELS } from './models';
-import { createExampleClient } from './client';
-
-// 使用通用工厂函数，消除重复代码
-const { register, GenericChatProvider } = createGenericProviderFactory({
-  providerId: 'example',
-  providerName: 'Example',
-  defaultBaseUrl: 'https://api.example.com',
+// ── Provider 注册 ─────────────────────────────────────
+const { register } = createGenericProviderFactory({
+  providerId: EXAMPLE_PROVIDER_ID,
+  providerName: "Example",
+  defaultBaseUrl: EXAMPLE_DEFAULT_BASE_URL,
   models: EXAMPLE_MODELS,
-  apiKeyPrompt: 'Enter your Example API Key',
-  apiKeyPlaceholder: 'example-sk-...',
-  createClient: createExampleClient,
+  apiKeyPrompt: "Enter your Example API Key",
+  apiKeyPlaceholder: "example-sk-...",
+  configSection: CONFIG_SECTION,
+  createClient: function (
+    baseUrl: string,
+    apiKey: string,
+    options?: ClientOptions,
+  ) {
+    return createApiClient({
+      baseUrl,
+      apiKey,
+      providerName: "Example",
+      timeoutMs: options?.timeoutMs ?? 60_000,
+      maxRetries: options?.maxRetries ?? 1,
+    });
+  },
+  // 可选：自定义思考参数转换
+  convertThinkingParams: (request: ApiRequest, effort: ThinkingEffort) => {
+    if (effort !== "none") {
+      request.reasoning_effort = effort;
+    }
+  },
 });
-
-export class ExampleChatProvider extends GenericChatProvider {}
 
 export function registerExampleProviderFactory(): void {
   register();
 }
 ```
 
-`src/providers/index.ts` 中的内置注册逻辑示例如下：
+`src/providers/index.ts` 中的内置注册逻辑如下：
 
 ```typescript
-export * from './base';
 export * from './deepseek';
 export * from './bigmodel';
 
@@ -271,11 +217,6 @@ export function registerAllProviders(): void {
   registerBigModelProviderFactory();
 }
 ```
-
-**优化说明**：
-
-- ✅ 使用静态 `import` 替代动态 `require()`，提高代码可维护性
-- ✅ 类型推导更准确，支持更好的 IDE 智能提示
 
 #### 基类功能一览
 

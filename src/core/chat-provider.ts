@@ -3,18 +3,28 @@
  */
 
 import vscode from 'vscode';
-import type {
-	ApiMessage,
-	ApiRequest,
-	ApiTool,
-	ApiToolCall,
-	IChatProvider,
-	IModelProvider,
-	ModelDefinition,
-} from '../../core/interfaces';
-import type { StreamCallbacks } from '../../core/interfaces';
-import { ApiError, CancelledError, TimeoutError } from './client';
-import { logger } from '../../core/logger';
+import { logger } from './logger';
+import { ApiError, ApiMessage, ApiRequest, ApiTool, ApiToolCall, CancelledError, StreamCallbacks, TimeoutError } from './client';
+import { CONFIG_SECTION, ModelDefinition } from './models';
+import { IModelProvider } from './model-provider';
+
+
+/**
+ * Chat Provider 接口 (简化版，用于类型检查)
+ * 继承 VS Code LanguageModelChatProvider 并扩展额外方法
+ */
+export interface IChatProvider<T extends vscode.LanguageModelChatInformation = vscode.LanguageModelChatInformation> extends vscode.LanguageModelChatProvider<T> {
+	/** 刷新模型选择器 */
+	refreshModelPicker(): void;
+	/** 准备停用 */
+	prepareForDeactivate(): Promise<void>;
+	/** 释放资源 */
+	dispose(): void;
+	/** 配置 API 密钥 */
+	configureApiKey(): Promise<void>;
+	/** 清除 API 密钥 */
+	clearApiKey(): Promise<void>;
+}
 
 /**
  * 思考模式努力程度
@@ -165,7 +175,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	 * 获取配置节名称 (子类可重写)
 	 */
 	protected getConfigSection(): string {
-		return 'copilot-models';
+		return CONFIG_SECTION;
 	}
 
 	/**

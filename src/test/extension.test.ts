@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { ModelRegistry } from '../core/registry';
+import { ModelRegistry } from '../core/model-registry';
 import { ProviderFactoryRegistry } from '../core/provider-registry';
 
 suite('Extension Test Suite', () => {

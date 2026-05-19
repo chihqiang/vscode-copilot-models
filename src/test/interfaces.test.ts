@@ -5,11 +5,10 @@ import type {
 	ApiMessage,
 	ApiToolCall,
 	ApiRequest,
-	StreamChunk,
 	StreamCallbacks,
 	IModelProvider,
 	IApiClient,
-} from '../core/interfaces';
+} from '../core';
 
 suite('Interfaces Test Suite', () => {
 	suite('ModelDefinition', () => {

@@ -2,8 +2,9 @@
  * 模型注册表 - 管理所有注册的模型提供商和模型定义
  */
 
-import type { IModelProvider, ModelDefinition } from './interfaces';
+import type {ModelDefinition } from './models';
 import { logger } from './logger';
+import { IModelProvider } from './model-provider';
 
 /**
  * 全局模型注册表
