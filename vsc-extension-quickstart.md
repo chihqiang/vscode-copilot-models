@@ -44,7 +44,6 @@ src/
   - `copilot-models.bigmodelBaseUrl`（BigModel API 基础地址）
   - `copilot-models.modelIdOverrides`（模型 ID 覆盖映射）
   - `copilot-models.maxTokens`（最大生成令牌，0 表示无限制）
-  - `copilot-models.debugMode`（日志级别：`minimal|metadata|verbose`）
 
 ## 核心接口
 
