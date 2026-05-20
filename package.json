@@ -91,16 +91,6 @@
           "minimum": 0,
           "description": "Maximum tokens to generate (0 = unlimited)"
         },
-        "copilot-models.debugMode": {
-          "type": "string",
-          "default": "minimal",
-          "enum": [
-            "minimal",
-            "metadata",
-            "verbose"
-          ],
-          "description": "Debug mode for logging"
-        },
         "copilot-models.timeoutMs": {
           "type": "number",
           "default": 60000,

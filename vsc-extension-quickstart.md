@@ -4,33 +4,34 @@
 
 ```text
 src/
-├── core/                           # 核心模块（API 客户端、Provider 基类、工厂函数）
-│   ├── consts.ts                   # 常量 + 核心接口定义 (ModelDefinition, ApiRequest 等)
-│   ├── registry.ts                 # 模型注册表 (ModelRegistry 单例)
-│   ├── provider-registry.ts        # 提供者工厂注册表 (ProviderFactoryRegistry)
-│   ├── logger.ts                   # 日志模块 (createProviderLogger)
-│   ├── auth-manager.ts             # BaseAuthManager - 认证管理基类
-│   ├── chat-provider.ts            # BaseChatProvider - Chat Provider 基类 (消息转换、流式请求)
-│   ├── client.ts                   # BaseApiClient - API 客户端基类 (使用 OpenAI SDK 处理流式请求)
-│   ├── model-provider.ts           # BaseModelProvider - 模型提供商基类 (API Key 管理、客户端创建)
-│   ├── model-registry.ts           # 模型注册表扩展
-│   ├── provider-factory.ts         # 通用 Provider 工厂函数 (消除重复代码)
-│   └── index.ts                    # 核心模块统一导出
+├── core/                           # 核心模块
+│   ├── models.ts                   # 模型定义接口
+│   ├── model-registry.ts           # 模型注册表
+│   ├── provider-registry.ts        # 提供者工厂注册表
+│   ├── logger.ts                   # 日志模块
+│   ├── auth-manager.ts             # 认证管理基类
+│   ├── chat-provider.ts            # Chat Provider 基类
+│   ├── client.ts                   # API 客户端基类
+│   ├── model-provider.ts           # 模型提供商基类
+│   ├── provider-factory.ts         # Provider 工厂函数
+│   └── index.ts                    # 核心模块导出
 ├── providers/                      # 模型提供者
-│   ├── deepseek/                   # DeepSeek 实现
-│   │   └── index.ts                # 模型定义 + Provider 注册
-│   ├── bigmodel/                   # 智谱 AI 实现
-│   │   └── index.ts                # 模型定义 + Provider 注册
-│   └── index.ts                    # 提供者统一导出 + registerAllProviders()
-├── extension.ts                     # 扩展入口
-└── test/                           # 测试文件
-    ├── index.ts                    # 测试入口
-    ├── runTest.ts                  # 测试运行器
-    ├── extension.test.ts           # 扩展集成测试
-    ├── registry.test.ts            # ModelRegistry 单元测试
-    ├── provider-registry.test.ts   # ProviderFactoryRegistry 单元测试
-    ├── interfaces.test.ts          # 接口和数据结构测试
-    └── utils.test.ts               # 工具函数测试
+│   ├── deepseek/                  # DeepSeek 实现
+│   │   └── index.ts
+│   ├── bigmodel/                  # 智谱 AI 实现
+│   │   └── index.ts
+│   ├── qwen/                      # 通义千问实现
+│   │   └── index.ts
+│   └── index.ts                   # 提供者统一导出
+├── extension.ts                    # 扩展入口
+└── test/                          # 测试文件
+    ├── index.ts                   # 测试入口
+    ├── runTest.ts                 # 测试运行器
+    ├── model-registry.test.ts     # ModelRegistry 测试
+    ├── provider-registry.test.ts   # ProviderFactoryRegistry 测试
+    ├── models.test.ts             # 模型定义测试
+    ├── client.test.ts             # API 客户端测试
+    └── auth-manager.test.ts       # 认证管理器测试
 ```
 
 ## 配置与 API Key
@@ -42,9 +43,10 @@ src/
   - `copilot-models.deepseekBaseUrl`（DeepSeek API 基础地址）
   - `copilot-models.bigmodel.enabled`（是否启用 BigModel）
   - `copilot-models.bigmodelBaseUrl`（BigModel API 基础地址）
+  - `copilot-models.qwen.enabled`（是否启用通义千问）
+  - `copilot-models.qwenBaseUrl`（通义千问 API 基础地址）
   - `copilot-models.modelIdOverrides`（模型 ID 覆盖映射）
   - `copilot-models.maxTokens`（最大生成令牌，0 表示无限制）
-  - `copilot-models.debugMode`（日志级别：`minimal|metadata|verbose`）
 
 ## 核心接口
 
@@ -54,8 +56,10 @@ src/
 | `IApiClient` | API 客户端接口，定义流式请求方法 |
 | `IChatProvider<T>` | Chat Provider 接口，扩展 VS Code LanguageModelChatProvider |
 | `ModelDefinition` | 模型定义结构，包含 ID、名称、能力等 |
+| `ModelCapabilities` | 模型能力定义，包含 toolCalling、imageInput、thinking |
 | `ProviderConfig` | 提供商配置信息 |
 | `IProviderFactory` | 提供者工厂接口，用于动态注册新提供商 |
+| `IAuthManager` | 认证管理器接口，定义 API 密钥的获取和存储方法 |
 
 ## 日志系统
 
@@ -208,13 +212,16 @@ export function registerExampleProviderFactory(): void {
 ```typescript
 export * from './deepseek';
 export * from './bigmodel';
+export * from './qwen';
 
 import { registerDeepSeekProviderFactory } from './deepseek';
 import { registerBigModelProviderFactory } from './bigmodel';
+import { registerQwenProviderFactory } from './qwen';
 
 export function registerAllProviders(): void {
   registerDeepSeekProviderFactory();
   registerBigModelProviderFactory();
+  registerQwenProviderFactory();
 }
 ```
 
@@ -225,6 +232,7 @@ export function registerAllProviders(): void {
 | `BaseModelProvider` | API Key 管理、配置读取、模型 ID 覆盖、客户端创建 |
 | `BaseChatProvider` | 消息转换、角色映射、流式回调、请求发送、API Key 配置、模型选择器 |
 | `BaseApiClient` | 基于 OpenAI SDK 的流式请求处理、错误处理、取消令牌支持、工具调用处理 |
+| `BaseAuthManager` | 通过 SecretStorage 安全存储 API 密钥 |
 
 #### 错误处理
 
@@ -232,6 +240,7 @@ export function registerAllProviders(): void {
 
 | 错误类 | 状态码 | 说明 |
 | :----- | :----- | :----- |
+| `ApiError` | - | 基础 API 错误 |
 | `AuthenticationError` | 401 | 认证失败 |
 | `PermissionError` | 403 | 权限不足 |
 | `NotFoundError` | 404 | 资源未找到 |
@@ -249,55 +258,55 @@ export function registerAllProviders(): void {
 
 ```bash
 # 编译并运行测试
-pnpm run test
+npm run test
 
 # 仅编译测试（不运行）
-pnpm run test:compile
+npm run test:compile
 ```
 
 ### 测试文件结构
 
 | 文件 | 说明 |
 | :----- | :----- |
-| `registry.test.ts` | ModelRegistry 单例测试：提供者注册/注销、模型列表管理 |
-| `provider-registry.test.ts` | ProviderFactoryRegistry 测试：工厂注册、 |
-| | 启用/禁用状态过滤 |
-| `interfaces.test.ts` | 接口和数据结构测试： |
-| | ModelDefinition、ApiMessage、StreamCallbacks 等 |
-| `utils.test.ts` | 工具函数测试：safeStringify、sanitizeForLog、isSensitiveKey |
-| `extension.test.ts` | 扩展集成测试：命令注册、配置验证、语言模型提供者声明 |
+| `model-registry.test.ts` | ModelRegistry 单例测试：提供者注册/注销、模型列表管理、单例模式 |
+| `provider-registry.test.ts` | ProviderFactoryRegistry 测试：工厂注册、启用/禁用状态过滤 |
+| `models.test.ts` | 模型定义接口测试：CONFIG_SECTION、ModelCapabilities、ModelDefinition |
+| `client.test.ts` | API 客户端和错误类测试：ApiMessage、ApiRequest、StreamCallbacks 等 |
+| `auth-manager.test.ts` | 认证管理器接口测试：IAuthManager 接口方法 |
 
 ### 测试覆盖
 
 ```text
-Registry Tests (11 cases)
-├── Singleton pattern
+ModelRegistry Tests (16 cases)
+├── Singleton pattern (getInstance, _resetInstance)
 ├── Provider registration/removal
 ├── Model list management
-├── Find by ID
+├── Find model by ID across providers
+├── Find provider by model ID
 └── Duplicate prevention
 
-ProviderFactoryRegistry Tests (9 cases)
-├── Factory registration
+ProviderFactoryRegistry Tests (11 cases)
+├── Singleton pattern
+├── Factory registration/removal
 ├── Enabled/disabled filtering
-└── Duplicate prevention
+├── getAllFactories, count, clear
+└── createProviderFactory utility
 
-Interfaces Tests (10+ cases)
-├── ModelDefinition structure
-├── ModelCapabilities
-├── ApiMessage (user/assistant/system/tool)
-├── ApiRequest format
-└── StreamCallbacks
+Models Tests (9 cases)
+├── CONFIG_SECTION constant
+├── ModelCapabilities (toolCalling, imageInput, thinking)
+└── ModelDefinition structure and optional fields
 
-Utils Tests (15+ cases)
-├── sanitizeForLog (sensitive data redaction)
-└── isSensitiveKey patterns
+Client Tests (40+ cases)
+├── API Error Classes (ApiError, AuthenticationError, etc.)
+├── ApiMessage formats (user, assistant, tool, system)
+├── ApiToolCall, ApiTool, ApiRequest structures
+├── ApiUsage, StreamCallbacks interfaces
+└── IApiClient interface
 
-Extension Tests (5 cases)
-├── VS Code module availability
-├── Command registration
-├── Configuration defaults
-└── Language model provider declaration
+IAuthManager Tests (10 cases)
+├── getApiKey, hasApiKey, setApiKey, deleteApiKey
+└── Edge cases (empty string, whitespace trimming)
 ```
 
 ### 运行测试
@@ -309,8 +318,8 @@ Extension Tests (5 cases)
 2. **命令行**
 
    ```bash
-   pnpm run test:compile  # 编译
-   pnpm run test          # 运行测试
+   npm run test:compile  # 编译
+   npm run test         # 运行测试
    ```
 
 ### 编写新测试
@@ -320,7 +329,7 @@ Extension Tests (5 cases)
 ```typescript
 // src/test/myfeature.test.ts
 import * as assert from 'assert';
-import { MyClass } from '../core/myclass';
+import { MyClass } from '../core/myfeature';
 
 suite('MyClass', () => {
   test('should do something', () => {
@@ -334,8 +343,10 @@ suite('MyClass', () => {
 
 - 测试文件必须以 `.test.ts` 结尾
 - 放在 `src/test/` 目录下
-- 运行前需先编译：`pnpm run test:compile`
+- 运行前需先编译：`npm run test:compile`
 - 测试在 VS Code 扩展主机环境中运行，可使用 VS Code API
+- 每个测试套件使用 `setup` 和 `teardown` 进行清理
+- 单例类提供 `_resetInstance()` 方法用于测试隔离
 
 ## 开发命令
 
@@ -352,8 +363,11 @@ pnpm run watch
 # 代码检查
 pnpm run lint
 
-# 修复代码风格问题
-pnpm run lint:fix
+# 运行测试
+npm run test
+
+# 编译测试
+npm run test:compile
 
 # 打包
 pnpm run package

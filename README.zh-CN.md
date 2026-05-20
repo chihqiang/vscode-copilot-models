@@ -108,8 +108,6 @@
   默认：`60000`。
 - `copilot-models.maxRetries`：API 请求最大重试次数。
   默认：`1`。
-- `copilot-models.debugMode`：日志级别。
-  默认：`minimal`。
 
 > **注意**：API 密钥通过命令面板设置，并安全存储在 SecretStorage 中。
 

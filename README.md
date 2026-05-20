@@ -114,8 +114,6 @@ The following configuration options are available in VS Code settings:
   Default: `60000`.
 - `copilot-models.maxRetries`: Maximum number of API request retries.
   Default: `1`.
-- `copilot-models.debugMode`: Log level.
-  Default: `minimal`.
 
 > **Note**: API keys are managed through the command palette.
 > They are stored in VS Code SecretStorage, not as plain settings.

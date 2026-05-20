@@ -641,7 +641,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 
 				// 打印 Token 使用统计
 				if (finalUsage) {
-					logger.stream.debug(
+					logger.stream.info(
 						`[${this.providerId}] === Token Usage ===\n` +
 							`  prompt_tokens: ${finalUsage.prompt_tokens}\n` +
 							`  completion_tokens: ${finalUsage.completion_tokens}\n` +
