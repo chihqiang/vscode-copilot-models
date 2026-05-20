@@ -2,7 +2,7 @@
   "name": "vscode-copilot-models",
   "displayName": "Copilot Models",
   "description": "Unlock third-party large model extensions for GitHub Copilot. Support DeepSeek and more LLMs.",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "publisher": "chihqiang",
   "icon": "resources/icon.png",
   "repository": {
@@ -23,6 +23,9 @@
     "github copilot",
     "copilot chat",
     "deepseek",
+    "qwen",
+    "tongyi",
+    "alibaba",
     "language model",
     "ai",
     "chat",
@@ -41,6 +44,10 @@
       {
         "vendor": "bigmodel",
         "displayName": "BigModel"
+      },
+      {
+        "vendor": "qwen",
+        "displayName": "Qwen"
       }
     ],
     "commands": [
@@ -78,29 +85,6 @@
     "configuration": {
       "title": "Copilot Models",
       "properties": {
-        "copilot-models.deepseekBaseUrl": {
-          "type": "string",
-          "default": "https://api.deepseek.com",
-          "description": "DeepSeek API base URL"
-        },
-        "copilot-models.modelIdOverrides": {
-          "type": "object",
-          "default": {},
-          "description": "Override model IDs for custom API endpoints",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "copilot-models.deepseek.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable the DeepSeek provider"
-        },
-        "copilot-models.bigmodel.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable the BigModel provider"
-        },
         "copilot-models.maxTokens": {
           "type": "number",
           "default": 0,
@@ -130,10 +114,43 @@
           "maximum": 10,
           "description": "Maximum number of API request retries (default: 1)"
         },
+        "copilot-models.modelIdOverrides": {
+          "type": "object",
+          "default": {},
+          "description": "Override model IDs for custom API endpoints",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "copilot-models.deepseek.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the DeepSeek provider"
+        },
+        "copilot-models.deepseekBaseUrl": {
+          "type": "string",
+          "default": "https://api.deepseek.com",
+          "description": "DeepSeek API base URL"
+        },
+        "copilot-models.bigmodel.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the BigModel provider"
+        },
         "copilot-models.bigmodelBaseUrl": {
           "type": "string",
           "default": "https://open.bigmodel.cn/api/paas/v4",
           "description": "BigModel API base URL"
+        },
+        "copilot-models.qwen.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Qwen provider"
+        },
+        "copilot-models.qwenBaseUrl": {
+          "type": "string",
+          "default": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "description": "Qwen API base URL"
         }
       }
     }

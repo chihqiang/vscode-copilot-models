@@ -8,7 +8,8 @@ One-click switching and native panel compatibility.
 
 ## Features
 
-- **Multi-Model Support**: Supports DeepSeek V4 series and Zhipu AI GLM-5 series
+- **Multi-Model Support**: Supports DeepSeek V4 series, Zhipu AI GLM-5 series,
+  and Qwen 3 series
 - **Tool Calling**: Supports Copilot Chat tool calling functionality
 - **Thinking Mode**: Supports model thinking/reasoning mode
 - **Secure Authentication**: API keys securely stored in VS Code SecretStorage
@@ -40,6 +41,7 @@ Install the "Copilot Models" extension from the [VS Code Extension Marketplace](
 
 > DeepSeek API Key can be obtained from [DeepSeek Platform](https://platform.deepseek.com/)
 > Zhipu AI API Key can be obtained from [Zhipu AI Open Platform](https://open.bigmodel.cn/)
+> Qwen API Key can be obtained from [Alibaba Cloud Model Studio](https://bailian.console.aliyun.com/)
 
 #### Method 2: Settings Page
 
@@ -54,6 +56,7 @@ They are stored in VS Code SecretStorage, not as plain settings.
 
 - DeepSeek API Key can be obtained from [DeepSeek Platform](https://platform.deepseek.com/)
 - Zhipu AI API Key can be obtained from [Zhipu AI Open Platform](https://open.bigmodel.cn/)
+- Qwen API Key can be obtained from [Alibaba Cloud Model Studio](https://bailian.console.aliyun.com/)
 
 ### 3. Start Using
 
@@ -63,6 +66,14 @@ They are stored in VS Code SecretStorage, not as plain settings.
 4. Start chatting
 
 ## Supported Models
+
+### Qwen (Alibaba Cloud)
+
+| Model | Context | Output | Tool Calling | Thinking Mode |
+| :----- | :------: | :----: | :--------: | :--------: |
+| Qwen3 Max | 128K | 64K | ✅ | ✅ |
+| Qwen3.6 Plus | 128K | 64K | ✅ | ✅ |
+| Qwen3.5 Flash | 128K | 64K | ✅ | ✅ |
 
 ### DeepSeek
 
@@ -91,6 +102,10 @@ The following configuration options are available in VS Code settings:
   Default: `true`.
 - `copilot-models.bigmodelBaseUrl`: BigModel API base URL.
   Default: `https://open.bigmodel.cn/api/paas/v4`.
+- `copilot-models.qwen.enabled`: Enable the Qwen provider.
+  Default: `true`.
+- `copilot-models.qwenBaseUrl`: Qwen API base URL.
+  Default: `https://dashscope.aliyuncs.com/compatible-mode/v1`.
 - `copilot-models.modelIdOverrides`: Override model IDs for custom endpoints.
   Default: `{}`.
 - `copilot-models.maxTokens`: Maximum generated tokens.

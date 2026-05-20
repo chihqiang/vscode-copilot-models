@@ -3,10 +3,118 @@
  */
 
 import type {CancellationToken} from 'vscode';
-import type {ApiMessage, ApiRequest, ApiTool, StreamCallbacks} from '../../core/interfaces';
-import {IApiClient} from '../../core/interfaces';
-import {logger} from '../../core/logger';
+import {logger} from './logger';
 import OpenAI from 'openai';
+
+/**
+ * 客户端配置选项
+ */
+export interface ClientOptions {
+	/** API 请求超时时间（毫秒） */
+	timeoutMs?: number;
+	/** 最大重试次数 */
+	maxRetries?: number;
+}
+
+
+/**
+ * API 客户端接口
+ */
+export interface IApiClient {
+	/** 基础 URL */
+	readonly baseUrl: string;
+	/** API 密钥 */
+	readonly apiKey: string;
+	/** 发送流式聊天补全请求 */
+	streamChatCompletion(
+		request: ApiRequest,
+		callbacks: StreamCallbacks,
+		cancellationToken?: import('vscode').CancellationToken,
+	): Promise<void>;
+}
+
+
+/**
+ * API 消息格式
+ */
+export type ApiMessage =
+	| {
+		role: 'tool';
+		content: string;
+		tool_call_id: string;
+	}
+	| {
+		role: 'system' | 'user' | 'assistant';
+		content: string;
+		tool_calls?: ApiToolCall[];
+		reasoning_content?: string;
+	};
+
+/**
+ * API 工具调用格式
+ */
+export interface ApiToolCall {
+	id: string;
+	type: 'function';
+	function: {
+		name: string;
+		arguments: string;
+	};
+}
+
+/**
+ * API 工具定义格式
+ */
+export interface ApiTool {
+	type: 'function';
+	function: {
+		name: string;
+		description?: string;
+		parameters?: Record<string, unknown>;
+	};
+}
+
+/**
+ * API 令牌使用统计
+ */
+export interface ApiUsage {
+	prompt_tokens: number;
+	completion_tokens: number;
+	total_tokens: number;
+	[key: string]: number;
+}
+
+/**
+ * API 请求格式
+ */
+export interface ApiRequest {
+	model: string;
+	messages: ApiMessage[];
+	stream: boolean;
+	temperature?: number;
+	top_p?: number;
+	max_tokens?: number;
+	tools?: ApiTool[];
+	tool_choice?: 'none' | 'auto' | 'required';
+	thinking?: { type: 'enabled' | 'disabled' };
+	reasoning_effort?: string;
+	stream_options?: {
+		include_usage: boolean;
+	};
+	[key: string]: unknown;
+}
+
+/**
+ * 流式响应回调接口
+ */
+export interface StreamCallbacks {
+	onContent: (content: string) => void;
+	onThinking: (text: string) => void;
+	onToolCall: (toolCall: ApiToolCall) => void;
+	onError: (error: Error) => void;
+	onDone: () => void;
+	onUsage?: (usage: ApiUsage) => void;
+}
 
 export class ApiError extends Error {
     constructor(

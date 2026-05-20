@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-- **多模型支持**: 支持 DeepSeek V4 系列和智谱 AI GLM-5 系列
+- **多模型支持**: 支持 DeepSeek V4 系列、智谱 AI GLM-5 系列和通义千问 Qwen 3 系列
 - **工具调用**: 支持 Copilot Chat 工具调用功能
 - **思考模式**: 支持模型的思考/推理模式
 - **安全认证**: API 密钥安全存储在 VS Code SecretStorage
@@ -36,6 +36,7 @@
 
 - DeepSeek API Key 可在 [DeepSeek 平台](https://platform.deepseek.com/) 获取
 - 智谱 AI API Key 可在 [智谱 AI 开放平台](https://open.bigmodel.cn/) 获取
+- 通义千问 API Key 可在 [阿里云百炼](https://bailian.console.aliyun.com/) 获取
 
 #### 方法二：设置页面
 
@@ -49,6 +50,7 @@
 
 - DeepSeek API Key 可在 [DeepSeek 平台](https://platform.deepseek.com/) 获取
 - 智谱 AI API Key 可在 [智谱 AI 开放平台](https://open.bigmodel.cn/) 获取
+- 通义千问 API Key 可在 [阿里云百炼](https://bailian.console.aliyun.com/) 获取
 
 ### 3. 开始使用
 
@@ -58,6 +60,14 @@
 4. 开始对话
 
 ## 支持的模型
+
+### 通义千问 (Alibaba Cloud)
+
+| 模型 | 上下文 | 输出 | 工具调用 | 思考模式 |
+| :----- | :------: | :----: | :--------: | :--------: |
+| Qwen3 Max | 128K | 64K | ✅ | ✅ |
+| Qwen3.6 Plus | 128K | 64K | ✅ | ✅ |
+| Qwen3.5 Flash | 128K | 64K | ✅ | ✅ |
 
 ### DeepSeek
 
@@ -86,6 +96,10 @@
   默认：`true`。
 - `copilot-models.bigmodelBaseUrl`：BigModel API 基础地址。
   默认：`https://open.bigmodel.cn/api/paas/v4`。
+- `copilot-models.qwen.enabled`：启用 Qwen 提供者。
+  默认：`true`。
+- `copilot-models.qwenBaseUrl`：Qwen API 基础地址。
+  默认：`https://dashscope.aliyuncs.com/compatible-mode/v1`。
 - `copilot-models.modelIdOverrides`：覆盖模型 ID（用于自定义 API 端点）。
   默认：`{}`。
 - `copilot-models.maxTokens`：最大生成令牌数。

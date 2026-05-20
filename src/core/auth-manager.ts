@@ -3,8 +3,8 @@
  */
 
 import vscode from 'vscode';
-import { CONFIG_SECTION } from '../../core/consts';
-import { logger } from '../../core/logger';
+import { CONFIG_SECTION } from './models';
+import { logger } from './logger';
 
 /**
  * 认证管理器接口
@@ -37,7 +37,7 @@ export class BaseAuthManager implements IAuthManager {
 		this.secretStorage = context.secrets;
 		this.providerId = providerId;
 		this.secretKey = `${configSection}.${providerId}.apiKey`;
-		logger.auth.info(`[${providerId}] AuthManager initialized`);
+		logger.auth.debug(`[${providerId}] AuthManager initialized`);
 	}
 
 	/**

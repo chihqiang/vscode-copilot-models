@@ -1,19 +1,20 @@
 /**
- * DeepSeek 模型提供者模块
+ * Qwen (通义千问) 模型提供者模块
  */
+
 import { ApiRequest, ClientOptions, CONFIG_SECTION, createApiClient, createGenericProviderFactory, ModelDefinition, ThinkingEffort } from "../../core";
 
 // ── 模型定义 ──────────────────────────────────────────
 
-export const DEEPSEEK_MODELS: ModelDefinition[] = [
+export const QWEN_MODELS: ModelDefinition[] = [
   {
-    id: "deepseek-v4-flash",
-    name: "DeepSeek V4 Flash",
-    family: "deepseek",
-    version: "v4",
-    detail: "Fast, general-purpose model",
-    maxInputTokens: 655360,
-    maxOutputTokens: 393216,
+    id: "qwen3-max",
+    name: "Qwen3 Max",
+    family: "qwen",
+    version: "3",
+    detail: "Flagship model with advanced reasoning capabilities",
+    maxInputTokens: 128000,
+    maxOutputTokens: 64000,
     capabilities: {
       toolCalling: true,
       imageInput: true,
@@ -22,13 +23,28 @@ export const DEEPSEEK_MODELS: ModelDefinition[] = [
     requiresThinkingParam: true,
   },
   {
-    id: "deepseek-v4-pro",
-    name: "DeepSeek V4 Pro",
-    family: "deepseek",
-    version: "v4",
-    detail: "Most capable reasoning model",
-    maxInputTokens: 655360,
-    maxOutputTokens: 393216,
+    id: "qwen3.6-plus",
+    name: "Qwen3.6 Plus",
+    family: "qwen",
+    version: "3.6",
+    detail: "Enhanced model with improved performance",
+    maxInputTokens: 128000,
+    maxOutputTokens: 64000,
+    capabilities: {
+      toolCalling: true,
+      imageInput: true,
+      thinking: true,
+    },
+    requiresThinkingParam: true,
+  },
+  {
+    id: "qwen3.5-flash",
+    name: "Qwen3.5 Flash",
+    family: "qwen",
+    version: "3.5",
+    detail: "Fast inference model for quick responses",
+    maxInputTokens: 128000,
+    maxOutputTokens: 64000,
     capabilities: {
       toolCalling: true,
       imageInput: true,
@@ -38,18 +54,18 @@ export const DEEPSEEK_MODELS: ModelDefinition[] = [
   },
 ];
 
-export const DEEPSEEK_PROVIDER_ID = "deepseek";
+export const QWEN_PROVIDER_ID = "qwen";
 
-export const DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com";
+export const QWEN_DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
 // ── Provider 注册 ─────────────────────────────────────
 const { register } = createGenericProviderFactory({
-  providerId: DEEPSEEK_PROVIDER_ID,
-  providerName: "DeepSeek",
-  defaultBaseUrl: DEEPSEEK_DEFAULT_BASE_URL,
-  models: DEEPSEEK_MODELS,
-  apiKeyPrompt: "Enter your DeepSeek API Key",
-  apiKeyPlaceholder: "sk-xxxxxxxxxxxxxxxxxxxxxxxx",
+  providerId: QWEN_PROVIDER_ID,
+  providerName: "Qwen",
+  defaultBaseUrl: QWEN_DEFAULT_BASE_URL,
+  models: QWEN_MODELS,
+  apiKeyPrompt: "Enter your Qwen API Key",
+  apiKeyPlaceholder: "Qwen API Key",
   configSection: CONFIG_SECTION,
   createClient: function (
     baseUrl: string,
@@ -59,7 +75,7 @@ const { register } = createGenericProviderFactory({
     return createApiClient({
       baseUrl,
       apiKey,
-      providerName: "DeepSeek",
+      providerName: "Qwen",
       timeoutMs: options?.timeoutMs ?? 60_000,
       maxRetries: options?.maxRetries ?? 1,
     });
@@ -71,6 +87,6 @@ const { register } = createGenericProviderFactory({
   },
 });
 
-export function registerDeepSeekProviderFactory(): void {
+export function registerQwenProviderFactory(): void {
   register();
 }
