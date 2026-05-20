@@ -4,6 +4,7 @@
 
 import vscode from 'vscode';
 import type { IChatProvider } from './chat-provider';
+import logger from './logger';
 
 /**
  * 提供者工厂接口
@@ -60,11 +61,11 @@ export class ProviderFactoryRegistry {
 	 */
 	register(factory: IProviderFactory): void {
 		if (this.factories.has(factory.providerId)) {
-			console.warn(`Provider factory "${factory.providerId}" is already registered, skipping`);
+			logger.provider.debug(`Provider factory "${factory.providerId}" is already registered, skipping`);
 			return;
 		}
 		this.factories.set(factory.providerId, factory);
-		console.info(`Registered provider factory: ${factory.providerId} (${factory.providerName})`);
+		logger.provider.debug(`Registered provider factory: ${factory.providerId}`);
 	}
 
 	/**

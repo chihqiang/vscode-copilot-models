@@ -103,7 +103,7 @@ export class BaseModelProvider implements IModelProvider {
 			apiKeySecretKey: `${config.configSection}.${this._lowerId}.apiKey`,
 		};
 
-		logger.provider.info(`[${this.id}] BaseModelProvider created`);
+		logger.provider.debug(`[${this.id}] BaseModelProvider created`);
 	}
 
 	private toLowerCaseFirstChar(str: string): string {

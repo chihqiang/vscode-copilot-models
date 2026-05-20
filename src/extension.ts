@@ -105,7 +105,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 function registerProvider(factory: IProviderFactory, context: vscode.ExtensionContext): void {
 	const { providerId, providerName } = factory;
 
-	logger.core.info(`Registering provider: ${providerName} (${providerId})...`);
+	logger.core.debug(`Registering provider: ${providerName} (${providerId})...`);
 
 	try {
 		// 创建 Chat Provider 并注册到 VS Code
@@ -115,7 +115,7 @@ function registerProvider(factory: IProviderFactory, context: vscode.ExtensionCo
 		registrationDisposables.set(providerId, disposable);
 		chatProviders.set(providerId, chatProvider);
 
-		logger.core.info(`${providerName} provider registered successfully`);
+		logger.core.debug(`${providerName} provider registered successfully`);
 	} catch (error) {
 		logger.core.error(`Failed to register provider "${providerId}":`, error);
 	}

@@ -114,7 +114,7 @@ export function createGenericProviderFactory(options: GenericProviderOptions): G
 			const mp = new GenericModelProvider(context);
 			super(context, mp);
 			this.modelProvider = mp;
-			logger.info(`${options.providerName}ChatProvider created`);
+			logger.debug(`${options.providerName}ChatProvider created`);
 		}
 
 		/**

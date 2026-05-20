@@ -15,7 +15,7 @@ export class ModelRegistry {
 	private models: Map<string, ModelDefinition[]> = new Map();
 
 	private constructor() {
-		logger.registry.info('ModelRegistry initialized');
+		logger.registry.debug('ModelRegistry initialized');
 	}
 
 	/**
@@ -59,7 +59,7 @@ export class ModelRegistry {
 		const models = provider.getModels();
 		this.providers.set(provider.id, provider);
 		this.models.set(provider.id, models);
-		logger.registry.info(`Registered provider: ${provider.id} with ${models.length} models`);
+		logger.registry.debug(`Registered provider: ${provider.id} with ${models.length} models`);
 
 		for (const model of models) {
 			logger.registry.debug(`  - Model: ${model.id} (${model.family})`);

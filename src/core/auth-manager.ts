@@ -37,7 +37,7 @@ export class BaseAuthManager implements IAuthManager {
 		this.secretStorage = context.secrets;
 		this.providerId = providerId;
 		this.secretKey = `${configSection}.${providerId}.apiKey`;
-		logger.auth.info(`[${providerId}] AuthManager initialized`);
+		logger.auth.debug(`[${providerId}] AuthManager initialized`);
 	}
 
 	/**
