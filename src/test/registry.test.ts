@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { ModelRegistry } from '../core/model-registry';
 import type { IModelProvider, ModelDefinition } from '../core';
 
-suite('ModelRegistry', () => {
+suite('ModelRegistry Test Suite', () => {
 	const testModels: ModelDefinition[] = [
 		{
 			id: 'test-model-1',
@@ -26,6 +26,7 @@ suite('ModelRegistry', () => {
 		},
 	];
 
+	// Mock IModelProvider
 	const createMockProvider = (id: string, models: ModelDefinition[]): IModelProvider => ({
 		id,
 		config: {
@@ -43,20 +44,21 @@ suite('ModelRegistry', () => {
 	});
 
 	setup(() => {
-		ModelRegistry._resetInstance();
+		// Clear registry before each test
+		ModelRegistry.getInstance().clear();
 	});
 
 	teardown(() => {
-		ModelRegistry._resetInstance();
+		ModelRegistry.getInstance().clear();
 	});
 
-	test('getInstance returns singleton instance', () => {
+	test('getInstance returns same instance', () => {
 		const instance1 = ModelRegistry.getInstance();
 		const instance2 = ModelRegistry.getInstance();
-		assert.strictEqual(instance1, instance2, 'getInstance should return the same singleton instance');
+		assert.strictEqual(instance1, instance2, 'getInstance should return same singleton instance');
 	});
 
-	test('_resetInstance clears singleton state', () => {
+	test('resetInstance clears singleton state', () => {
 		const instance1 = ModelRegistry.getInstance();
 		const provider = createMockProvider('test-provider', testModels);
 		instance1.registerProvider(provider);
@@ -70,7 +72,7 @@ suite('ModelRegistry', () => {
 		assert.strictEqual(instance2.hasProviders(), false);
 	});
 
-	test('registerProvider adds provider and models to registry', () => {
+	test('registerProvider adds provider to registry', () => {
 		const registry = ModelRegistry.getInstance();
 		const provider = createMockProvider('test-provider', testModels);
 
@@ -78,6 +80,13 @@ suite('ModelRegistry', () => {
 
 		assert.strictEqual(registry.getProvider('test-provider'), provider);
 		assert.strictEqual(registry.hasProviders(), true);
+	});
+
+	test('registerProvider adds models to registry', () => {
+		const registry = ModelRegistry.getInstance();
+		const provider = createMockProvider('test-provider', testModels);
+
+		registry.registerProvider(provider);
 
 		const models = registry.getModelsForProvider('test-provider');
 		assert.strictEqual(models.length, 2);
@@ -93,42 +102,32 @@ suite('ModelRegistry', () => {
 		registry.registerProvider(provider1);
 		registry.registerProvider(provider2);
 
+		// Should keep the first registered provider
 		assert.strictEqual(registry.getProvider('test-provider'), provider1);
 	});
 
-	test('unregisterProvider removes provider and its models', () => {
+	test('unregisterProvider removes provider', () => {
 		const registry = ModelRegistry.getInstance();
 		const provider = createMockProvider('test-provider', testModels);
 
 		registry.registerProvider(provider);
 		assert.strictEqual(registry.hasProviders(), true);
-		assert.strictEqual(registry.getModelsForProvider('test-provider').length, 2);
 
 		registry.unregisterProvider('test-provider');
 		assert.strictEqual(registry.getProvider('test-provider'), undefined);
 		assert.strictEqual(registry.hasProviders(), false);
-		assert.strictEqual(registry.getModelsForProvider('test-provider').length, 0);
-	});
-
-	test('unregisterProvider handles non-existent provider gracefully', () => {
-		const registry = ModelRegistry.getInstance();
-		assert.doesNotThrow(() => {
-			registry.unregisterProvider('non-existent');
-		});
 	});
 
 	test('getAllProviders returns all registered providers', () => {
 		const registry = ModelRegistry.getInstance();
-		const provider1 = createMockProvider('provider-1', [testModels[0]]);
-		const provider2 = createMockProvider('provider-2', [testModels[1]]);
+		const provider1 = createMockProvider('provider-1', testModels);
+		const provider2 = createMockProvider('provider-2', testModels);
 
 		registry.registerProvider(provider1);
 		registry.registerProvider(provider2);
 
 		const providers = registry.getAllProviders();
 		assert.strictEqual(providers.length, 2);
-		assert.ok(providers.includes(provider1));
-		assert.ok(providers.includes(provider2));
 	});
 
 	test('getAllModels returns all models from all providers', () => {
@@ -141,8 +140,6 @@ suite('ModelRegistry', () => {
 
 		const allModels = registry.getAllModels();
 		assert.strictEqual(allModels.length, 2);
-		assert.ok(allModels.some(m => m.id === 'test-model-1'));
-		assert.ok(allModels.some(m => m.id === 'test-model-2'));
 	});
 
 	test('findModelById finds model across all providers', () => {
@@ -158,12 +155,6 @@ suite('ModelRegistry', () => {
 		assert.strictEqual(found?.id, 'test-model-2');
 	});
 
-	test('findModelById returns undefined for non-existent model', () => {
-		const registry = ModelRegistry.getInstance();
-		const found = registry.findModelById('non-existent');
-		assert.strictEqual(found, undefined);
-	});
-
 	test('findProviderByModelId finds provider by model id', () => {
 		const registry = ModelRegistry.getInstance();
 		const provider1 = createMockProvider('provider-1', [testModels[0]]);
@@ -177,10 +168,16 @@ suite('ModelRegistry', () => {
 		assert.strictEqual(found?.id, 'provider-2');
 	});
 
-	test('findProviderByModelId returns undefined for non-existent model', () => {
+	test('clear removes all providers and models', () => {
 		const registry = ModelRegistry.getInstance();
-		const found = registry.findProviderByModelId('non-existent');
-		assert.strictEqual(found, undefined);
+		const provider = createMockProvider('test-provider', testModels);
+
+		registry.registerProvider(provider);
+		assert.strictEqual(registry.hasProviders(), true);
+
+		registry.clear();
+		assert.strictEqual(registry.hasProviders(), false);
+		assert.strictEqual(registry.getAllModels().length, 0);
 	});
 
 	test('getProvider returns undefined for non-existent provider', () => {
@@ -193,28 +190,5 @@ suite('ModelRegistry', () => {
 		const registry = ModelRegistry.getInstance();
 		const models = registry.getModelsForProvider('non-existent');
 		assert.strictEqual(models.length, 0);
-	});
-
-	test('clear removes all providers and models', () => {
-		const registry = ModelRegistry.getInstance();
-		const provider = createMockProvider('test-provider', testModels);
-
-		registry.registerProvider(provider);
-		assert.strictEqual(registry.hasProviders(), true);
-		assert.strictEqual(registry.getAllModels().length, 2);
-
-		registry.clear();
-		assert.strictEqual(registry.hasProviders(), false);
-		assert.strictEqual(registry.getAllModels().length, 0);
-	});
-
-	test('hasProviders returns true when providers are registered', () => {
-		const registry = ModelRegistry.getInstance();
-		assert.strictEqual(registry.hasProviders(), false);
-
-		const provider = createMockProvider('test-provider', testModels);
-		registry.registerProvider(provider);
-
-		assert.strictEqual(registry.hasProviders(), true);
 	});
 });

@@ -2,7 +2,7 @@
  * BigModel (智谱 AI) 模型提供者模块
  */
 
-import { ApiRequest, ClientOptions, CONFIG_SECTION, createApiClient, createGenericProviderFactory, ModelDefinition, ThinkingEffort } from "../../core";
+import { ApiRequest, ClientOptions, CONFIG_SECTION, createApiClient, createGenericProviderFactory, IProviderFactory, ModelDefinition, ThinkingEffort } from "../../core";
 
 // ── 模型定义 ──────────────────────────────────────────
 
@@ -59,7 +59,7 @@ export const BIGMODEL_PROVIDER_ID = "bigmodel";
 export const BIGMODEL_DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
 
 // ── Provider 注册 ─────────────────────────────────────
-const { register } = createGenericProviderFactory({
+const { register, factory: bigmodelFactory } = createGenericProviderFactory({
   providerId: BIGMODEL_PROVIDER_ID,
   providerName: "BigModel",
   defaultBaseUrl: BIGMODEL_DEFAULT_BASE_URL,
@@ -83,6 +83,7 @@ const { register } = createGenericProviderFactory({
   },
 });
 
-export function registerBigModelProviderFactory(): void {
+export function registerBigModelProviderFactory(): IProviderFactory {
   register();
+  return bigmodelFactory;
 }

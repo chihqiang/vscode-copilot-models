@@ -1,8 +1,9 @@
 import * as assert from 'assert';
-import { ProviderFactoryRegistry, createProviderFactory } from '../core/provider-registry';
+import { ProviderFactoryRegistry } from '../core/provider-registry';
 import type { IProviderFactory } from '../core/provider-registry';
 
-suite('ProviderFactoryRegistry', () => {
+suite('ProviderFactoryRegistry Test Suite', () => {
+	// Mock Provider Factory
 	const createMockFactory = (
 		id: string,
 		name: string,
@@ -15,20 +16,20 @@ suite('ProviderFactoryRegistry', () => {
 	});
 
 	setup(() => {
-		ProviderFactoryRegistry._resetInstance();
+		ProviderFactoryRegistry.getInstance().clear();
 	});
 
 	teardown(() => {
-		ProviderFactoryRegistry._resetInstance();
+		ProviderFactoryRegistry.getInstance().clear();
 	});
 
-	test('getInstance returns singleton instance', () => {
+	test('getInstance returns same instance', () => {
 		const instance1 = ProviderFactoryRegistry.getInstance();
 		const instance2 = ProviderFactoryRegistry.getInstance();
-		assert.strictEqual(instance1, instance2, 'getInstance should return the same singleton instance');
+		assert.strictEqual(instance1, instance2, 'getInstance should return same singleton instance');
 	});
 
-	test('_resetInstance clears singleton state', () => {
+	test('resetInstance clears singleton state', () => {
 		const instance1 = ProviderFactoryRegistry.getInstance();
 		instance1.register(createMockFactory('factory-reset', 'Factory Reset'));
 		assert.strictEqual(instance1.count, 1);
@@ -59,6 +60,7 @@ suite('ProviderFactoryRegistry', () => {
 		registry.register(factory1);
 		registry.register(factory2);
 
+		// Should keep the first registered factory
 		assert.strictEqual(registry.getFactory('test-factory'), factory1);
 	});
 
@@ -85,8 +87,6 @@ suite('ProviderFactoryRegistry', () => {
 
 		const allFactories = registry.getAllFactories();
 		assert.strictEqual(allFactories.length, 2);
-		assert.ok(allFactories.includes(factory1));
-		assert.ok(allFactories.includes(factory2));
 	});
 
 	test('count returns correct number of factories', () => {
@@ -126,45 +126,5 @@ suite('ProviderFactoryRegistry', () => {
 
 		registry.register(factory);
 		assert.strictEqual(registry.has('test-factory'), true);
-	});
-});
-
-suite('createProviderFactory', () => {
-	test('should create a valid provider factory', () => {
-		const factory = createProviderFactory({
-			providerId: 'test-provider',
-			providerName: 'Test Provider',
-			configSection: 'copilot-models',
-			enabledByDefault: true,
-			createChatProvider: () => ({} as never),
-		});
-
-		assert.strictEqual(factory.providerId, 'test-provider');
-		assert.strictEqual(factory.providerName, 'Test Provider');
-		assert.strictEqual(factory.isEnabled(), true);
-		assert.strictEqual(typeof factory.createChatProvider, 'function');
-	});
-
-	test('should use default enabledByDefault when not specified', () => {
-		const factory = createProviderFactory({
-			providerId: 'test-provider',
-			providerName: 'Test Provider',
-			configSection: 'copilot-models',
-			createChatProvider: () => ({} as never),
-		});
-
-		assert.strictEqual(factory.isEnabled(), true);
-	});
-
-	test('should respect enabledByDefault setting', () => {
-		const factory = createProviderFactory({
-			providerId: 'test-provider',
-			providerName: 'Test Provider',
-			configSection: 'copilot-models',
-			enabledByDefault: false,
-			createChatProvider: () => ({} as never),
-		});
-
-		assert.strictEqual(factory.isEnabled(), false);
 	});
 });

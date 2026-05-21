@@ -3,10 +3,11 @@
  */
 
 import vscode from 'vscode';
-import { logger } from './logger';
-import { ApiError, ApiMessage, ApiRequest, ApiTool, ApiToolCall, CancelledError, StreamCallbacks, TimeoutError } from './client';
+import { logger, shouldLog } from './logger';
+import { ApiError, ApiMessage, ApiRequest, ApiTool, ApiToolCall, CancelledError, ContentPart, StreamCallbacks, TimeoutError } from './client';
 import { CONFIG_SECTION, ModelDefinition } from './models';
 import { IModelProvider } from './model-provider';
+import { countTokens } from './tokenizer';
 
 
 /**
@@ -73,13 +74,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function reportThinkingPart(progress: vscode.Progress<vscode.LanguageModelResponsePart>, text: string): void {
-	const ThinkingPartConstructor = (vscode as any).LanguageModelThinkingPart;
-	if (typeof ThinkingPartConstructor === 'function') {
-		progress.report(new ThinkingPartConstructor(text));
-		return;
-	}
-
-	progress.report(new vscode.LanguageModelTextPart(text));
+	progress.report(new vscode.LanguageModelThinkingPart(text));
 }
 
 /**
@@ -158,7 +153,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 		this.configSection = this.getConfigSection();
 		this.supportsThinking = this.getSupportsThinking();
 
-		logger.provider.info(`[${this.providerId}] ChatProvider initialized`);
+		logger.provider.debug(`[${this.providerId}] ChatProvider initialized`);
 
 		this.disposables.push(
 			this.onDidChangeLanguageModelChatInformationEmitter,
@@ -189,7 +184,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	 * 释放资源
 	 */
 	dispose(): void {
-		logger.provider.info(`[${this.providerId}] Disposing ChatProvider...`);
+		logger.provider.debug(`[${this.providerId}] Disposing ChatProvider...`);
 		this.disposables.forEach((d) => d.dispose());
 		this.disposables = [];
 	}
@@ -199,7 +194,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	 */
 	protected onConfigurationChanged(e: vscode.ConfigurationChangeEvent): void {
 		if (this.isActive && this.affectsConfiguration(e)) {
-			logger.config.info(`[${this.providerId}] Configuration affects this provider, refreshing...`);
+			logger.config.debug(`[${this.providerId}] Configuration affects this provider, refreshing...`);
 			this.onDidChangeLanguageModelChatInformationEmitter.fire();
 		}
 	}
@@ -208,9 +203,8 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	 * 检查是否影响本 provider 的配置 (子类可重写)
 	 */
 	protected affectsConfiguration(e: vscode.ConfigurationChangeEvent): boolean {
-		const lowerId = this.providerId.charAt(0).toLowerCase() + this.providerId.slice(1);
 		return (
-			e.affectsConfiguration(`${this.configSection}.${lowerId}BaseUrl`) ||
+			e.affectsConfiguration(`${this.configSection}.${this.providerId}.baseUrl`) ||
 			e.affectsConfiguration(`${this.configSection}.modelIdOverrides`)
 		);
 	}
@@ -221,7 +215,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	protected onSecretsChanged(e: vscode.SecretStorageChangeEvent): void {
 		logger.auth.debug(`[${this.providerId}] Secret changed: ${e.key}`);
 		if (this.isActive && this.affectsSecretKey(e)) {
-			logger.auth.info(`[${this.providerId}] Secret affects this provider, refreshing...`);
+			logger.auth.debug(`[${this.providerId}] Secret affects this provider, refreshing...`);
 			this.onDidChangeLanguageModelChatInformationEmitter.fire();
 		}
 	}
@@ -410,35 +404,68 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	): ApiMessage[] {
 		logger.chat.debug(`[${this.providerId}] Converting ${messages.length} messages`);
 
-		// 打印每条原始消息用于调试
-		for (let i = 0; i < messages.length; i++) {
-			const msg = messages[i];
-			const partsInfo = msg.content.map((p) => {
-				if (p instanceof vscode.LanguageModelTextPart) {
-					return `TextPart(${p.value.substring(0, 50)}...)`;
-				}
-				if (p instanceof vscode.LanguageModelToolCallPart) {
-					return `ToolCallPart(${p.name})`;
-				}
-				if (p instanceof vscode.LanguageModelToolResultPart) {
-					return `ToolResultPart(${p.callId})`;
-				}
-				return `UnknownPart`;
-			});
-			logger.chat.debug(`  Message ${i}: role=${msg.role}, parts=[${partsInfo.join(', ')}]`);
+		if (shouldLog('debug')) {
+			for (let i = 0; i < messages.length; i++) {
+				const msg = messages[i];
+				const partsInfo = msg.content.map((p) => {
+					if (p instanceof vscode.LanguageModelTextPart) {
+						return `TextPart(${p.value.substring(0, 50)}...)`;
+					}
+					if (p instanceof vscode.LanguageModelToolCallPart) {
+						return `ToolCallPart(${p.name})`;
+					}
+					if (p instanceof vscode.LanguageModelToolResultPart) {
+						return `ToolResultPart(${p.callId})`;
+					}
+					if (p instanceof vscode.LanguageModelDataPart) {
+						return `DataPart(${p.mimeType}, ${p.data.length} bytes)`;
+					}
+					return `UnknownPart`;
+				});
+				logger.chat.debug(`  Message ${i}: role=${msg.role}, parts=[${partsInfo.join(', ')}]`);
+			}
 		}
 
+		const maxImageSize = this.getMaxImageSize();
 		const result: ApiMessage[] = [];
 
 		for (const message of messages) {
 			const role = this.mapRole(message.role);
-			let content = '';
+			const contentParts: ContentPart[] = [];
+			let hasImages = false;
+			let textBuffer = '';
 			const toolCalls: ApiToolCall[] = [];
 			const toolResults: Array<{ callId: string; content: string }> = [];
 
 			for (const part of message.content) {
 				if (part instanceof vscode.LanguageModelTextPart) {
-					content += part.value;
+					if (hasImages) {
+						contentParts.push({ type: 'text', text: part.value });
+					} else {
+						textBuffer += part.value;
+					}
+				} else if (part instanceof vscode.LanguageModelDataPart) {
+					if (!this.isImageMime(part.mimeType)) {
+						continue;
+					}
+
+					if (part.data.length > maxImageSize) {
+						logger.chat.warn(`[${this.providerId}] Image too large (${part.data.length} bytes > ${maxImageSize} max), skipping`);
+						continue;
+					}
+
+					if (!hasImages) {
+						hasImages = true;
+						if (textBuffer) {
+							contentParts.push({ type: 'text', text: textBuffer });
+							textBuffer = '';
+						}
+					}
+
+					contentParts.push({
+						type: 'image_url',
+						image_url: { url: this.imageToDataUrl(part.data, part.mimeType) },
+					});
 				} else if (part instanceof vscode.LanguageModelToolCallPart) {
 					toolCalls.push({
 						id: part.callId,
@@ -462,11 +489,13 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 				}
 			}
 
+			const finalContent: string | ContentPart[] = hasImages ? contentParts : textBuffer;
+
 			if (role === 'assistant') {
-				if (content || toolCalls.length > 0) {
+				if (finalContent || toolCalls.length > 0) {
 					const msg: ApiMessage = {
 						role: 'assistant',
-						content: content || '',
+						content: finalContent || '',
 					};
 
 					if (toolCalls.length > 0) {
@@ -476,15 +505,14 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 					result.push(msg);
 				}
 			} else {
-				if (content) {
+				if (typeof finalContent === 'string' ? finalContent : finalContent.length > 0) {
 					result.push({
 						role,
-						content,
+						content: finalContent,
 					});
 				}
 			}
 
-			// 添加工具结果消息
 			for (const tr of toolResults) {
 				result.push({
 					role: 'tool',
@@ -544,7 +572,6 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 
 		const apiKey = await this.modelProvider.getApiKey();
 		if (!apiKey) {
-			logger.chat.error(`[${this.providerId}] API key not configured`);
 			throw new Error(`${this.providerName} API key not configured`);
 		}
 
@@ -553,13 +580,13 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			const callbacks = this.createStreamCallbacks(progress);
 			await client.streamChatCompletion(request, callbacks, token);
 		} catch (error) {
-			if (error instanceof TimeoutError) {
-				logger.chat.error(`[${this.providerId}] Request timeout`);
+			if (error instanceof CancelledError) {
+				logger.chat.debug(`[${this.providerId}] Request cancelled`);
 				throw error;
 			}
 
-			if (error instanceof CancelledError) {
-				logger.chat.info(`[${this.providerId}] Request cancelled`);
+			if (error instanceof TimeoutError) {
+				logger.chat.error(`[${this.providerId}] Request timeout`);
 				throw error;
 			}
 
@@ -569,7 +596,6 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			}
 
 			if (error instanceof Error && error.message.includes('timeout')) {
-				logger.chat.error(`[${this.providerId}] Request timeout`);
 				throw new TimeoutError(this.providerName, 0);
 			}
 
@@ -641,7 +667,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 
 				// 打印 Token 使用统计
 				if (finalUsage) {
-					logger.stream.info(
+					logger.stream.debug(
 						`[${this.providerId}] === Token Usage ===\n` +
 							`  prompt_tokens: ${finalUsage.prompt_tokens}\n` +
 							`  completion_tokens: ${finalUsage.completion_tokens}\n` +
@@ -688,45 +714,35 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 估算文本的 token 数量
-	 * 使用 cl100k_base 编码的近似算法：
-	 *   - 英文单词: ~1.3 tokens/word
-	 *   - CJK 字符: ~2 tokens/char
-	 *   - 数字: ~0.25 tokens/digit
-	 *   - 其余字符 (标点/空格): ~0.25 tokens/char
+	 * 精确计算 token 数量
+	 * 使用 o200k_base 编码（通过 @dqbd/tiktoken WASM）
+	 * 在 WASM 加载失败时自动回退到启发式算法
 	 */
 	private estimateTokenCount(text: string): number {
-		let tokens = 0;
-
-		// 英文单词：按空格分词，每个词约 1.3 tokens
-		const words = text.match(/[a-zA-Z]+/g);
-		if (words) {
-			tokens += words.length * 1.3;
-		}
-
-		// CJK 字符：中/日/韩文字，每个约 2 tokens
-		const cjk = text.match(/[\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf\uf900-\ufaff]/g);
-		if (cjk) {
-			tokens += cjk.length * 2;
-		}
-
-		// 数字：每位数约 0.25 tokens
-		const digits = text.match(/[0-9]+/g);
-		if (digits) {
-			tokens += digits.reduce((s, n) => s + n.length * 0.25, 0);
-		}
-
-		// 剩余字符（标点、空格等）：每个约 0.25 tokens
-		const remaining = text.replace(/[a-zA-Z\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf\uf900-\ufaff0-9]/g, '');
-		tokens += remaining.length * 0.25;
-
-		// +1 安全边际
-		return Math.max(1, Math.ceil(tokens + 1));
+		return countTokens(text);
 	}
 
 	/**
 	 * 从消息中提取文本内容
 	 */
+	private getMaxImageSize(): number {
+		const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+		return config.get<number>('maxImageSize') ?? 20 * 1024 * 1024;
+	}
+
+	private isImageMime(mimeType: string): boolean {
+		return mimeType.startsWith('image/');
+	}
+
+	private imageToDataUrl(data: Uint8Array, mimeType: string): string {
+		const base64 = this.uint8ArrayToBase64(data);
+		return `data:${mimeType};base64,${base64}`;
+	}
+
+	private uint8ArrayToBase64(bytes: Uint8Array): string {
+		return Buffer.from(bytes).toString('base64');
+	}
+
 	private extractTextFromMessage(message: vscode.LanguageModelChatRequestMessage): string {
 		let text = '';
 		for (const part of message.content) {
@@ -741,7 +757,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	 * 刷新模型选择器
 	 */
 	refreshModelPicker(): void {
-		logger.provider.info(`[${this.providerId}] Refreshing model picker`);
+		logger.provider.debug(`[${this.providerId}] Refreshing model picker`);
 		this.onDidChangeLanguageModelChatInformationEmitter.fire();
 	}
 
@@ -749,7 +765,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	 * 准备停用
 	 */
 	async prepareForDeactivate(): Promise<void> {
-		logger.provider.info(`[${this.providerId}] Preparing for deactivation`);
+		logger.provider.debug(`[${this.providerId}] Preparing for deactivation`);
 		this.isActive = false;
 		this.onDidChangeLanguageModelChatInformationEmitter.fire();
 	}
