@@ -1,10 +1,38 @@
 /**
- * 基础 API 客户端 - 使用 OpenAI SDK 实现
+ * 基础 API 客户端 - 使用本地 OpenAI 兼容实现
  */
 
 import type {CancellationToken} from 'vscode';
-import {logger} from './logger';
-import OpenAI from 'openai';
+import {logger, shouldLog} from './logger';
+import { Stream } from './openai/stream';
+import { CircuitBreaker, CircuitBreakerError, calculateDelay, delay } from './retry';
+
+/** 流式聊天补全响应块 */
+export interface ChatCompletionChunk {
+  id: string;
+  object: string;
+  created: number;
+  model: string;
+  choices: Array<{
+    index: number;
+    delta: {
+      content?: string | null;
+      reasoning_content?: string;
+      tool_calls?: Array<{
+        index: number;
+        id?: string;
+        type?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+    finish_reason: string | null;
+  }>;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
 
 /**
  * 客户端配置选项
@@ -14,6 +42,8 @@ export interface ClientOptions {
 	timeoutMs?: number;
 	/** 最大重试次数 */
 	maxRetries?: number;
+	/** 电路断路器配置 */
+	circuitBreaker?: { failureThreshold?: number; resetTimeoutMs?: number };
 }
 
 
@@ -35,6 +65,13 @@ export interface IApiClient {
 
 
 /**
+ * API 消息内容块（支持文本和图片）
+ */
+export type ContentPart =
+	| { type: 'text'; text: string }
+	| { type: 'image_url'; image_url: { url: string } };
+
+/**
  * API 消息格式
  */
 export type ApiMessage =
@@ -45,7 +82,7 @@ export type ApiMessage =
 	}
 	| {
 		role: 'system' | 'user' | 'assistant';
-		content: string;
+		content: string | ContentPart[];
 		tool_calls?: ApiToolCall[];
 		reasoning_content?: string;
 	};
@@ -287,48 +324,68 @@ function isSensitiveKey(key: string): boolean {
     return sensitivePatterns.some((pattern) => lowerKey.includes(pattern.toLowerCase()));
 }
 
-function toChatCompletionMessageParam(message: ApiMessage): OpenAI.ChatCompletionMessageParam {
-    switch (message.role) {
-        case 'system':
-            return {
-                role: 'system',
-                content: message.content,
-            };
-        case 'user':
-            return {
-                role: 'user',
-                content: message.content,
-            };
-        case 'assistant': {
-            const assistantMessage: OpenAI.ChatCompletionAssistantMessageParam = {
-                role: 'assistant',
-                content: message.content,
-            };
-            if (message.tool_calls && message.tool_calls.length > 0) {
-                assistantMessage.tool_calls = message.tool_calls.map((toolCall) => ({
-                    id: toolCall.id,
-                    type: toolCall.type,
-                    function: {
-                        name: toolCall.function.name,
-                        arguments: toolCall.function.arguments,
-                    },
-                }));
-            }
-            return assistantMessage;
-        }
-        case 'tool':
-            return {
-                role: 'tool',
-                content: message.content,
-                tool_call_id: message.tool_call_id ?? '',
-            };
-        default:
-            throw new Error('Unsupported message role');
-    }
+function toChatContent(message: string | ContentPart[]): Record<string, unknown>[] {
+	if (typeof message === 'string') {
+		return [{ type: 'text', text: message }];
+	}
+	return message.map((part) => {
+		if (part.type === 'text') {
+			return { type: 'text', text: part.text };
+		}
+		return { type: 'image_url', image_url: { url: part.image_url.url } };
+	});
 }
 
-function toChatCompletionTool(tool: ApiTool): OpenAI.ChatCompletionTool {
-    const toolDefinition: OpenAI.ChatCompletionTool = {
+function toChatCompletionMessageParam(message: ApiMessage): Record<string, unknown> {
+	switch (message.role) {
+		case 'system':
+			return {
+				role: 'system',
+				content: typeof message.content === 'string'
+					? message.content
+					: message.content
+						.filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+						.map((p) => ({ type: 'text', text: p.text })),
+			};
+		case 'user':
+			return {
+				role: 'user',
+				content: toChatContent(message.content),
+			};
+		case 'assistant': {
+			const msg: Record<string, unknown> = {
+				role: 'assistant',
+				content: typeof message.content === 'string'
+					? message.content
+					: message.content
+						.filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+						.map((p) => ({ type: 'text', text: p.text })),
+			};
+			if (message.tool_calls && message.tool_calls.length > 0) {
+				msg.tool_calls = message.tool_calls.map((toolCall) => ({
+					id: toolCall.id,
+					type: toolCall.type,
+					function: {
+						name: toolCall.function.name,
+						arguments: toolCall.function.arguments,
+					},
+				}));
+			}
+			return msg;
+		}
+		case 'tool':
+			return {
+				role: 'tool',
+				content: message.content,
+				tool_call_id: message.tool_call_id ?? '',
+			};
+		default:
+			throw new Error('Unsupported message role');
+	}
+}
+
+function toChatCompletionTool(tool: ApiTool): Record<string, unknown> {
+    return {
         type: tool.type,
         function: {
             name: tool.function.name,
@@ -336,7 +393,6 @@ function toChatCompletionTool(tool: ApiTool): OpenAI.ChatCompletionTool {
             ...(tool.function.parameters ? { parameters: tool.function.parameters } : {}),
         },
     };
-    return toolDefinition;
 }
 
 export interface ApiClientConfig {
@@ -345,6 +401,108 @@ export interface ApiClientConfig {
     providerName: string;
     timeoutMs: number;
     maxRetries: number;
+    circuitBreaker?: { failureThreshold?: number; resetTimeoutMs?: number };
+}
+
+function isRetryableError(error: unknown): boolean {
+    if (error instanceof RateLimitError) {
+        return true;
+    }
+    if (error instanceof ServiceUnavailableError) {
+        return true;
+    }
+    if (error instanceof NetworkError) {
+        return true;
+    }
+    if (error instanceof TimeoutError) {
+        return true;
+    }
+    return false;
+}
+
+function classifyError(error: unknown, providerName: string): Error {
+    if (error instanceof CancelledError) {
+        return error;
+    }
+    if (error instanceof CircuitBreakerError) {
+        return error;
+    }
+
+    if (error instanceof ApiError) {
+        return error;
+    }
+
+    if (error instanceof Error && error.name === 'AbortError') {
+        return new TimeoutError(providerName, 0);
+    }
+
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+        return new NetworkError(error.message, providerName, error);
+    }
+
+    return error instanceof Error ? error : new Error(String(error));
+}
+
+/** 发送 HTTP 请求并返回流式 SSE 响应 */
+async function fetchStream(
+  url: string,
+  apiKey: string,
+  body: Record<string, unknown>,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  const combinedSignal = signal
+    ? combineAbortSignals(signal, controller.signal)
+    : controller.signal;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: combinedSignal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
+  const controller = new AbortController();
+  for (const signal of signals) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      return controller.signal;
+    }
+    signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
+  }
+  return controller.signal;
+}
+
+async function handleResponseError(response: Response, providerName: string): Promise<never> {
+  let errorBody = '';
+  try {
+    errorBody = await response.text();
+  } catch {
+    // ignore
+  }
+
+  let parsed: Record<string, any> = {};
+  try {
+    parsed = JSON.parse(errorBody);
+  } catch {
+    // ignore
+  }
+
+  const message = parsed?.error?.message || parsed?.message || errorBody || response.statusText;
+  throw createApiError(response.status, providerName, message, errorBody);
 }
 
 export function createApiClient(config: ApiClientConfig): IApiClient {
@@ -353,23 +511,18 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
         readonly apiKey: string;
         private readonly providerName: string;
         private readonly timeoutMs: number;
-        private readonly openai: OpenAI;
+        private readonly maxRetries: number;
+        private readonly circuitBreaker: CircuitBreaker;
 
         constructor() {
             this.baseUrl = config.baseUrl;
             this.apiKey = config.apiKey;
             this.providerName = config.providerName;
             this.timeoutMs = config.timeoutMs;
-            const maxRetries = config.maxRetries;
+            this.maxRetries = config.maxRetries;
+            this.circuitBreaker = new CircuitBreaker(config.circuitBreaker);
 
-            this.openai = new OpenAI({
-                apiKey: this.apiKey,
-                baseURL: this.baseUrl,
-                timeout: this.timeoutMs,
-                maxRetries,
-            });
-            
-            logger.api.debug(`[${this.providerName}] ApiClient created with OpenAI SDK`);
+            logger.api.debug(`[${this.providerName}] ApiClient created (retry=${this.maxRetries}, circuit=${this.circuitBreaker.getState()})`);
         }
 
         async streamChatCompletion(
@@ -377,25 +530,24 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
             callbacks: StreamCallbacks,
             cancellationToken?: CancellationToken,
         ): Promise<void> {
-            const {providerName, openai} = this;
+            const {providerName, circuitBreaker} = this;
             logger.api.info(`[${providerName}] Starting streamChatCompletion, model: ${request.model}`);
 
             const controller = new AbortController();
             const cancelListener = cancellationToken?.onCancellationRequested(() => {
-                logger.api.info(`[${providerName}] Cancellation requested`);
+                logger.api.debug(`[${providerName}] Cancellation requested`);
                 controller.abort();
             });
 
             if (cancellationToken?.isCancellationRequested) {
-                logger.api.info(`[${providerName}] Already cancelled, aborting`);
                 controller.abort();
             }
 
             try {
-                const messages: OpenAI.ChatCompletionMessageParam[] = request.messages.map(toChatCompletionMessageParam);
-                const tools: OpenAI.ChatCompletionTool[] | undefined = request.tools?.map(toChatCompletionTool);
+                const messages = request.messages.map(toChatCompletionMessageParam);
+                const tools = request.tools?.map(toChatCompletionTool);
 
-                const requestBody: OpenAI.ChatCompletionCreateParamsStreaming = {
+                const requestBody: Record<string, unknown> = {
                     model: request.model,
                     messages,
                     stream: true,
@@ -407,10 +559,12 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
                     ...(request.tool_choice ? { tool_choice: request.tool_choice } : {}),
                 };
 
-                logger.api.debug(`[${providerName}] Request body: ${JSON.stringify(sanitizeForLog(requestBody))}`);
+                if (shouldLog('debug')) {
+                    logger.api.debug(`[${providerName}] Request body: ${JSON.stringify(sanitizeForLog(requestBody))}`);
+                }
 
-                const stream = await openai.chat.completions.create(requestBody, {
-                    signal: controller.signal,
+                const stream = await circuitBreaker.call(providerName, async () => {
+                    return await this.sendWithRetry(requestBody, controller.signal);
                 });
 
                 const pendingToolCalls = new Map<number, { id: string; type: 'function'; function: { name: string; arguments: string } }>();
@@ -419,7 +573,7 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
 
                 for await (const chunk of stream) {
                     if (cancellationToken?.isCancellationRequested) {
-                        logger.api.info(`[${providerName}] Cancellation requested, stopping stream`);
+                        logger.api.debug(`[${providerName}] Cancellation requested, stopping stream`);
                         return;
                     }
 
@@ -478,39 +632,63 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
                     }
                 }
 
-                logger.api.info(`[${providerName}] Stream completed`);
                 callbacks.onDone();
             } catch (error) {
                 if (cancellationToken?.isCancellationRequested) {
-                    logger.api.info(`[${providerName}] Stream aborted due to cancellation`);
                     callbacks.onError(new CancelledError(providerName));
                     return;
                 }
 
-                if (error instanceof Error && error.name === 'AbortError') {
-                    logger.api.error(`[${providerName}] Request timeout`);
-                    callbacks.onError(new TimeoutError(providerName, this.timeoutMs));
-                    return;
-                }
-
-                if (error instanceof OpenAI.APIError) {
-                    logger.api.error(`[${providerName}] API error (${error.status}): ${error.message}`);
-                    callbacks.onError(createApiError(error.status ?? 0, providerName, error.message, error.message));
-                    return;
-                }
-
-                if (error instanceof TypeError && error.message.includes('fetch')) {
-                    logger.api.error(`[${providerName}] Network error:`, error);
-                    callbacks.onError(new NetworkError(error.message, providerName, error));
-                    return;
-                }
-
-                const errorMsg = error instanceof Error ? error : new Error(String(error));
-                logger.api.error(`[${providerName}] Stream error:`, errorMsg);
-                callbacks.onError(errorMsg);
+                const mapped = classifyError(error, providerName);
+                logger.api.error(`[${providerName}] Request failed: ${mapped.message}`);
+                callbacks.onError(mapped);
             } finally {
                 cancelListener?.dispose();
             }
+        }
+
+        private async sendWithRetry(
+            requestBody: Record<string, unknown>,
+            signal: AbortSignal,
+        ): Promise<Stream<ChatCompletionChunk>> {
+            const {providerName, baseUrl, apiKey, timeoutMs, maxRetries} = this;
+
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    if (attempt > 0) {
+                        const backoff = calculateDelay(attempt - 1);
+                        logger.api.warn(`[${providerName}] Retry ${attempt}/${maxRetries} after ${backoff}ms`);
+                        await delay(backoff);
+                    }
+
+                    const response = await fetchStream(
+                        `${baseUrl}/chat/completions`,
+                        apiKey,
+                        requestBody,
+                        timeoutMs,
+                        signal,
+                    );
+
+                    if (!response.ok) {
+                        await handleResponseError(response, providerName);
+                    }
+
+                    const streamController = new AbortController();
+                    if (signal.aborted) {
+                        streamController.abort(signal.reason);
+                    } else {
+                        signal.addEventListener('abort', () => streamController.abort(signal.reason), { once: true });
+                    }
+                    return Stream.fromSSEResponse<ChatCompletionChunk>(response, streamController);
+                } catch (error) {
+                    if (!isRetryableError(error) || attempt >= maxRetries) {
+                        throw error;
+                    }
+                    logger.api.warn(`[${providerName}] Retryable error (${attempt + 1}/${maxRetries + 1}): ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
+
+            throw new Error(`Exhausted ${maxRetries + 1} retry attempts`);
         }
     })();
 }

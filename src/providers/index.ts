@@ -6,15 +6,26 @@ export * from './deepseek';
 export * from './bigmodel';
 export * from './qwen';
 
+import { IProviderFactory } from '../core';
 import { registerDeepSeekProviderFactory } from './deepseek';
 import { registerBigModelProviderFactory } from './bigmodel';
 import { registerQwenProviderFactory } from './qwen';
 
-/**
- * 注册所有内置提供者
- */
+let builtInFactories: IProviderFactory[] | null = null;
+
 export function registerAllProviders(): void {
 	registerDeepSeekProviderFactory();
 	registerBigModelProviderFactory();
 	registerQwenProviderFactory();
+}
+
+export function getBuiltInProviderFactories(): IProviderFactory[] {
+	if (!builtInFactories) {
+		builtInFactories = [
+			registerDeepSeekProviderFactory(),
+			registerBigModelProviderFactory(),
+			registerQwenProviderFactory(),
+		];
+	}
+	return builtInFactories;
 }
