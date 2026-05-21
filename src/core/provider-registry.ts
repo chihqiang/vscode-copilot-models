@@ -4,7 +4,8 @@
 
 import vscode from 'vscode';
 import type { IChatProvider } from './chat-provider';
-import logger from './logger';
+import { logger } from './logger';
+import { isTestEnvironment } from './env';
 
 /**
  * 提供者工厂接口
@@ -127,7 +128,7 @@ export function registerProvider(providerId: string, providerName: string) {
 		};
 
 		// 延迟注册，确保 Registry 已初始化
-		if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'test') {
+		if (!isTestEnvironment()) {
 			queueMicrotask(() => {
 				ProviderFactoryRegistry.getInstance().register(factory);
 			});

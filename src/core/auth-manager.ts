@@ -70,18 +70,18 @@ export class BaseAuthManager implements IAuthManager {
 	 * 在 SecretStorage 中存储 API 密钥
 	 */
 	async setApiKey(apiKey: string): Promise<void> {
-		logger.auth.info(`[${this.providerId}] Storing API key...`);
+			logger.auth.debug(`[${this.providerId}] Storing API key...`);
 		await this.secretStorage.store(this.secretKey, apiKey.trim());
-		logger.auth.info(`[${this.providerId}] API key stored successfully`);
+			logger.auth.debug(`[${this.providerId}] API key stored successfully`);
 	}
 
 	/**
 	 * 删除已存储的 API 密钥
 	 */
 	async deleteApiKey(): Promise<void> {
-		logger.auth.info(`[${this.providerId}] Deleting API key...`);
+			logger.auth.debug(`[${this.providerId}] Deleting API key...`);
 		await this.secretStorage.delete(this.secretKey);
-		logger.auth.info(`[${this.providerId}] API key deleted`);
+			logger.auth.debug(`[${this.providerId}] API key deleted`);
 	}
 
 	/**

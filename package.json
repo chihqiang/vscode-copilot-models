@@ -35,8 +35,15 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
+  "enabledApiProposals": [
+    "languageModelThinkingPart"
+  ],
   "contributes": {
     "languageModelChatProviders": [
+      {
+        "vendor": "copilot-models-router",
+        "displayName": "Copilot Models"
+      },
       {
         "vendor": "deepseek",
         "displayName": "DeepSeek"
@@ -80,6 +87,11 @@
         "command": "copilot-models.refreshModels",
         "title": "Refresh Models",
         "description": "Refresh the model list"
+      },
+      {
+        "command": "copilot-models.showLatencyStats",
+        "title": "Show Latency Stats",
+        "description": "Show model routing latency statistics"
       }
     ],
     "configuration": {
@@ -99,7 +111,7 @@
             "metadata",
             "verbose"
           ],
-          "description": "Debug mode for logging"
+          "description": "Log verbosity: minimal (warnings+errors only), metadata (normal), verbose (debug)"
         },
         "copilot-models.timeoutMs": {
           "type": "number",
@@ -122,12 +134,121 @@
             "type": "string"
           }
         },
+        "copilot-models.maxImageSize": {
+          "type": "number",
+          "default": 20971520,
+          "minimum": 0,
+          "maximum": 104857600,
+          "description": "Maximum image upload size in bytes (default: 20MB, 0 = disabled)"
+        },
+        "copilot-models.routingStrategy": {
+          "type": "string",
+          "default": "failover",
+          "enum": [
+            "failover",
+            "latency"
+          ],
+          "description": "Model routing strategy: 'failover' (fallback on error) or 'latency' (prefer lowest-latency provider)"
+        },
+        "copilot-models.failoverModels": {
+          "type": "object",
+          "default": {},
+          "description": "Model failover mappings: primary model ID → fallback model ID on another provider",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "copilot-models.customProviders": {
+          "type": "array",
+          "default": [],
+          "description": "Custom model providers (OpenAI-compatible API). Each entry defines a provider with models, base URL, and API key handling.",
+          "items": {
+            "type": "object",
+            "required": [
+              "providerId",
+              "providerName",
+              "baseUrl"
+            ],
+            "properties": {
+              "providerId": {
+                "type": "string",
+                "description": "Unique provider identifier (e.g. 'my-provider')"
+              },
+              "providerName": {
+                "type": "string",
+                "description": "Display name (e.g. 'My Provider')"
+              },
+              "baseUrl": {
+                "type": "string",
+                "description": "OpenAI-compatible API base URL"
+              },
+              "apiKeyPrompt": {
+                "type": "string",
+                "description": "Prompt text shown when requesting API key"
+              },
+              "apiKeyPlaceholder": {
+                "type": "string",
+                "description": "Placeholder text in API key input"
+              },
+              "thinkingParamType": {
+                "type": "string",
+                "enum": [
+                  "reasoning_effort",
+                  "thinking_enabled",
+                  "none"
+                ],
+                "default": "reasoning_effort",
+                "description": "How to send thinking/reasoning parameter"
+              },
+              "models": {
+                "type": "array",
+                "description": "Model definitions (if omitted, a single 'default' model is created)",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Model ID sent to the API"
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "Human-readable model name"
+                    },
+                    "maxInputTokens": {
+                      "type": "number",
+                      "description": "Maximum input tokens"
+                    },
+                    "maxOutputTokens": {
+                      "type": "number",
+                      "description": "Maximum output tokens"
+                    },
+                    "toolCalling": {
+                      "type": "boolean",
+                      "description": "Supports tool/function calling"
+                    },
+                    "imageInput": {
+                      "type": "boolean",
+                      "description": "Supports image input"
+                    },
+                    "thinking": {
+                      "type": "boolean",
+                      "description": "Supports thinking/reasoning"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "copilot-models.deepseek.enabled": {
           "type": "boolean",
           "default": true,
           "description": "Enable the DeepSeek provider"
         },
-        "copilot-models.deepseekBaseUrl": {
+        "copilot-models.deepseek.baseUrl": {
           "type": "string",
           "default": "https://api.deepseek.com",
           "description": "DeepSeek API base URL"
@@ -137,7 +258,7 @@
           "default": true,
           "description": "Enable the BigModel provider"
         },
-        "copilot-models.bigmodelBaseUrl": {
+        "copilot-models.bigmodel.baseUrl": {
           "type": "string",
           "default": "https://open.bigmodel.cn/api/paas/v4",
           "description": "BigModel API base URL"
@@ -147,7 +268,7 @@
           "default": true,
           "description": "Enable the Qwen provider"
         },
-        "copilot-models.qwenBaseUrl": {
+        "copilot-models.qwen.baseUrl": {
           "type": "string",
           "default": "https://dashscope.aliyuncs.com/compatible-mode/v1",
           "description": "Qwen API base URL"
@@ -184,6 +305,6 @@
     "vsce": "^2.15.0"
   },
   "dependencies": {
-    "openai": "^6.38.0"
+    "@dqbd/tiktoken": "^1.0.22"
   }
 }

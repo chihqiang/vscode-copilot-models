@@ -2,25 +2,25 @@
  * VS Code Copilot Models 扩展主入口
  *
  * 支持多种语言模型接入 VS Code Copilot Chat
- * 使用动态注册机制，支持扩展新的模型提供者
+ * 使用 ModelRouter 统一路由，支持故障转移和延迟跟踪
  */
 
 import vscode from 'vscode';
-import { IChatProvider, initLogger, IProviderFactory, logger, ModelRegistry, ProviderFactoryRegistry } from './core';
-import { registerAllProviders } from './providers';
+import { applyLogLevelFromConfig, discoverAllProviders, IChatProvider, initLogger, IProviderFactory, logger, ModelRegistry, ModelRouter, ProviderFactoryRegistry } from './core';
+import { getBuiltInProviderFactories } from './providers';
 
 /**
- * 已激活的 Chat Provider 实例 (用于停用时清理)
+ * 模型路由器实例（统一管理所有 provider）
  */
-const chatProviders: Map<string, IChatProvider> = new Map();
+let modelRouter: ModelRouter | undefined;
 
 /**
- * 已注册的 Provider 注册 Disposables (用于动态启停)
+ * 已注册的 Provider 注册 Disposable（用于动态启停）
  */
 const registrationDisposables: Map<string, vscode.Disposable> = new Map();
 
 /**
- * 选择提供者 (用于命令中提取重复逻辑)
+ * 选择提供者（用于命令中提取重复逻辑）
  * @param factories 提供者工厂列表
  * @returns 选中的提供者工厂，或 undefined 表示取消选择
  */
@@ -49,44 +49,103 @@ async function selectProvider(factories: IProviderFactory[]): Promise<IProviderF
 }
 
 /**
+ * 向路由器和 VS Code 注册单个提供者
+ */
+function registerProvider(factory: IProviderFactory, context: vscode.ExtensionContext): IChatProvider {
+	const { providerId, providerName } = factory;
+
+	logger.core.debug(`Creating provider: ${providerName} (${providerId})...`);
+
+	const chatProvider = factory.createChatProvider(context);
+	const registry = ModelRegistry.getInstance();
+	const modelProvider = registry.getProvider(providerId);
+	const models = modelProvider?.getModels().map((m) => m.id) ?? [];
+
+	if (modelRouter) {
+		modelRouter.addProvider(providerId, chatProvider, models);
+	} else {
+		const disposable = vscode.lm.registerLanguageModelChatProvider(providerId, chatProvider);
+		context.subscriptions.push(disposable);
+		registrationDisposables.set(providerId, disposable);
+	}
+
+	logger.core.debug(`${providerName} provider registered successfully`);
+	return chatProvider;
+}
+
+/**
+ * 从路由器和 VS Code 注销单个提供者
+ */
+async function unregisterProvider(providerId: string): Promise<void> {
+	modelRouter?.removeProvider(providerId);
+
+	const disposable = registrationDisposables.get(providerId);
+	if (disposable) {
+		disposable.dispose();
+		registrationDisposables.delete(providerId);
+	}
+
+	ModelRegistry.getInstance().unregisterProvider(providerId);
+	logger.core.debug(`Provider "${providerId}" unregistered`);
+}
+
+/**
  * 扩展激活入口
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-	logger.core.info(`Activating extension: ${context.extension.packageJSON.displayName} v${context.extension.packageJSON.version}`);
 	try {
 		initLogger(context);
-		// 注册所有内置提供者
-		registerAllProviders();
+		logger.core.info(`Activating extension: ${context.extension.packageJSON.displayName} v${context.extension.packageJSON.version}`);
+		// 通过 provider-loader 发现所有提供者（内置 + 自定义 + 工作区）
+		await discoverAllProviders(getBuiltInProviderFactories(), context);
 		// 获取所有已启用的提供者并注册
 		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
 		logger.core.info(`Found ${factories.length} enabled provider(s)`);
 
+		modelRouter = new ModelRouter();
 		for (const factory of factories) {
 			registerProvider(factory, context);
 		}
 
+		const routerDisposable = vscode.lm.registerLanguageModelChatProvider('copilot-models-router', modelRouter);
+		context.subscriptions.push(routerDisposable);
+		registrationDisposables.set('copilot-models-router', routerDisposable);
+
 		// 注册通用命令
 		registerCommands();
 
-		// 监听配置变化，动态启停 Provider
+		// 监听配置变化，动态启停 Provider 及更新日志级别
 		context.subscriptions.push(
-			vscode.workspace.onDidChangeConfiguration((e) => {
+			vscode.workspace.onDidChangeConfiguration(async (e) => {
 				if (!e.affectsConfiguration('copilot-models')) {
 					return;
 				}
 
+				if (e.affectsConfiguration('copilot-models.debugMode')) {
+					applyLogLevelFromConfig();
+					logger.core.info(`Log level updated to: ${logger.level}`);
+				}
+
 				const allFactories = ProviderFactoryRegistry.getInstance().getAllFactories();
+				let routerChanged = false;
+
 				for (const factory of allFactories) {
 					const isNowEnabled = factory.isEnabled();
-					const isCurrentlyRegistered = registrationDisposables.has(factory.providerId);
+					const isCurrentlyRegistered = modelRouter?.hasProvider(factory.providerId) ?? false;
 
 					if (isNowEnabled && !isCurrentlyRegistered) {
 						logger.core.info(`Config changed: enabling provider "${factory.providerId}"`);
 						registerProvider(factory, context);
+						routerChanged = true;
 					} else if (!isNowEnabled && isCurrentlyRegistered) {
 						logger.core.info(`Config changed: disabling provider "${factory.providerId}"`);
-						unregisterProvider(factory.providerId);
+						await unregisterProvider(factory.providerId);
+						routerChanged = true;
 					}
+				}
+
+				if (routerChanged && modelRouter) {
+					modelRouter.refreshModelPicker();
 				}
 			}),
 		);
@@ -100,69 +159,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 }
 
 /**
- * 注册单个提供者
- */
-function registerProvider(factory: IProviderFactory, context: vscode.ExtensionContext): void {
-	const { providerId, providerName } = factory;
-
-	logger.core.debug(`Registering provider: ${providerName} (${providerId})...`);
-
-	try {
-		// 创建 Chat Provider 并注册到 VS Code
-		const chatProvider = factory.createChatProvider(context);
-		const disposable = vscode.lm.registerLanguageModelChatProvider(providerId, chatProvider);
-		context.subscriptions.push(disposable);
-		registrationDisposables.set(providerId, disposable);
-		chatProviders.set(providerId, chatProvider);
-
-		logger.core.debug(`${providerName} provider registered successfully`);
-	} catch (error) {
-		logger.core.error(`Failed to register provider "${providerId}":`, error);
-	}
-}
-
-/**
- * 注销单个提供者
- */
-function unregisterProvider(providerId: string): void {
-	const disposable = registrationDisposables.get(providerId);
-	if (disposable) {
-		disposable.dispose();
-		registrationDisposables.delete(providerId);
-	}
-
-	const provider = chatProviders.get(providerId);
-	if (provider) {
-		provider.dispose();
-		chatProviders.delete(providerId);
-	}
-
-	logger.core.info(`Provider "${providerId}" unregistered`);
-}
-
-/**
  * 注册通用命令
  */
 function registerCommands(): void {
-	// 设置 API 密钥（先选择服务商，再输入 token）
+	// 设置 API 密钥（通过路由器管理）
 	vscode.commands.registerCommand('copilot-models.setApiKey', async () => {
-		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
-		const factory = await selectProvider(factories);
-
-		if (factory) {
-			const provider = chatProviders.get(factory.providerId);
-			await provider?.configureApiKey();
+		if (modelRouter) {
+			await modelRouter.configureApiKey();
 		}
 	});
 
-	// 清除 API 密钥（先选择服务商）
+	// 清除 API 密钥
 	vscode.commands.registerCommand('copilot-models.clearApiKey', async () => {
-		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
-		const factory = await selectProvider(factories);
-
-		if (factory) {
-			const provider = chatProviders.get(factory.providerId);
-			await provider?.clearApiKey();
+		if (modelRouter) {
+			await modelRouter.clearApiKey();
 		}
 	});
 
@@ -187,11 +197,22 @@ function registerCommands(): void {
 	// 刷新模型
 	vscode.commands.registerCommand('copilot-models.refreshModels', async () => {
 		logger.core.info('refreshModels command invoked');
-		// 触发所有已注册 provider 的模型选择器刷新
-		for (const provider of chatProviders.values()) {
-			provider.refreshModelPicker();
-		}
+		modelRouter?.refreshModelPicker();
 		logger.core.info('Models refreshed successfully');
+	});
+
+	// 显示路由统计
+	vscode.commands.registerCommand('copilot-models.showLatencyStats', () => {
+		if (!modelRouter) {return;}
+		const stats = modelRouter.latencyTracker.getAllStats();
+		if (stats.size === 0) {
+			vscode.window.showInformationMessage('No latency data available');
+			return;
+		}
+		const lines = Array.from(stats.entries()).map(([id, s]) =>
+			`${id}: avg=${s.averageMs.toFixed(0)}ms, min=${s.minMs}ms, max=${s.maxMs}ms (${s.count} samples)`,
+		);
+		vscode.window.showInformationMessage('Latency stats:\n' + lines.join('\n'), { modal: true });
 	});
 }
 
@@ -201,17 +222,21 @@ function registerCommands(): void {
 export async function deactivate(): Promise<void> {
 	logger.core.info('Deactivating extension...');
 
-	// 停用所有 Chat Provider
-	for (const [providerId, provider] of chatProviders) {
+	if (modelRouter) {
+		await modelRouter.prepareForDeactivate();
+		modelRouter.dispose();
+		modelRouter = undefined;
+	}
+
+	for (const [providerId, disposable] of registrationDisposables) {
 		try {
-			await provider.prepareForDeactivate();
-			provider.dispose();
-			logger.core.info(`Provider "${providerId}" deactivated`);
+			disposable.dispose();
+			logger.core.info(`Disposable "${providerId}" disposed`);
 		} catch (error) {
-			logger.core.error(`Failed to deactivate provider "${providerId}":`, error);
+			logger.core.error(`Failed to dispose "${providerId}":`, error);
 		}
 	}
-	chatProviders.clear();
+	registrationDisposables.clear();
 
 	// 清空注册表
 	ModelRegistry.getInstance().clear();

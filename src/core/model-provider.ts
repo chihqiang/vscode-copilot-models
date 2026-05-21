@@ -81,7 +81,7 @@ export class BaseModelProvider implements IModelProvider {
 	private readonly _apiKeyPrompt: string;
 	private readonly _apiKeyPlaceholder: string;
 	private readonly _createClient: (baseUrl: string, apiKey: string, options?: ClientOptions) => IApiClient;
-	private readonly _lowerId: string;
+
 	private readonly _authManager: BaseAuthManager;
 
 	constructor(context: vscode.ExtensionContext, config: ModelProviderConfig) {
@@ -93,21 +93,16 @@ export class BaseModelProvider implements IModelProvider {
 		this._apiKeyPrompt = config.apiKeyPrompt ?? `Enter your ${config.providerName} API Key`;
 		this._apiKeyPlaceholder = config.apiKeyPlaceholder ?? 'your-api-key-here';
 		this._createClient = config.createClient;
-		this._lowerId = this.toLowerCaseFirstChar(config.providerId);
 		this._authManager = new BaseAuthManager(context, config.configSection, config.providerId);
 
 		this.config = {
 			vendorId: config.providerId,
 			vendorName: config.providerName,
 			baseUrl: config.defaultBaseUrl,
-			apiKeySecretKey: `${config.configSection}.${this._lowerId}.apiKey`,
+			apiKeySecretKey: `${config.configSection}.${config.providerId}.apiKey`,
 		};
 
 		logger.provider.debug(`[${this.id}] BaseModelProvider created`);
-	}
-
-	private toLowerCaseFirstChar(str: string): string {
-		return str.charAt(0).toLowerCase() + str.slice(1);
 	}
 
 	getApiKey(): Promise<string | undefined> {
@@ -144,7 +139,7 @@ export class BaseModelProvider implements IModelProvider {
 
 	getBaseUrl(): string {
 		const config = vscode.workspace.getConfiguration(this._configSection);
-		const baseUrl = config.get<string>(`${this.toLowerCaseFirstChar(this.id)}BaseUrl`) || this._defaultBaseUrl;
+		const baseUrl = config.get<string>(`${this.id}.baseUrl`) || this._defaultBaseUrl;
 		logger.provider.debug(`[${this.id}] getBaseUrl: ${baseUrl}`);
 		return baseUrl;
 	}

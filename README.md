@@ -2,22 +2,23 @@
 
 Unlock third-party large language model extensions for GitHub Copilot.
 
-Seamlessly integrate mainstream LLMs like DeepSeek and Zhipu AI.
+Seamlessly integrate DeepSeek, Zhipu AI, Qwen, and custom LLMs.
 
 One-click switching and native panel compatibility.
 
 ## Features
 
-- **Multi-Model Support**: Supports DeepSeek V4 series, Zhipu AI GLM-5 series,
-  and Qwen 3 series
-- **Tool Calling**: Supports Copilot Chat tool calling functionality
-- **Thinking Mode**: Supports model thinking/reasoning mode
-- **Secure Authentication**: API keys securely stored in VS Code SecretStorage
-- **Log Debugging**: Complete logging system for troubleshooting
+- **Multi-Model Support**: DeepSeek V4, Zhipu AI GLM-5, Qwen 3 series
+- **Custom Providers**: Add any OpenAI-compatible API via settings, no coding
+- **Model Routing**: Automatic failover and latency-based routing
+- **Tool Calling**: Full Copilot Chat tool calling support
+- **Thinking Mode**: Model reasoning/thinking mode support
+- **Circuit Breaker**: Automatic failure protection with retry
+- **Secure Authentication**: API keys stored in VS Code SecretStorage
+- **Log Debugging**: 4-level logging with hot-reload
+- **Lightweight**: OpenAI SDK replaced with ~373 lines of local code
 
 ## Documentation
-
-This project supports multiple languages for documentation:
 
 | Language | File |
 | :-------- | :----- |
@@ -28,35 +29,20 @@ This project supports multiple languages for documentation:
 
 ### 1. Install Extension
 
-Install the "Copilot Models" extension from the [VS Code Extension Marketplace](https://marketplace.visualstudio.com/items?itemName=chihqiang.vscode-copilot-models).
+Install from the [VS Code Extension Marketplace](https://marketplace.visualstudio.com/items?itemName=chihqiang.vscode-copilot-models).
 
 ### 2. Configure API Key
 
-#### Method 1: Command Palette
+Press `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`), run `Copilot Models: Set API Key`,
+select a provider and enter your key.
 
-1. Press `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`)
-2. Type `Copilot Models: Set API Key`
-3. Press Enter, then enter the provider name (e.g., `deepseek` or `bigmodel`)
-4. Enter the corresponding API key
+| Provider | Get API Key |
+| :------- | :---------- |
+| DeepSeek | [platform.deepseek.com](https://platform.deepseek.com/) |
+| Zhipu AI | [open.bigmodel.cn](https://open.bigmodel.cn/) |
+| Qwen | [bailian.console.aliyun.com](https://bailian.console.aliyun.com/) |
 
-> DeepSeek API Key can be obtained from [DeepSeek Platform](https://platform.deepseek.com/)
-> Zhipu AI API Key can be obtained from [Zhipu AI Open Platform](https://open.bigmodel.cn/)
-> Qwen API Key can be obtained from [Alibaba Cloud Model Studio](https://bailian.console.aliyun.com/)
-
-#### Method 2: Settings Page
-
-1. Press `Ctrl+,` to open VS Code settings
-2. Search for `copilot-models`
-3. Configure provider enablement, base URLs, and debug options
-
-**Note:** API keys are managed through the command palette.
-They are stored in VS Code SecretStorage, not as plain settings.
-
-**Tips:**
-
-- DeepSeek API Key can be obtained from [DeepSeek Platform](https://platform.deepseek.com/)
-- Zhipu AI API Key can be obtained from [Zhipu AI Open Platform](https://open.bigmodel.cn/)
-- Qwen API Key can be obtained from [Alibaba Cloud Model Studio](https://bailian.console.aliyun.com/)
+**Note:** API keys are stored in VS Code SecretStorage, not as plain settings.
 
 ### 3. Start Using
 
@@ -92,33 +78,46 @@ They are stored in VS Code SecretStorage, not as plain settings.
 
 ## Configuration Options
 
-The following configuration options are available in VS Code settings:
+Available in VS Code settings (search `copilot-models`):
 
-- `copilot-models.deepseek.enabled`: Enable the DeepSeek provider.
-  Default: `true`.
-- `copilot-models.deepseekBaseUrl`: DeepSeek API base URL.
-  Default: `https://api.deepseek.com`.
-- `copilot-models.bigmodel.enabled`: Enable the BigModel provider.
-  Default: `true`.
-- `copilot-models.bigmodelBaseUrl`: BigModel API base URL.
-  Default: `https://open.bigmodel.cn/api/paas/v4`.
-- `copilot-models.qwen.enabled`: Enable the Qwen provider.
-  Default: `true`.
-- `copilot-models.qwenBaseUrl`: Qwen API base URL.
-  Default: `https://dashscope.aliyuncs.com/compatible-mode/v1`.
-- `copilot-models.modelIdOverrides`: Override model IDs for custom endpoints.
-  Default: `{}`.
-- `copilot-models.maxTokens`: Maximum generated tokens.
-  Default: `0` (unlimited).
-- `copilot-models.timeoutMs`: API request timeout in milliseconds.
-  Default: `60000`.
-- `copilot-models.maxRetries`: Maximum number of API request retries.
-  Default: `1`.
-- `copilot-models.debugMode`: Log level.
-  Default: `minimal`.
+### Provider Settings
 
-> **Note**: API keys are managed through the command palette.
-> They are stored in VS Code SecretStorage, not as plain settings.
+| Config | Description | Default |
+| :----- | :---------- | :------ |
+| `<provider>.enabled` | Enable this provider | `true` |
+| `<provider>.baseUrl` | API base URL (e.g. `deepseek.baseUrl`) | per provider |
+
+### Global Settings
+
+| Config | Description | Default |
+| :----- | :---------- | :------ |
+| `customProviders` | JSON array of custom provider definitions | `[]` |
+| `routingStrategy` | `"failover"` or `"latency"` routing | `"failover"` |
+| `failoverModels` | Primary model → fallback model ID map | `{}` |
+| `maxTokens` | Maximum generated tokens (0 = unlimited) | `0` |
+| `maxImageSize` | Max image input size in bytes | `5242880` |
+| `timeoutMs` | Request timeout in milliseconds | `60000` |
+| `maxRetries` | Maximum retry attempts | `1` |
+| `debugMode` | Log level: `minimal / metadata / verbose` | `minimal` |
+
+### Custom Providers
+
+Add any OpenAI-compatible API without writing code:
+
+```json
+{
+  "copilot-models.customProviders": [
+    {
+      "providerId": "my-provider",
+      "providerName": "My Provider",
+      "baseUrl": "https://api.example.com/v1",
+      "models": [
+        { "id": "model-x", "name": "Model X", "toolCalling": true }
+      ]
+    }
+  ]
+}
+```
 
 ## Commands
 
@@ -130,14 +129,18 @@ The following configuration options are available in VS Code settings:
 | `Copilot Models: Show Log` | Show log panel |
 | `Copilot Models: Clear Log` | Clear logs |
 | `Copilot Models: Refresh Models` | Refresh model list |
+| `Copilot Models: Show Latency Stats` | Show provider latency statistics |
 
 ## Debugging
 
-If you encounter issues, you can check the logs:
+If you encounter issues, check the logs:
 
-1. Press `Ctrl+Shift+P`, type `Copilot Models: Show Log`
-2. Logs will be displayed in the "Copilot Models" output panel
-3. For more detailed logs, change `Debug Mode` to `verbose` in settings
+1. Press `Ctrl+Shift+P`, run `Copilot Models: Show Log`
+2. Logs appear in the "Copilot Models" output panel
+3. Set `debugMode` to `verbose` for detailed debug output
+4. Set to `minimal` (default) for warnings and errors only
+
+Log level changes take effect immediately without reloading the extension.
 
 ## License
 

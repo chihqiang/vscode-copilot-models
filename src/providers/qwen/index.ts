@@ -2,7 +2,7 @@
  * Qwen (通义千问) 模型提供者模块
  */
 
-import { ApiRequest, ClientOptions, CONFIG_SECTION, createApiClient, createGenericProviderFactory, ModelDefinition, ThinkingEffort } from "../../core";
+import { ApiRequest, ClientOptions, CONFIG_SECTION, createApiClient, createGenericProviderFactory, IProviderFactory, ModelDefinition, ThinkingEffort } from "../../core";
 
 // ── 模型定义 ──────────────────────────────────────────
 
@@ -59,7 +59,7 @@ export const QWEN_PROVIDER_ID = "qwen";
 export const QWEN_DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
 // ── Provider 注册 ─────────────────────────────────────
-const { register } = createGenericProviderFactory({
+const { register, factory: qwenFactory } = createGenericProviderFactory({
   providerId: QWEN_PROVIDER_ID,
   providerName: "Qwen",
   defaultBaseUrl: QWEN_DEFAULT_BASE_URL,
@@ -87,6 +87,7 @@ const { register } = createGenericProviderFactory({
   },
 });
 
-export function registerQwenProviderFactory(): void {
+export function registerQwenProviderFactory(): IProviderFactory {
   register();
+  return qwenFactory;
 }

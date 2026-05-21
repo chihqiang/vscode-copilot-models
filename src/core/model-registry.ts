@@ -72,7 +72,7 @@ export class ModelRegistry {
 	unregisterProvider(providerId: string): void {
 		if (this.providers.delete(providerId)) {
 			this.models.delete(providerId);
-			logger.registry.info(`Unregistered provider: ${providerId}`);
+			logger.registry.debug(`Unregistered provider: ${providerId}`);
 		} else {
 			logger.registry.warn(`Provider "${providerId}" not found, cannot unregister`);
 		}
@@ -163,6 +163,6 @@ export class ModelRegistry {
 		const count = this.providers.size;
 		this.providers.clear();
 		this.models.clear();
-		logger.registry.info(`Cleared all providers, count: ${count}`);
+		logger.registry.debug(`Cleared all providers, count: ${count}`);
 	}
 }

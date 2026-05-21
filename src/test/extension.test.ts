@@ -41,9 +41,9 @@ suite('Extension Test Suite', () => {
 
 		// Check default values
 		assert.strictEqual(
-			config.get<string>('deepseekBaseUrl'),
+			config.get<string>('deepseek.baseUrl'),
 			'https://api.deepseek.com',
-			'deepseekBaseUrl should have default value'
+			'deepseek.baseUrl should have default value'
 		);
 
 		assert.deepStrictEqual(
