@@ -67,6 +67,7 @@ function getDefaultLogLevel(): LogLevel {
 
 /** 从 VS Code 配置读取 debugMode 并应用对应日志级别 */
 export function applyLogLevelFromConfig(): void {
+  if (isDevelopmentMode) { return; }
   try {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
     const debugMode = config.get<string>('debugMode');
