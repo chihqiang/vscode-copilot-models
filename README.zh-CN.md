@@ -18,7 +18,7 @@
 
 ### 1. 安装扩展
 
-从 [VS Code 扩展市场][https://marketplace.visualstudio.com/items?itemName=chihqiang.vscode-copilot-models] 安装 "Copilot Models" 扩展。
+从 [VS Code 扩展市场][marketplace] 安装 "Copilot Models" 扩展。
 
 ### 2. 配置 API 密钥
 
@@ -130,6 +130,8 @@
 4. 设为 `minimal`（默认）仅显示警告和错误
 
 日志级别修改后立即生效，无需重载扩展。
+
+[marketplace]: https://marketplace.visualstudio.com/items?itemName=chihqiang.vscode-copilot-models
 
 ## 许可证
 

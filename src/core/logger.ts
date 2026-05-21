@@ -106,7 +106,7 @@ function getCategoryName(category: string): string {
 }
 
 /** 判断当前级别是否应该输出 */
-function shouldLog(level: LogLevel): boolean {
+export function shouldLog(level: LogLevel): boolean {
   return LOG_LEVEL_PRIORITY[level] >= LOG_LEVEL_PRIORITY[currentLogLevel];
 }
 
@@ -170,71 +170,32 @@ export interface Logger {
   debug: (...args: unknown[]) => void;
 }
 
-/** 为指定 provider 创建带分类标签的日志记录器 */
-export function createProviderLogger(providerId: string, _providerName: string): Logger {
+/** 创建分类日志记录器 */
+function createCategoryLogger(category: LogCategory): Logger {
   return {
-    info: (...args: unknown[]) => write('info', providerId, args),
-    warn: (...args: unknown[]) => write('warn', providerId, args),
-    error: (...args: unknown[]) => write('error', providerId, args),
-    debug: (...args: unknown[]) => write('debug', providerId, args),
+    info: (...args: unknown[]) => write('info', category, args),
+    warn: (...args: unknown[]) => write('warn', category, args),
+    error: (...args: unknown[]) => write('error', category, args),
+    debug: (...args: unknown[]) => write('debug', category, args),
   };
 }
 
+/** 为指定 provider 创建带分类标签的日志记录器 */
+export function createProviderLogger(providerId: string, _providerName: string): Logger {
+  return createCategoryLogger(providerId as LogCategory);
+}
+
 export const logger = {
-  core: {
-    info: (...args: unknown[]) => write('info', 'core', args),
-    warn: (...args: unknown[]) => write('warn', 'core', args),
-    error: (...args: unknown[]) => write('error', 'core', args),
-    debug: (...args: unknown[]) => write('debug', 'core', args),
-  },
-  registry: {
-    info: (...args: unknown[]) => write('info', 'registry', args),
-    warn: (...args: unknown[]) => write('warn', 'registry', args),
-    error: (...args: unknown[]) => write('error', 'registry', args),
-    debug: (...args: unknown[]) => write('debug', 'registry', args),
-  },
-  provider: {
-    info: (...args: unknown[]) => write('info', 'provider', args),
-    warn: (...args: unknown[]) => write('warn', 'provider', args),
-    error: (...args: unknown[]) => write('error', 'provider', args),
-    debug: (...args: unknown[]) => write('debug', 'provider', args),
-  },
-  auth: {
-    info: (...args: unknown[]) => write('info', 'auth', args),
-    warn: (...args: unknown[]) => write('warn', 'auth', args),
-    error: (...args: unknown[]) => write('error', 'auth', args),
-    debug: (...args: unknown[]) => write('debug', 'auth', args),
-  },
-  api: {
-    info: (...args: unknown[]) => write('info', 'api', args),
-    warn: (...args: unknown[]) => write('warn', 'api', args),
-    error: (...args: unknown[]) => write('error', 'api', args),
-    debug: (...args: unknown[]) => write('debug', 'api', args),
-  },
-  chat: {
-    info: (...args: unknown[]) => write('info', 'chat', args),
-    warn: (...args: unknown[]) => write('warn', 'chat', args),
-    error: (...args: unknown[]) => write('error', 'chat', args),
-    debug: (...args: unknown[]) => write('debug', 'chat', args),
-  },
-  stream: {
-    info: (...args: unknown[]) => write('info', 'stream', args),
-    warn: (...args: unknown[]) => write('warn', 'stream', args),
-    error: (...args: unknown[]) => write('error', 'stream', args),
-    debug: (...args: unknown[]) => write('debug', 'stream', args),
-  },
-  config: {
-    info: (...args: unknown[]) => write('info', 'config', args),
-    warn: (...args: unknown[]) => write('warn', 'config', args),
-    error: (...args: unknown[]) => write('error', 'config', args),
-    debug: (...args: unknown[]) => write('debug', 'config', args),
-  },
-  router: {
-    info: (...args: unknown[]) => write('info', 'router', args),
-    warn: (...args: unknown[]) => write('warn', 'router', args),
-    error: (...args: unknown[]) => write('error', 'router', args),
-    debug: (...args: unknown[]) => write('debug', 'router', args),
-  },
+  core: createCategoryLogger('core'),
+  registry: createCategoryLogger('registry'),
+  provider: createCategoryLogger('provider'),
+  auth: createCategoryLogger('auth'),
+  api: createCategoryLogger('api'),
+  chat: createCategoryLogger('chat'),
+  stream: createCategoryLogger('stream'),
+  config: createCategoryLogger('config'),
+  router: createCategoryLogger('router'),
+
   info: (...args: unknown[]) => write('info', 'core', args),
   warn: (...args: unknown[]) => write('warn', 'core', args),
   error: (...args: unknown[]) => write('error', 'core', args),

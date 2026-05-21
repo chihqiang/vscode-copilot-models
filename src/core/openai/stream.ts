@@ -11,6 +11,7 @@
 
 import { encodeUTF8 } from './utils/bytes';
 import { findDoubleNewlineIndex, LineDecoder } from './decoders/line';
+import { logger } from '../logger';
 
 /** SSE 消息结构 */
 export interface ServerSentEvent {
@@ -61,8 +62,8 @@ export class Stream<Item> implements AsyncIterable<Item> {
             try {
               data = JSON.parse(sse.data);
             } catch (e) {
-              console.error('Could not parse message into JSON:', sse.data);
-              console.error('From chunk:', sse.raw);
+              logger.stream.error('Could not parse message into JSON:', sse.data);
+              logger.stream.error('From chunk:', sse.raw);
               throw e;
             }
 
@@ -76,8 +77,8 @@ export class Stream<Item> implements AsyncIterable<Item> {
             try {
               data = JSON.parse(sse.data);
             } catch (e) {
-              console.error('Could not parse message into JSON:', sse.data);
-              console.error('From chunk:', sse.raw);
+              logger.stream.error('Could not parse message into JSON:', sse.data);
+              logger.stream.error('From chunk:', sse.raw);
               throw e;
             }
             if (sse.event === 'error') {
@@ -156,7 +157,7 @@ async function* iterSSEChunks(iterator: AsyncIterableIterator<Uint8Array>): Asyn
     let patternIndex;
     while ((patternIndex = findDoubleNewlineIndex(data)) !== -1) {
       yield data.slice(0, patternIndex);
-      data = data.slice(patternIndex);
+      data = data.subarray(patternIndex);
     }
   }
 

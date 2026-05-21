@@ -107,41 +107,42 @@ function discoverCustomProvidersFromConfig(): IProviderFactory[] {
 async function scanWorkspaceProviders(_context: vscode.ExtensionContext): Promise<IProviderFactory[]> {
   const factories: IProviderFactory[] = [];
 
-  try {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders) { return factories; }
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders) { return factories; }
 
-    for (const folder of workspaceFolders) {
+  for (const folder of workspaceFolders) {
+    try {
       const providerDir = vscode.Uri.joinPath(folder.uri, '.vscode', 'copilot-models', 'providers');
+      let entries: [string, vscode.FileType][];
       try {
-        const entries = await vscode.workspace.fs.readDirectory(providerDir);
-
-        for (const [name, type] of entries) {
-          if (type !== vscode.FileType.Directory) { continue; }
-
-          const manifestUri = vscode.Uri.joinPath(providerDir, name, 'provider.json');
-          try {
-            const content = await vscode.workspace.fs.readFile(manifestUri);
-            const manifest: CustomProviderEntry = JSON.parse(new TextDecoder().decode(content));
-            manifest.providerId = manifest.providerId || name;
-
-            if (ProviderFactoryRegistry.getInstance().has(manifest.providerId)) {
-              logger.provider.warn(`Workspace provider "${manifest.providerId}" conflicts, skipping`);
-              continue;
-            }
-
-            factories.push(createCustomProviderFactory(manifest));
-            logger.provider.info(`Discovered workspace provider: ${manifest.providerName} (${manifest.providerId})`);
-          } catch {
-            logger.provider.debug(`No valid provider.json in workspace providers/${name}`);
-          }
-        }
+        entries = await vscode.workspace.fs.readDirectory(providerDir);
       } catch {
-        // providers dir doesn't exist
+        continue;
       }
+
+      for (const [name, type] of entries) {
+        if (type !== vscode.FileType.Directory) { continue; }
+
+        const manifestUri = vscode.Uri.joinPath(providerDir, name, 'provider.json');
+        try {
+          const content = await vscode.workspace.fs.readFile(manifestUri);
+          const manifest: CustomProviderEntry = JSON.parse(new TextDecoder().decode(content));
+          manifest.providerId = manifest.providerId || name;
+
+          if (ProviderFactoryRegistry.getInstance().has(manifest.providerId)) {
+            logger.provider.warn(`Workspace provider "${manifest.providerId}" conflicts, skipping`);
+            continue;
+          }
+
+          factories.push(createCustomProviderFactory(manifest));
+          logger.provider.info(`Discovered workspace provider: ${manifest.providerName} (${manifest.providerId})`);
+        } catch (e) {
+          logger.provider.debug(`No valid provider.json in workspace providers/${name}`, e);
+        }
+      }
+    } catch (error) {
+      logger.provider.warn(`Error scanning workspace provider folder "${folder.uri}":`, error);
     }
-  } catch (error) {
-    logger.provider.error('Error scanning workspace providers:', error);
   }
 
   return factories;

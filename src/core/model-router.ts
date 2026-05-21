@@ -12,6 +12,7 @@ import vscode from 'vscode';
 import { IChatProvider } from './chat-provider';
 import { ModelRegistry } from './model-registry';
 import { logger } from './logger';
+import { NetworkError, RateLimitError, ServiceUnavailableError, TimeoutError } from './client';
 
 /** 路由策略 */
 export type RoutingStrategy = 'failover' | 'latency';
@@ -92,11 +93,19 @@ export class LatencyTracker {
   }
 }
 
-/** 从配置读取故障转移映射 */
+let failoverModelsCache: Record<string, string> | null = null;
+let failoverModelsCacheTime = 0;
+const FAILOVER_CACHE_TTL = 30_000;
+
 function getFailoverModels(): Record<string, string> {
+  if (failoverModelsCache !== null && Date.now() - failoverModelsCacheTime < FAILOVER_CACHE_TTL) {
+    return failoverModelsCache;
+  }
   try {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    return config.get<Record<string, string>>('failoverModels', {});
+    failoverModelsCache = config.get<Record<string, string>>('failoverModels', {});
+    failoverModelsCacheTime = Date.now();
+    return failoverModelsCache;
   } catch {
     return {};
   }
@@ -117,6 +126,15 @@ function getRoutingStrategy(): RoutingStrategy {
  * 这类错误（超时/网络/限流等）适合触发故障转移
  */
 function isTransientError(error: unknown): boolean {
+  if (
+    error instanceof RateLimitError ||
+    error instanceof ServiceUnavailableError ||
+    error instanceof NetworkError ||
+    error instanceof TimeoutError
+  ) {
+    return true;
+  }
+
   if (error instanceof Error) {
     const msg = error.message.toLowerCase();
     return (

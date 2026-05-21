@@ -3,7 +3,7 @@
  */
 
 import vscode from 'vscode';
-import { logger } from './logger';
+import { logger, shouldLog } from './logger';
 import { ApiError, ApiMessage, ApiRequest, ApiTool, ApiToolCall, CancelledError, ContentPart, StreamCallbacks, TimeoutError } from './client';
 import { CONFIG_SECTION, ModelDefinition } from './models';
 import { IModelProvider } from './model-provider';
@@ -404,25 +404,26 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	): ApiMessage[] {
 		logger.chat.debug(`[${this.providerId}] Converting ${messages.length} messages`);
 
-		// 打印每条原始消息用于调试
-		for (let i = 0; i < messages.length; i++) {
-			const msg = messages[i];
-			const partsInfo = msg.content.map((p) => {
-				if (p instanceof vscode.LanguageModelTextPart) {
-					return `TextPart(${p.value.substring(0, 50)}...)`;
-				}
-				if (p instanceof vscode.LanguageModelToolCallPart) {
-					return `ToolCallPart(${p.name})`;
-				}
-				if (p instanceof vscode.LanguageModelToolResultPart) {
-					return `ToolResultPart(${p.callId})`;
-				}
-				if (p instanceof vscode.LanguageModelDataPart) {
-					return `DataPart(${p.mimeType}, ${p.data.length} bytes)`;
-				}
-				return `UnknownPart`;
-			});
-			logger.chat.debug(`  Message ${i}: role=${msg.role}, parts=[${partsInfo.join(', ')}]`);
+		if (shouldLog('debug')) {
+			for (let i = 0; i < messages.length; i++) {
+				const msg = messages[i];
+				const partsInfo = msg.content.map((p) => {
+					if (p instanceof vscode.LanguageModelTextPart) {
+						return `TextPart(${p.value.substring(0, 50)}...)`;
+					}
+					if (p instanceof vscode.LanguageModelToolCallPart) {
+						return `ToolCallPart(${p.name})`;
+					}
+					if (p instanceof vscode.LanguageModelToolResultPart) {
+						return `ToolResultPart(${p.callId})`;
+					}
+					if (p instanceof vscode.LanguageModelDataPart) {
+						return `DataPart(${p.mimeType}, ${p.data.length} bytes)`;
+					}
+					return `UnknownPart`;
+				});
+				logger.chat.debug(`  Message ${i}: role=${msg.role}, parts=[${partsInfo.join(', ')}]`);
+			}
 		}
 
 		const maxImageSize = this.getMaxImageSize();
@@ -739,11 +740,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	private uint8ArrayToBase64(bytes: Uint8Array): string {
-		let binary = '';
-		for (let i = 0; i < bytes.length; i++) {
-			binary += String.fromCharCode(bytes[i]);
-		}
-		return btoa(binary);
+		return Buffer.from(bytes).toString('base64');
 	}
 
 	private extractTextFromMessage(message: vscode.LanguageModelChatRequestMessage): string {

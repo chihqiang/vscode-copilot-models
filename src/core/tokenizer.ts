@@ -46,27 +46,58 @@ export function freeTokenizer(): void {
  * - CJK 字符: 2 token/字
  * - 数字: 0.25 token/字符
  * - 其他: 0.25 token/字符
+ *
+ * 单次遍历替代多次正则匹配
  */
 function fallbackCountTokens(text: string): number {
   let tokens = 0;
+  let wordCount = 0;
+  let digitLen = 0;
+  let inWord = false;
+  let inDigit = false;
 
-  const words = text.match(/[a-zA-Z]+/g);
-  if (words) {
-    tokens += words.length * 1.3;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+
+    if ((code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a)) {
+      if (!inWord) {
+        inWord = true;
+        wordCount++;
+        if (inDigit) {
+          tokens += digitLen * 0.25;
+          digitLen = 0;
+          inDigit = false;
+        }
+      }
+    } else {
+      if (inWord) { inWord = false; }
+
+      if (code >= 0x30 && code <= 0x39) {
+        inDigit = true;
+        digitLen++;
+      } else {
+        if (inDigit) {
+          tokens += digitLen * 0.25;
+          digitLen = 0;
+          inDigit = false;
+        }
+
+        if (
+          (code >= 0x4e00 && code <= 0x9fff) ||
+          (code >= 0x3040 && code <= 0x30ff) ||
+          (code >= 0x3400 && code <= 0x4dbf) ||
+          (code >= 0xf900 && code <= 0xfaff)
+        ) {
+          tokens += 2;
+        } else {
+          tokens += 0.25;
+        }
+      }
+    }
   }
 
-  const cjk = text.match(/[\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf\uf900-\ufaff]/g);
-  if (cjk) {
-    tokens += cjk.length * 2;
-  }
-
-  const digits = text.match(/[0-9]+/g);
-  if (digits) {
-    tokens += digits.reduce((s, n) => s + n.length * 0.25, 0);
-  }
-
-  const remaining = text.replace(/[a-zA-Z\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf\uf900-\ufaff0-9]/g, '');
-  tokens += remaining.length * 0.25;
+  if (inDigit) { tokens += digitLen * 0.25; }
+  tokens += wordCount * 1.3;
 
   return Math.max(1, Math.ceil(tokens + 1));
 }

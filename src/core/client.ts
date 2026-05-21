@@ -3,7 +3,7 @@
  */
 
 import type {CancellationToken} from 'vscode';
-import {logger} from './logger';
+import {logger, shouldLog} from './logger';
 import { Stream } from './openai/stream';
 import { CircuitBreaker, CircuitBreakerError, calculateDelay, delay } from './retry';
 
@@ -559,7 +559,9 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
                     ...(request.tool_choice ? { tool_choice: request.tool_choice } : {}),
                 };
 
-                logger.api.debug(`[${providerName}] Request body: ${JSON.stringify(sanitizeForLog(requestBody))}`);
+                if (shouldLog('debug')) {
+                    logger.api.debug(`[${providerName}] Request body: ${JSON.stringify(sanitizeForLog(requestBody))}`);
+                }
 
                 const stream = await circuitBreaker.call(providerName, async () => {
                     return await this.sendWithRetry(requestBody, controller.signal);
@@ -672,6 +674,11 @@ export function createApiClient(config: ApiClientConfig): IApiClient {
                     }
 
                     const streamController = new AbortController();
+                    if (signal.aborted) {
+                        streamController.abort(signal.reason);
+                    } else {
+                        signal.addEventListener('abort', () => streamController.abort(signal.reason), { once: true });
+                    }
                     return Stream.fromSSEResponse<ChatCompletionChunk>(response, streamController);
                 } catch (error) {
                     if (!isRetryableError(error) || attempt >= maxRetries) {
