@@ -426,6 +426,9 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 					if (p instanceof vscode.LanguageModelDataPart) {
 						return `DataPart(${p.mimeType}, ${p.data.length} bytes)`;
 					}
+					if (p instanceof vscode.LanguageModelThinkingPart) {
+						return `ThinkingPart(${p.value.substring(0, 50)}...)`;
+					}
 					if (p instanceof vscode.LanguageModelPromptTsxPart) {
 						return `PromptTsxPart(...)`;
 					}
@@ -443,6 +446,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			const contentParts: ContentPart[] = [];
 			let hasImages = false;
 			let textBuffer = '';
+			let thinkingText = '';
 			const toolCalls: ApiToolCall[] = [];
 			const toolResults: Array<{ callId: string; content: string }> = [];
 
@@ -453,6 +457,8 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 					} else {
 						textBuffer += part.value;
 					}
+				} else if (part instanceof vscode.LanguageModelThinkingPart) {
+					thinkingText += part.value;
 				} else if (part instanceof vscode.LanguageModelDataPart) {
 					if (!this.isImageMime(part.mimeType)) {
 						continue;
@@ -513,6 +519,10 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 						role: 'assistant',
 						content: finalContent || '',
 					};
+
+					if (thinkingText) {
+						msg.reasoning_content = thinkingText;
+					}
 
 					if (toolCalls.length > 0) {
 						msg.tool_calls = toolCalls;
