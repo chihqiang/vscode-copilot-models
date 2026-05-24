@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { CircuitBreaker, CircuitBreakerError, CircuitState, delay, calculateDelay } from '../core/retry';
+import { CircuitBreaker, CircuitBreakerError, CircuitState, delay, calculateDelay } from '../core/client';
 
 const TEST_PROVIDER = 'test-provider';
 

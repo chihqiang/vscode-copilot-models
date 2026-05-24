@@ -1,7 +1,5 @@
 import * as assert from 'assert';
-import { LineDecoder, findDoubleNewlineIndex } from '../core/openai/decoders/line';
-import { _iterSSEMessages, ServerSentEvent, Stream } from '../core/openai/stream';
-import { encodeUTF8 } from '../core/openai/utils/bytes';
+import { _iterSSEMessages, encodeUTF8, findDoubleNewlineIndex, LineDecoder, ServerSentEvent, Stream } from '../core/client';
 
 suite('LineDecoder Test Suite', () => {
   test('decodes lines with \\n endings', () => {

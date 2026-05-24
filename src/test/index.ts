@@ -39,19 +39,25 @@ export async function run(): Promise<void> {
 }
 
 /**
- * Get all test files directly from the directory (no recursion)
+ * Get all test files recursively from the directory
  */
 function getTestFiles(testsRoot: string): string[] {
 	const fs = require('fs');
 	const pathModule = require('path');
 	const files: string[] = [];
 
-	const entries = fs.readdirSync(testsRoot, { withFileTypes: true });
-	for (const entry of entries) {
-		if (entry.isFile() && /\.test\.js$/.test(entry.name)) {
-			files.push(pathModule.join(testsRoot, entry.name));
+	function scan(dir: string): void {
+		const entries = fs.readdirSync(dir, { withFileTypes: true });
+		for (const entry of entries) {
+			const fullPath = pathModule.join(dir, entry.name);
+			if (entry.isDirectory()) {
+				scan(fullPath);
+			} else if (entry.isFile() && /\.test\.js$/.test(entry.name)) {
+				files.push(fullPath);
+			}
 		}
 	}
 
+	scan(testsRoot);
 	return files;
 }

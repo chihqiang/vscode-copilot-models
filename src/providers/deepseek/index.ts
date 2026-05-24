@@ -1,9 +1,9 @@
 /**
- * DeepSeek 模型提供者模块
+ * DeepSeek model provider module
  */
 import { ApiRequest, ClientOptions, CONFIG_SECTION, createApiClient, createGenericProviderFactory, IProviderFactory, ModelDefinition, ThinkingEffort } from "../../core";
 
-// ── 模型定义 ──────────────────────────────────────────
+// ── Model Definitions ──────────────────────────────────
 
 export const DEEPSEEK_MODELS: ModelDefinition[] = [
   {
@@ -42,7 +42,7 @@ export const DEEPSEEK_PROVIDER_ID = "deepseek";
 
 export const DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com";
 
-// ── Provider 注册 ─────────────────────────────────────
+// ── Provider Registration ─────────────────────────────
 const { register, factory: deepseekFactory } = createGenericProviderFactory({
   providerId: DEEPSEEK_PROVIDER_ID,
   providerName: "DeepSeek",

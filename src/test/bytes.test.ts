@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { concatBytes, encodeUTF8, decodeUTF8 } from '../core/openai/utils/bytes';
+import { concatBytes, encodeUTF8, decodeUTF8 } from '../core/client';
 
 suite('bytes Test Suite', () => {
   test('concatBytes merges multiple Uint8Arrays', () => {

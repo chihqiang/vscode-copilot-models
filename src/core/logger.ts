@@ -1,21 +1,21 @@
 /**
- * 日志系统
+ * Logger system
  *
- * 提供分级日志输出到 VS Code OutputChannel，支持：
- * - 4 级日志：debug / info / warn / error
- * - 9 种分类：core / registry / provider / auth / api / chat / stream / config / router
- * - 自动清理：超过 10000 行自动清空
- * - 热重载：跟随 copilot-models.debugMode 配置变化
- * - 开发模式下 debug 级别同时输出到 console.log
+ * Provides categorized log output to VS Code OutputChannel with support for:
+ * - 4 log levels: debug / info / warn / error
+ * - 9 categories: core / registry / provider / auth / api / chat / stream / config / router
+ * - Auto-clear: exceeds 10000 lines, automatically clears
+ * - Hot-reload: follows copilot-models.debugMode config changes
+ * - In development mode, debug level also outputs to console.log
  */
 
 import vscode from 'vscode';
-import { isDevelopmentEnvironment } from './env';
+import { isDevelopmentEnvironment } from './runtime';
 
-/** 日志级别 */
+/** Log level */
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-/** 日志级别优先级（数字越大越重要） */
+/** Log level priority (higher number = more important) */
 const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
   debug: 0,
   info: 1,
@@ -23,19 +23,19 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
   error: 3,
 };
 
-/** debugMode 配置值到日志级别的映射 */
+/** Mapping from debugMode config value to log level */
 const DEBUG_MODE_MAP: Record<string, LogLevel> = {
   minimal: 'warn',
   metadata: 'info',
   verbose: 'debug',
 };
 
-/** 日志分类 */
+/** Log category */
 export type LogCategory =
   | 'core' | 'registry' | 'provider' | 'auth'
   | 'api' | 'chat' | 'stream' | 'config' | 'router';
 
-/** 分类显示名映射 */
+/** Category display name mapping */
 const CATEGORY_NAMES: Record<LogCategory, string> = {
   core: 'Core',
   registry: 'Registry',
@@ -48,7 +48,7 @@ const CATEGORY_NAMES: Record<LogCategory, string> = {
   router: 'Router',
 };
 
-/** 自动清理阈值 */
+/** Auto-clear threshold */
 const MAX_LOG_LINES = 10000;
 
 let channel: vscode.OutputChannel | undefined;
@@ -57,15 +57,15 @@ let currentLogLevel: LogLevel = 'info';
 let isDevelopmentMode = false;
 let lineCount = 0;
 
-/** VS Code 配置 section */
+/** VS Code configuration section */
 const CONFIG_SECTION = 'copilot-models';
 
-/** 获取默认日志级别（开发模式为 debug，否则 info） */
+/** Get default log level (debug for development mode, otherwise info) */
 function getDefaultLogLevel(): LogLevel {
   return isDevelopmentMode ? 'debug' : 'info';
 }
 
-/** 从 VS Code 配置读取 debugMode 并应用对应日志级别 */
+/** Read debugMode from VS Code config and apply corresponding log level */
 export function applyLogLevelFromConfig(): void {
   if (isDevelopmentMode) { return; }
   try {
@@ -79,7 +79,7 @@ export function applyLogLevelFromConfig(): void {
   }
 }
 
-/** 初始化日志系统，根据扩展运行模式设置默认级别 */
+/** Initialize logger system, set default level based on extension mode */
 export function initLogger(context: vscode.ExtensionContext): void {
   isDevelopmentMode = context.extensionMode === vscode.ExtensionMode.Development
     || isDevelopmentEnvironment()
@@ -88,7 +88,7 @@ export function initLogger(context: vscode.ExtensionContext): void {
   applyLogLevelFromConfig();
 }
 
-/** 获取或创建 OutputChannel */
+/** Get or create OutputChannel */
 function getChannel(): vscode.OutputChannel {
   if (!channel) {
     channel = vscode.window.createOutputChannel('Copilot Models');
@@ -96,22 +96,22 @@ function getChannel(): vscode.OutputChannel {
   return channel;
 }
 
-/** 获取 HH:MM:SS.mmm 时间戳 */
+/** Get HH:MM:SS.mmm timestamp */
 function ts(): string {
   return new Date().toISOString().slice(11, 23);
 }
 
-/** 获取分类显示名 */
+/** Get category display name */
 function getCategoryName(category: string): string {
   return CATEGORY_NAMES[category as LogCategory] ?? category;
 }
 
-/** 判断当前级别是否应该输出 */
+/** Check if current level should log */
 export function shouldLog(level: LogLevel): boolean {
   return LOG_LEVEL_PRIORITY[level] >= LOG_LEVEL_PRIORITY[currentLogLevel];
 }
 
-/** 懒格式化消息（仅在输出时拼接字符串，避免无谓的性能开销） */
+/** Lazily format message (concatenate strings only when outputting to avoid unnecessary overhead) */
 function lazyFormatMessage(level: string, category: string, args: unknown[]): () => string {
   return () => {
     const categoryText = showCategory ? `[${getCategoryName(category)}] ` : '';
@@ -128,7 +128,7 @@ function lazyFormatMessage(level: string, category: string, args: unknown[]): ()
   };
 }
 
-/** 检查行数是否超限，超限则清空 OutputChannel */
+/** Check if line count exceeds limit, clear OutputChannel if so */
 function checkAutoClear(): void {
   if (lineCount >= MAX_LOG_LINES) {
     getChannel().clear();
@@ -141,7 +141,7 @@ function checkAutoClear(): void {
   }
 }
 
-/** 写入日志到 OutputChannel */
+/** Write log to OutputChannel */
 function write(level: LogLevel, category: string, args: unknown[]): void {
   if (!shouldLog(level)) { return; }
 
@@ -163,7 +163,7 @@ export function setLogLevel(level: LogLevel): void { currentLogLevel = level; }
 export function getLogLevel(): LogLevel { return currentLogLevel; }
 export function isDevMode(): boolean { return isDevelopmentMode; }
 
-/** 日志接口（4 个级别的方法） */
+/** Logger interface (4 level methods) */
 export interface Logger {
   info: (...args: unknown[]) => void;
   warn: (...args: unknown[]) => void;
@@ -171,7 +171,7 @@ export interface Logger {
   debug: (...args: unknown[]) => void;
 }
 
-/** 创建分类日志记录器 */
+/** Create category logger */
 function createCategoryLogger(category: LogCategory): Logger {
   return {
     info: (...args: unknown[]) => write('info', category, args),
@@ -181,7 +181,7 @@ function createCategoryLogger(category: LogCategory): Logger {
   };
 }
 
-/** 为指定 provider 创建带分类标签的日志记录器 */
+/** Create category logger for a specific provider */
 export function createProviderLogger(providerId: string, _providerName: string): Logger {
   return createCategoryLogger(providerId as LogCategory);
 }

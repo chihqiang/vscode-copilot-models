@@ -1,17 +1,17 @@
 /**
- * Token 计数器
+ * Token counter
  *
- * 使用 o200k_base 编码（GPT-4o 同款）精确计算 token 数，
- * 失败时降级为启发式估算。
+ * Uses o200k_base encoding (same as GPT-4o) to accurately count tokens,
+ * falls back to heuristic estimation on failure.
  *
- * 资源管理：提供 freeTokenizer() 供扩展停用时释放内存。
+ * Resource management: provides freeTokenizer() for memory cleanup on extension deactivation.
  */
 
 import { get_encoding, Tiktoken } from '@dqbd/tiktoken';
 
 let encoder: Tiktoken | null = null;
 
-/** 获取或创建 tiktoken 编码器（惰性初始化） */
+/** Get or create tiktoken encoder (lazy initialization) */
 function getEncoder(): Tiktoken {
   if (!encoder) {
     encoder = get_encoding('o200k_base');
@@ -19,7 +19,7 @@ function getEncoder(): Tiktoken {
   return encoder;
 }
 
-/** 计算文本的 token 数（精确计算，失败时降级） */
+/** Count tokens in text (accurate, falls back on failure) */
 export function countTokens(text: string): number {
   try {
     return getEncoder().encode_ordinary(text).length;
@@ -28,7 +28,7 @@ export function countTokens(text: string): number {
   }
 }
 
-/** 释放 tiktoken 编码器（扩展停用时调用） */
+/** Free tiktoken encoder (call on extension deactivation) */
 export function freeTokenizer(): void {
   if (encoder) {
     try {
@@ -41,13 +41,13 @@ export function freeTokenizer(): void {
 }
 
 /**
- * 启发式 token 估算（降级方案）
- * - 英文单词: 1.3 token/词
- * - CJK 字符: 2 token/字
- * - 数字: 0.25 token/字符
- * - 其他: 0.25 token/字符
+ * Heuristic token estimation (fallback)
+ * - English words: 1.3 tokens/word
+ * - CJK characters: 2 tokens/char
+ * - Digits: 0.25 tokens/char
+ * - Other: 0.25 tokens/char
  *
- * 单次遍历替代多次正则匹配
+ * Single pass instead of multiple regex matches
  */
 function fallbackCountTokens(text: string): number {
   let tokens = 0;

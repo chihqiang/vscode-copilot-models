@@ -1,28 +1,28 @@
 /**
- * VS Code Copilot Models 扩展主入口
+ * VS Code Copilot Models extension main entry
  *
- * 支持多种语言模型接入 VS Code Copilot Chat
- * 使用 ModelRouter 统一路由，支持故障转移和延迟跟踪
+ * Supports multiple language models for VS Code Copilot Chat
+ * Uses ModelRouter for unified routing with failover and latency tracking
  */
 
 import vscode from 'vscode';
-import { applyLogLevelFromConfig, discoverAllProviders, IChatProvider, initLogger, IProviderFactory, logger, ModelRegistry, ModelRouter, ProviderFactoryRegistry } from './core';
+import { applyLogLevelFromConfig, discoverAllProviders, IChatProvider, initLogger, IProviderFactory, logger, ModelRouter, Registry } from './core';
 import { getBuiltInProviderFactories } from './providers';
 
 /**
- * 模型路由器实例（统一管理所有 provider）
+ * Model router instance (unified management of all providers)
  */
 let modelRouter: ModelRouter | undefined;
 
 /**
- * 已注册的 Provider 注册 Disposable（用于动态启停）
+ * Registered provider registration disposables (for dynamic enable/disable)
  */
 const registrationDisposables: Map<string, vscode.Disposable> = new Map();
 
 /**
- * 选择提供者（用于命令中提取重复逻辑）
- * @param factories 提供者工厂列表
- * @returns 选中的提供者工厂，或 undefined 表示取消选择
+ * Select provider (extracts common logic for commands)
+ * @param factories provider factory list
+ * @returns selected provider factory, or undefined if cancelled
  */
 async function selectProvider(factories: IProviderFactory[]): Promise<IProviderFactory | undefined> {
 	if (factories.length === 0) {
@@ -30,12 +30,12 @@ async function selectProvider(factories: IProviderFactory[]): Promise<IProviderF
 		return undefined;
 	}
 
-	// 如果只有一个提供商，直接返回
+	// If only one provider, return directly
 	if (factories.length === 1) {
 		return factories[0];
 	}
 
-	// 多个提供商时，让用户选择
+	// Multiple providers, let user choose
 	const selected = await vscode.window.showQuickPick(
 		factories.map((f) => ({ label: f.providerName, id: f.providerId })),
 		{ placeHolder: 'Select a model provider' },
@@ -49,7 +49,7 @@ async function selectProvider(factories: IProviderFactory[]): Promise<IProviderF
 }
 
 /**
- * 向路由器和 VS Code 注册单个提供者
+ * Register a single provider to router and VS Code
  */
 function registerProvider(factory: IProviderFactory, context: vscode.ExtensionContext): IChatProvider {
 	const { providerId, providerName } = factory;
@@ -57,7 +57,7 @@ function registerProvider(factory: IProviderFactory, context: vscode.ExtensionCo
 	logger.core.debug(`Creating provider: ${providerName} (${providerId})...`);
 
 	const chatProvider = factory.createChatProvider(context);
-	const registry = ModelRegistry.getInstance();
+	const registry = Registry.getInstance();
 	const modelProvider = registry.getProvider(providerId);
 	const models = modelProvider?.getModels().map((m) => m.id) ?? [];
 
@@ -74,7 +74,7 @@ function registerProvider(factory: IProviderFactory, context: vscode.ExtensionCo
 }
 
 /**
- * 从路由器和 VS Code 注销单个提供者
+ * Unregister a single provider from router and VS Code
  */
 async function unregisterProvider(providerId: string): Promise<void> {
 	modelRouter?.removeProvider(providerId);
@@ -85,21 +85,29 @@ async function unregisterProvider(providerId: string): Promise<void> {
 		registrationDisposables.delete(providerId);
 	}
 
-	ModelRegistry.getInstance().unregisterProvider(providerId);
+	Registry.getInstance().unregisterProvider(providerId);
 	logger.core.debug(`Provider "${providerId}" unregistered`);
 }
 
 /**
- * 扩展激活入口
+ * Extension activation entry
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	try {
 		initLogger(context);
-		logger.core.info(`Activating extension: ${context.extension.packageJSON.displayName} v${context.extension.packageJSON.version}`);
-		// 通过 provider-loader 发现所有提供者（内置 + 自定义 + 工作区）
+		logger.core.info(`Activating extension`, {
+			name: context.extension.packageJSON.displayName,
+			version: context.extension.packageJSON.version,
+			extensionKind: context.extension.extensionKind,
+			vscode: vscode.version,
+			uiKind: vscode.env.uiKind,
+			platform: process.platform,
+			arch: process.arch
+		});
+		// Discover all providers via provider-loader (built-in + custom + workspace)
 		await discoverAllProviders(getBuiltInProviderFactories(), context);
-		// 获取所有已启用的提供者并注册
-		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
+		// Get all enabled providers and register them
+		const factories = Registry.getInstance().getEnabledFactories();
 		logger.core.info(`Found ${factories.length} enabled provider(s)`);
 
 		modelRouter = new ModelRouter();
@@ -111,10 +119,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		context.subscriptions.push(routerDisposable);
 		registrationDisposables.set('copilot-models-router', routerDisposable);
 
-		// 注册通用命令
+		// Register common commands
 		registerCommands();
 
-		// 监听配置变化，动态启停 Provider 及更新日志级别
+		// Listen for config changes, dynamically enable/disable providers and update log level
 		context.subscriptions.push(
 			vscode.workspace.onDidChangeConfiguration(async (e) => {
 				if (!e.affectsConfiguration('copilot-models')) {
@@ -126,7 +134,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					logger.core.info(`Log level updated to: ${logger.level}`);
 				}
 
-				const allFactories = ProviderFactoryRegistry.getInstance().getAllFactories();
+				const allFactories = Registry.getInstance().getAllFactories();
 				let routerChanged = false;
 
 				for (const factory of allFactories) {
@@ -151,7 +159,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		);
 
 		logger.core.info(`Extension activated successfully with ${factories.length} provider(s): ${factories.map((f) => f.providerId).join(', ')}`);
-		logger.show(); // 自动显示日志面板
+		logger.show(); // Auto-show log panel
 	} catch (error) {
 		logger.core.error('Failed to activate extension:', error);
 		throw error;
@@ -159,51 +167,51 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 }
 
 /**
- * 注册通用命令
+ * Register common commands
  */
 function registerCommands(): void {
-	// 设置 API 密钥（通过路由器管理）
+	// Set API key (managed via router)
 	vscode.commands.registerCommand('copilot-models.setApiKey', async () => {
 		if (modelRouter) {
 			await modelRouter.configureApiKey();
 		}
 	});
 
-	// 清除 API 密钥
+	// Clear API key
 	vscode.commands.registerCommand('copilot-models.clearApiKey', async () => {
 		if (modelRouter) {
 			await modelRouter.clearApiKey();
 		}
 	});
 
-	// 打开设置
+	// Open settings
 	vscode.commands.registerCommand('copilot-models.openSettings', () => {
 		logger.core.info('openSettings command invoked');
 		vscode.commands.executeCommand('workbench.action.openSettings', 'copilot-models');
 	});
 
-	// 显示日志
+	// Show log
 	vscode.commands.registerCommand('copilot-models.showLog', () => {
 		logger.core.info('showLog command invoked');
 		logger.show();
 	});
 
-	// 清除日志
+	// Clear log
 	vscode.commands.registerCommand('copilot-models.clearLog', () => {
 		logger.core.info('clearLog command invoked');
 		logger.clear();
 	});
 
-	// 刷新模型
+	// Refresh models
 	vscode.commands.registerCommand('copilot-models.refreshModels', async () => {
 		logger.core.info('refreshModels command invoked');
 		modelRouter?.refreshModelPicker();
 		logger.core.info('Models refreshed successfully');
 	});
 
-	// 显示路由统计
+	// Show routing statistics
 	vscode.commands.registerCommand('copilot-models.showLatencyStats', () => {
-		if (!modelRouter) {return;}
+		if (!modelRouter) { return; }
 		const stats = modelRouter.latencyTracker.getAllStats();
 		if (stats.size === 0) {
 			vscode.window.showInformationMessage('No latency data available');
@@ -217,7 +225,7 @@ function registerCommands(): void {
 }
 
 /**
- * 扩展停用入口
+ * Extension deactivation entry
  */
 export async function deactivate(): Promise<void> {
 	logger.core.info('Deactivating extension...');
@@ -238,9 +246,9 @@ export async function deactivate(): Promise<void> {
 	}
 	registrationDisposables.clear();
 
-	// 清空注册表
-	ModelRegistry.getInstance().clear();
-	ProviderFactoryRegistry.getInstance().clear();
+	// Clear registry
+	Registry.getInstance().clear();
+	Registry.getInstance().clear();
 
 	logger.core.info('Extension deactivated');
 	logger.dispose();

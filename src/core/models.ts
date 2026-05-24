@@ -1,40 +1,40 @@
-/** VS Code 配置节前缀 */
+/** VS Code configuration section prefix */
 export const CONFIG_SECTION = 'copilot-models';
 
 
 /**
- * 模型能力定义
+ * Model capabilities definition
  */
 export interface ModelCapabilities {
-	/** 是否支持工具调用 */
+	/** Whether tool calling is supported */
 	toolCalling: boolean;
-	/** 是否支持图片输入 */
+	/** Whether image input is supported */
 	imageInput: boolean;
-	/** 是否支持思考模式 (reasoning) */
+	/** Whether thinking mode (reasoning) is supported */
 	thinking: boolean;
 }
 
 /**
- * 模型定义接口
+ * Model definition interface
  */
 export interface ModelDefinition {
-	/** 模型唯一标识符 (在 VS Code 中的 ID) */
+	/** Model unique identifier (ID in VS Code) */
 	id: string;
-	/** 模型显示名称 */
+	/** Model display name */
 	name: string;
-	/** 模型家族 (如 deepseek, openai 等) */
+	/** Model family (e.g. deepseek, openai) */
 	family: string;
-	/** 模型版本 */
+	/** Model version */
 	version: string;
-	/** 模型详细描述 */
+	/** Model detail description */
 	detail: string;
-	/** 最大输入令牌数 */
+	/** Maximum input tokens */
 	maxInputTokens: number;
-	/** 最大输出令牌数 */
+	/** Maximum output tokens */
 	maxOutputTokens: number;
-	/** 模型能力 */
+	/** Model capabilities */
 	capabilities: ModelCapabilities;
-	/** 是否需要 thinking 参数 */
+	/** Whether thinking parameter is required */
 	requiresThinkingParam?: boolean;
 }
 

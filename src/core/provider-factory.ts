@@ -1,62 +1,61 @@
 /**
- * 通用 Provider 工厂函数 - 消除重复代码
+ * Generic Provider factory function - eliminates boilerplate code
  */
 
 import vscode from 'vscode';
 import {  CONFIG_SECTION, type ModelDefinition } from './models';
 import { createProviderLogger } from './logger';
-import { ModelRegistry } from './model-registry';
-import { ProviderFactoryRegistry, createProviderFactory } from './provider-registry';
+import { Registry, createProviderFactory } from './registry';
 import { BaseChatProvider, type ThinkingEffort } from './chat-provider';
 import { BaseModelProvider, type ModelProviderConfig } from './model-provider';
 import { ApiRequest, ClientOptions, IApiClient } from './client';
 
-// 重新导出 ThinkingEffort 类型
+// Re-export ThinkingEffort type
 export type { ThinkingEffort } from './chat-provider';
 
 /**
- * 通用 Provider 配置选项
+ * Generic Provider configuration options
  */
 export interface GenericProviderOptions<TClient extends IApiClient = IApiClient> {
-	/** 提供商 ID */
+	/** Provider ID */
 	providerId: string;
-	/** 提供商显示名称 */
+	/** Provider display name */
 	providerName: string;
-	/** 默认基础 URL */
+	/** Default base URL */
 	defaultBaseUrl: string;
-	/** 模型列表 */
+	/** Model list */
 	models: ModelDefinition[];
-	/** API 密钥提示文案 */
+	/** API key prompt text */
 	apiKeyPrompt: string;
-	/** API 密钥 placeholder */
+	/** API key placeholder */
 	apiKeyPlaceholder: string;
-	/** 配置节名称 */
+	/** Configuration section name */
 	configSection?: string;
-	/** 创建 API 客户端函数 */
+	/** Create API client function */
 	createClient: (baseUrl: string, apiKey: string, options?: ClientOptions) => TClient;
-	/** 转换思考参数函数（可选） */
+	/** Convert thinking params function (optional) */
 	convertThinkingParams?: (request: ApiRequest, effort: ThinkingEffort) => void;
 }
 
 /**
- * 通用 Provider 工厂结果
+ * Generic Provider factory result
  */
 export interface GenericProviderFactoryResult {
-	/** Provider 工厂 */
+	/** Provider factory */
 	factory: ReturnType<typeof createProviderFactory>;
-	/** 注册函数 */
+	/** Register function */
 	register: () => void;
-	/** Chat Provider 类 */
+	/** Chat Provider class */
 	GenericChatProvider: new (context: vscode.ExtensionContext) => BaseChatProvider;
-	/** Model Provider 类 */
+	/** Model Provider class */
 	GenericModelProvider: new (context: vscode.ExtensionContext) => BaseModelProvider;
 }
 
 /**
- * 创建通用 Provider 工厂
+ * Create generic Provider factory
  * 
- * @param options Provider 配置选项
- * @returns 包含工厂、注册函数和 Provider 类的结果对象
+ * @param options Provider configuration options
+ * @returns Result object containing factory, register function and Provider classes
  * 
  * @example
  * // DeepSeek Provider
@@ -95,7 +94,7 @@ export function createGenericProviderFactory(options: GenericProviderOptions): G
 	};
 
 	/**
-	 * 通用 Model Provider 实现
+	 * Generic Model Provider implementation
 	 */
 	class GenericModelProvider extends BaseModelProvider {
 		constructor(context: vscode.ExtensionContext) {
@@ -105,7 +104,7 @@ export function createGenericProviderFactory(options: GenericProviderOptions): G
 	}
 
 	/**
-	 * 通用 Chat Provider 实现
+	 * Generic Chat Provider implementation
 	 */
 	class GenericChatProvider extends BaseChatProvider {
 		readonly modelProvider: GenericModelProvider;
@@ -118,13 +117,13 @@ export function createGenericProviderFactory(options: GenericProviderOptions): G
 		}
 
 		/**
-		 * 转换思考参数（支持自定义实现）
+		 * Convert thinking params (supports custom implementation)
 		 */
 		protected override convertThinkingParams(request: ApiRequest, effort: ThinkingEffort): void {
 			if (options.convertThinkingParams) {
 				options.convertThinkingParams(request, effort);
 			} else {
-				// 默认实现：使用 reasoning_effort 参数
+				// Default implementation: use reasoning_effort parameter
 				if (effort !== 'none') {
 					request.reasoning_effort = effort;
 				}
@@ -133,7 +132,7 @@ export function createGenericProviderFactory(options: GenericProviderOptions): G
 	}
 
 	/**
-	 * 创建 Provider 工厂
+	 * Create Provider factory
 	 */
 	const factory = createProviderFactory({
 		providerId: options.providerId,
@@ -142,14 +141,14 @@ export function createGenericProviderFactory(options: GenericProviderOptions): G
 		createChatProvider: (context) => {
 			const chatProvider = new GenericChatProvider(context);
 			// GenericModelProvider extends BaseModelProvider which implements IModelProvider
-			ModelRegistry.getInstance().registerProvider(chatProvider.modelProvider);
+			Registry.getInstance().registerProvider(chatProvider.modelProvider);
 			return chatProvider;
 		},
 	});
 
 	return {
 		factory,
-		register: () => ProviderFactoryRegistry.getInstance().register(factory),
+		register: () => Registry.getInstance().registerFactory(factory),
 		GenericChatProvider,
 		GenericModelProvider,
 	};
