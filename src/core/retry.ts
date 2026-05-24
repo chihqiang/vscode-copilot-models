@@ -1,10 +1,10 @@
 import { logger } from './logger';
 
 /**
- * 熔断器状态枚举
- * - CLOSED: 正常状态，请求可以通过
- * - OPEN: 熔断状态，请求被直接拒绝
- * - HALF_OPEN: 半开状态，允许一个探测请求
+ * Circuit breaker state enum
+ * - CLOSED: normal state, requests can pass through
+ * - OPEN: circuit open, requests are rejected
+ * - HALF_OPEN: half-open state, allows one probe request
  */
 export enum CircuitState {
   CLOSED,
@@ -12,7 +12,7 @@ export enum CircuitState {
   HALF_OPEN,
 }
 
-/** 熔断器打开时的错误，请求被阻止 */
+/** Error thrown when circuit breaker is open, request blocked */
 export class CircuitBreakerError extends Error {
   constructor(public readonly providerId: string) {
     super(`Circuit breaker OPEN for ${providerId}, request blocked`);
@@ -20,7 +20,7 @@ export class CircuitBreakerError extends Error {
   }
 }
 
-/** 熔断器配置 */
+/** Circuit breaker configuration */
 export interface CircuitBreakerConfig {
   failureThreshold: number;
   resetTimeoutMs: number;
@@ -32,8 +32,8 @@ const DEFAULT_CIRCUIT_BREAKER_CONFIG: CircuitBreakerConfig = {
 };
 
 /**
- * 熔断器实现
- * 连续失败达到阈值后断开，经过重置时间后进入半开状态尝试恢复
+ * Circuit breaker implementation
+ * Opens after consecutive failures reach threshold, enters half-open state after reset timeout to attempt recovery
  */
 export class CircuitBreaker {
   private state: CircuitState = CircuitState.CLOSED;
@@ -52,7 +52,7 @@ export class CircuitBreaker {
     return this.state;
   }
 
-  /** 执行受熔断保护的操作 */
+  /** Execute an operation protected by the circuit breaker */
   async call<T>(providerId: string, fn: () => Promise<T>): Promise<T> {
     if (this.state === CircuitState.OPEN) {
       if (Date.now() - this.lastFailureTime >= this.resetTimeoutMs) {
@@ -73,7 +73,7 @@ export class CircuitBreaker {
     }
   }
 
-  /** 成功后重置熔断器 */
+  /** Reset circuit breaker on success */
   private onSuccess(providerId: string): void {
     if (this.state === CircuitState.HALF_OPEN) {
       logger.api.info(`[${providerId}] Circuit breaker CLOSED (recovered)`);
@@ -82,7 +82,7 @@ export class CircuitBreaker {
     this.failureCount = 0;
   }
 
-  /** 失败后记录，达到阈值则打开熔断器 */
+  /** Record failure, open circuit breaker if threshold reached */
   private onFailure(providerId: string, _error: unknown): void {
     this.failureCount++;
     this.lastFailureTime = Date.now();
@@ -95,7 +95,7 @@ export class CircuitBreaker {
     }
   }
 
-  /** 手动重置熔断器 */
+  /** Manually reset circuit breaker */
   reset(): void {
     this.state = CircuitState.CLOSED;
     this.failureCount = 0;
@@ -103,7 +103,7 @@ export class CircuitBreaker {
   }
 }
 
-/** 重试配置 */
+/** Retry configuration */
 export interface RetryConfig {
   baseDelayMs: number;
   maxDelayMs: number;
@@ -116,7 +116,7 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
   jitterMs: 1000,
 };
 
-/** 延时工具函数 */
+/** Delay utility function */
 export function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -133,8 +133,8 @@ export function delay(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * 指数退避计算
- * 每次重试的延迟时间 = min(baseDelay * 2^attempt, maxDelay) + jitter
+ * Exponential backoff calculation
+ * Delay per retry = min(baseDelay * 2^attempt, maxDelay) + jitter
  */
 export function calculateDelay(attempt: number, config?: Partial<RetryConfig>): number {
   const merged = { ...DEFAULT_RETRY_CONFIG, ...config };
@@ -143,7 +143,7 @@ export function calculateDelay(attempt: number, config?: Partial<RetryConfig>): 
   return Math.round(exponential + jitter);
 }
 
-/** 可重试错误判断函数类型 */
+/** Retryable error check function type */
 export interface RetryableCheck {
   (error: unknown): boolean;
 }

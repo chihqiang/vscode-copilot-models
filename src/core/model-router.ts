@@ -1,11 +1,11 @@
 /**
- * 模型路由器 - 在多个 provider 间路由请求，支持故障转移和延迟跟踪
+ * Model Router - Route requests across multiple providers with failover and latency tracking
  *
- * 核心职责：
- * - 聚合所有 provider 的模型列表，对外暴露统一接口
- * - 按模型 ID 分发请求到对应 provider
- * - 支持故障转移：主 provider 失败后自动切换到备用 provider
- * - 支持延迟感知路由：选择历史延迟最低的 provider
+ * Core responsibilities:
+ * - Aggregate model lists from all providers, expose unified interface
+ * - Dispatch requests to corresponding provider by model ID
+ * - Support failover: automatically switch to fallback provider on failure
+ * - Support latency-aware routing: select provider with lowest historical latency
  */
 
 import vscode from 'vscode';
@@ -14,10 +14,10 @@ import { ModelRegistry } from './model-registry';
 import { logger } from './logger';
 import { NetworkError, RateLimitError, ServiceUnavailableError, TimeoutError } from './client';
 
-/** 路由策略 */
+/** Routing strategy */
 export type RoutingStrategy = 'failover' | 'latency';
 
-/** 单次请求延迟记录 */
+/** Single request latency record */
 export interface LatencyRecord {
   providerId: string;
   modelId: string;
@@ -26,7 +26,7 @@ export interface LatencyRecord {
   timestamp: number;
 }
 
-/** 延迟统计（滑动窗口） */
+/** Latency statistics (sliding window) */
 export interface LatencyStats {
   averageMs: number;
   minMs: number;
@@ -39,13 +39,13 @@ const SLIDING_WINDOW_SIZE = 50;
 const CONFIG_SECTION = 'copilot-models';
 
 /**
- * 延迟追踪器
- * 维护每个 provider 的滑动窗口延迟记录，用于延迟感知路由
+ * Latency Tracker
+ * Maintains sliding window latency records per provider for latency-aware routing
  */
 export class LatencyTracker {
   private records: Map<string, LatencyRecord[]> = new Map();
 
-  /** 记录一次请求的延迟数据 */
+  /** Record latency data for a request */
   record(entry: LatencyRecord): void {
     let list = this.records.get(entry.providerId);
     if (!list) {
@@ -58,7 +58,7 @@ export class LatencyTracker {
     }
   }
 
-  /** 获取指定 provider 的延迟统计（仅统计成功请求） */
+  /** Get latency stats for a provider (successful requests only) */
   getStats(providerId: string): LatencyStats | undefined {
     const list = this.records.get(providerId);
     if (!list || list.length === 0) {return undefined;}
@@ -77,7 +77,7 @@ export class LatencyTracker {
     };
   }
 
-  /** 获取所有 provider 的延迟统计 */
+  /** Get latency stats for all providers */
   getAllStats(): Map<string, LatencyStats> {
     const result = new Map<string, LatencyStats>();
     for (const providerId of this.records.keys()) {
@@ -87,7 +87,7 @@ export class LatencyTracker {
     return result;
   }
 
-  /** 清空所有记录 */
+  /** Clear all records */
   clear(): void {
     this.records.clear();
   }
@@ -111,7 +111,7 @@ function getFailoverModels(): Record<string, string> {
   }
 }
 
-/** 从配置读取路由策略 */
+/** Read routing strategy from config */
 function getRoutingStrategy(): RoutingStrategy {
   try {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
@@ -122,8 +122,8 @@ function getRoutingStrategy(): RoutingStrategy {
 }
 
 /**
- * 判断是否为可转移的临时错误
- * 这类错误（超时/网络/限流等）适合触发故障转移
+ * Check if error is a transient error suitable for failover
+ * Timeouts, network errors, rate limits, etc.
  */
 function isTransientError(error: unknown): boolean {
   if (
@@ -164,7 +164,7 @@ export class ModelRouter implements IChatProvider {
   private readonly onDidChangeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeLanguageModelChatInformation = this.onDidChangeEmitter.event;
 
-  /** 注册一个 provider 及其托管的模型列表 */
+  /** Register a provider and its hosted model list */
   addProvider(providerId: string, provider: IChatProvider, models: string[]): void {
     this.providers.set(providerId, provider);
     this.providerModels.set(providerId, models);
@@ -182,7 +182,7 @@ export class ModelRouter implements IChatProvider {
     }
   }
 
-  /** 移除一个 provider */
+  /** Remove a provider */
   removeProvider(providerId: string): void {
     this.providers.delete(providerId);
     this.providerModels.delete(providerId);
@@ -193,24 +193,24 @@ export class ModelRouter implements IChatProvider {
     }
   }
 
-  /** 获取所有已注册的 provider ID */
+  /** Get all registered provider IDs */
   getProviderIds(): string[] {
     return Array.from(this.providers.keys());
   }
 
-  /** 检查指定 provider 是否已注册 */
+  /** Check if a provider is registered */
   hasProvider(providerId: string): boolean {
     return this.providers.has(providerId);
   }
 
-  /** 根据模型 ID 查找对应的 provider */
+  /** Find provider by model ID */
   private findProviderForModel(modelId: string): IChatProvider | undefined {
     const pid = this.modelToPrimaryProvider.get(modelId);
     if (pid) {return this.providers.get(pid);}
     return undefined;
   }
 
-  /** 查找故障转移的备用 provider */
+  /** Find fallback provider for failover */
   private findFallbackProvider(failedModelId: string, failedProviderId: string): IChatProvider | undefined {
     const failoverModels = getFailoverModels();
     const fallbackModelId = failoverModels[failedModelId];
@@ -224,8 +224,8 @@ export class ModelRouter implements IChatProvider {
   }
 
   /**
-   * 延迟感知路由选择
-   * 在多个可提供同一模型的 provider 中，选择历史延迟最低的
+   * Latency-aware routing selection
+   * Among providers that can serve the same model, select the one with lowest historical latency
    */
   private selectLowestLatencyProvider(models: string[]): string | undefined {
     const strategy = getRoutingStrategy();

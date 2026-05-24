@@ -1,5 +1,5 @@
 /**
- * 基础 API 客户端 - 使用本地 OpenAI 兼容实现
+ * Base API Client - Using local OpenAI-compatible implementation
  */
 
 import type {CancellationToken} from 'vscode';
@@ -7,7 +7,7 @@ import {logger, shouldLog} from './logger';
 import { Stream } from './openai/stream';
 import { CircuitBreaker, CircuitBreakerError, calculateDelay, delay } from './retry';
 
-/** 流式聊天补全响应块 */
+/** Streaming chat completion response chunk */
 export interface ChatCompletionChunk {
   id: string;
   object: string;
@@ -35,27 +35,27 @@ export interface ChatCompletionChunk {
 }
 
 /**
- * 客户端配置选项
+ * Client configuration options
  */
 export interface ClientOptions {
-	/** API 请求超时时间（毫秒） */
+	/** API request timeout (milliseconds) */
 	timeoutMs?: number;
-	/** 最大重试次数 */
+	/** Maximum retry count */
 	maxRetries?: number;
-	/** 电路断路器配置 */
+	/** Circuit breaker configuration */
 	circuitBreaker?: { failureThreshold?: number; resetTimeoutMs?: number };
 }
 
 
 /**
- * API 客户端接口
+ * API client interface
  */
 export interface IApiClient {
-	/** 基础 URL */
+	/** Base URL */
 	readonly baseUrl: string;
-	/** API 密钥 */
+	/** API key */
 	readonly apiKey: string;
-	/** 发送流式聊天补全请求 */
+	/** Send streaming chat completion request */
 	streamChatCompletion(
 		request: ApiRequest,
 		callbacks: StreamCallbacks,
@@ -65,14 +65,14 @@ export interface IApiClient {
 
 
 /**
- * API 消息内容块（支持文本和图片）
+ * API message content part (supports text and images)
  */
 export type ContentPart =
 	| { type: 'text'; text: string }
 	| { type: 'image_url'; image_url: { url: string } };
 
 /**
- * API 消息格式
+ * API message format
  */
 export type ApiMessage =
 	| {
@@ -88,7 +88,7 @@ export type ApiMessage =
 	};
 
 /**
- * API 工具调用格式
+ * API tool call format
  */
 export interface ApiToolCall {
 	id: string;
@@ -100,7 +100,7 @@ export interface ApiToolCall {
 }
 
 /**
- * API 工具定义格式
+ * API tool definition format
  */
 export interface ApiTool {
 	type: 'function';
@@ -112,7 +112,7 @@ export interface ApiTool {
 }
 
 /**
- * API 令牌使用统计
+ * API token usage statistics
  */
 export interface ApiUsage {
 	prompt_tokens: number;
@@ -122,7 +122,7 @@ export interface ApiUsage {
 }
 
 /**
- * API 请求格式
+ * API request format
  */
 export interface ApiRequest {
 	model: string;
@@ -142,7 +142,7 @@ export interface ApiRequest {
 }
 
 /**
- * 流式响应回调接口
+ * Stream response callbacks
  */
 export interface StreamCallbacks {
 	onContent: (content: string) => void;
@@ -443,7 +443,7 @@ function classifyError(error: unknown, providerName: string): Error {
     return error instanceof Error ? error : new Error(String(error));
 }
 
-/** 发送 HTTP 请求并返回流式 SSE 响应 */
+/** Send HTTP request and return streaming SSE response */
 async function fetchStream(
   url: string,
   apiKey: string,

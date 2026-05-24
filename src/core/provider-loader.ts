@@ -1,10 +1,10 @@
 /**
- * Provider 加载器
+ * Provider Loader
  *
- * 三层发现机制：
- * 1. 内置 provider（编译时注册）
- * 2. 用户配置（copilot-models.customProviders）
- * 3. 工作区 .vscode/copilot-models/providers/ 目录
+ * Three-layer discovery mechanism:
+ * 1. Built-in providers (compile-time registration)
+ * 2. User configuration (copilot-models.customProviders)
+ * 3. Workspace .vscode/copilot-models/providers/ directory
  */
 
 import vscode from 'vscode';
@@ -14,7 +14,7 @@ import { createApiClient, ClientOptions } from './client';
 import { createGenericProviderFactory } from './provider-factory';
 import { logger } from './logger';
 
-/** 自定义 provider 的模型定义 */
+/** Custom provider model definition */
 export interface CustomProviderModel {
   id: string;
   name?: string;
@@ -25,7 +25,7 @@ export interface CustomProviderModel {
   thinking?: boolean;
 }
 
-/** 自定义 provider 配置项 */
+/** Custom provider configuration entry */
 export interface CustomProviderEntry {
   providerId: string;
   providerName: string;
@@ -36,7 +36,7 @@ export interface CustomProviderEntry {
   thinkingParamType?: 'reasoning_effort' | 'thinking_enabled' | 'none';
 }
 
-/** 将自定义 provider 的模型配置转为内部 ModelDefinition */
+/** Convert custom provider model config to internal ModelDefinition */
 function toModelDefinitions(entry: CustomProviderEntry): ModelDefinition[] {
   const defaults: CustomProviderModel[] = [{ id: 'default' }];
   return (entry.models ?? defaults).map((m) => ({
@@ -55,7 +55,7 @@ function toModelDefinitions(entry: CustomProviderEntry): ModelDefinition[] {
   }));
 }
 
-/** 根据自定义 provider 配置创建工厂 */
+/** Create factory from custom provider configuration */
 function createCustomProviderFactory(entry: CustomProviderEntry): IProviderFactory {
   const models = toModelDefinitions(entry);
   const { providerId, providerName, baseUrl, apiKeyPrompt, apiKeyPlaceholder, thinkingParamType = 'reasoning_effort' } = entry;
@@ -86,7 +86,7 @@ function createCustomProviderFactory(entry: CustomProviderEntry): IProviderFacto
   }).factory;
 }
 
-/** 从 VS Code 配置中读取自定义 provider */
+/** Read custom providers from VS Code configuration */
 function discoverCustomProvidersFromConfig(): IProviderFactory[] {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const customProviders = config.get<CustomProviderEntry[] | Record<string, CustomProviderEntry>>('customProviders', []);
@@ -103,7 +103,7 @@ function discoverCustomProvidersFromConfig(): IProviderFactory[] {
     });
 }
 
-/** 扫描工作区目录下的 provider 配置 */
+/** Scan workspace directory for provider configurations */
 async function scanWorkspaceProviders(_context: vscode.ExtensionContext): Promise<IProviderFactory[]> {
   const factories: IProviderFactory[] = [];
 
@@ -148,7 +148,7 @@ async function scanWorkspaceProviders(_context: vscode.ExtensionContext): Promis
   return factories;
 }
 
-/** 执行完整的 provider 发现流程 */
+/** Execute complete provider discovery process */
 export async function discoverAllProviders(builtInFactories: IProviderFactory[], context: vscode.ExtensionContext): Promise<void> {
   const registry = ProviderFactoryRegistry.getInstance();
 

@@ -1,10 +1,10 @@
 /**
- * Qwen (通义千问) 模型提供者模块
+ * Qwen model provider module
  */
 
 import { ApiRequest, ClientOptions, CONFIG_SECTION, createApiClient, createGenericProviderFactory, IProviderFactory, ModelDefinition, ThinkingEffort } from "../../core";
 
-// ── 模型定义 ──────────────────────────────────────────
+// ── Model Definitions ──────────────────────────────────
 
 export const QWEN_MODELS: ModelDefinition[] = [
   {
@@ -58,7 +58,7 @@ export const QWEN_PROVIDER_ID = "qwen";
 
 export const QWEN_DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
-// ── Provider 注册 ─────────────────────────────────────
+// ── Provider Registration ─────────────────────────────
 const { register, factory: qwenFactory } = createGenericProviderFactory({
   providerId: QWEN_PROVIDER_ID,
   providerName: "Qwen",

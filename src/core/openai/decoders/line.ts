@@ -1,13 +1,13 @@
 /**
- * 行解码器
+ * Line decoder
  *
- * 处理 HTTP 分块传输中的行分割，支持：
- * - \n（LF）和 \r\n（CRLF）行尾
- * - 孤立的 \r（CR）行尾
- * - 跨 chunk 边界的行拼接
- * - UTF-8 文本解码
+ * Handles line splitting in HTTP chunked transfer, supports:
+ * - \n (LF) and \r\n (CRLF) line endings
+ * - Orphan \r (CR) line endings
+ * - Line concatenation across chunk boundaries
+ * - UTF-8 text decoding
  *
- * 从 OpenAI SDK v6.38.0 移植
+ * Ported from OpenAI SDK v6.38.0
  */
 
 import { concatBytes, decodeUTF8, encodeUTF8 } from '../utils/bytes';
@@ -15,16 +15,16 @@ import { concatBytes, decodeUTF8, encodeUTF8 } from '../utils/bytes';
 export type Bytes = string | ArrayBuffer | Uint8Array | null | undefined;
 
 /**
- * 按行解码器
- * 维护跨 chunk 的内部缓冲区，正确处理 \r 和 \r\n 混合场景
+ * Line decoder
+ * Maintains internal buffer across chunks, correctly handles mixed \r and \r\n scenarios
  */
 export class LineDecoder {
   static NEWLINE_CHARS = new Set(['\n', '\r']);
   static NEWLINE_REGEXP = /\r\n|[\n\r]/g;
 
-  /** 内部缓冲区，保存尚未组成完整行的字节 */
+  /** Internal buffer holding bytes not yet forming a complete line */
   #buffer: Uint8Array;
-  /** 上一个 chunk 尾部是否有孤立的 \r */
+  /** Whether previous chunk had an orphan \r at the end */
   #carriageReturnIndex: number | null;
 
   constructor() {
@@ -32,7 +32,7 @@ export class LineDecoder {
     this.#carriageReturnIndex = null;
   }
 
-  /** 解码一批字节，返回完整的行 */
+  /** Decode a batch of bytes, return complete lines */
   decode(chunk: Bytes): string[] {
     if (chunk === null || chunk === undefined) {
       return [];
@@ -76,7 +76,7 @@ export class LineDecoder {
     return lines;
   }
 
-  /** 刷新剩余缓冲区中的内容 */
+  /** Flush remaining buffer content */
   flush(): string[] {
     if (!this.#buffer.length) {
       return [];
@@ -85,7 +85,7 @@ export class LineDecoder {
   }
 }
 
-/** 在缓冲区中查找下一个换行符位置 */
+/** Find next newline position in buffer */
 function findNewlineIndex(
   buffer: Uint8Array,
   startIndex: number | null,
@@ -106,7 +106,7 @@ function findNewlineIndex(
   return null;
 }
 
-/** 查找双换行符位置（\n\n、\r\r 或 \r\n\r\n），用于 SSE chunk 边界检测 */
+/** Find double newline position (\n\n, \r\r, or \r\n\r\n) for SSE chunk boundary detection */
 export function findDoubleNewlineIndex(buffer: Uint8Array): number {
   const newline = 0x0a;
   const carriage = 0x0d;

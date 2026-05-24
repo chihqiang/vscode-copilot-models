@@ -1,5 +1,5 @@
 /**
- * 基础 Chat Provider - 实现 vscode.LanguageModelChatProvider 的公共逻辑
+ * Base Chat Provider - Common logic for vscode.LanguageModelChatProvider
  */
 
 import vscode from 'vscode';
@@ -11,29 +11,29 @@ import { countTokens } from './tokenizer';
 
 
 /**
- * Chat Provider 接口 (简化版，用于类型检查)
- * 继承 VS Code LanguageModelChatProvider 并扩展额外方法
+ * Chat Provider interface (simplified, for type checking)
+ * Extends VS Code LanguageModelChatProvider with additional methods
  */
 export interface IChatProvider<T extends vscode.LanguageModelChatInformation = vscode.LanguageModelChatInformation> extends vscode.LanguageModelChatProvider<T> {
-	/** 刷新模型选择器 */
+	/** Refresh model picker */
 	refreshModelPicker(): void;
-	/** 准备停用 */
+	/** Prepare for deactivation */
 	prepareForDeactivate(): Promise<void>;
-	/** 释放资源 */
+	/** Dispose resources */
 	dispose(): void;
-	/** 配置 API 密钥 */
+	/** Configure API key */
 	configureApiKey(): Promise<void>;
-	/** 清除 API 密钥 */
+	/** Clear API key */
 	clearApiKey(): Promise<void>;
 }
 
 /**
- * 思考模式努力程度
+ * Thinking mode effort level
  */
 export type ThinkingEffort = 'none' | 'low' | 'high' | 'max';
 
 /**
- * 模型配置选项
+ * Model configuration options
  */
 export type ModelConfigurationOptions = vscode.ProvideLanguageModelChatResponseOptions & {
 	readonly modelConfiguration?: Record<string, unknown>;
@@ -41,7 +41,7 @@ export type ModelConfigurationOptions = vscode.ProvideLanguageModelChatResponseO
 };
 
 /**
- * 模型选择器信息
+ * Model picker information
  */
 export type ModelPickerChatInformation = vscode.LanguageModelChatInformation & {
 	readonly isUserSelectable: boolean;
@@ -52,7 +52,7 @@ export type ModelPickerChatInformation = vscode.LanguageModelChatInformation & {
 };
 
 /**
- * 对话段信息
+ * Conversation segment info
  */
 export interface ConversationSegment {
 	index: number;
@@ -78,7 +78,7 @@ function reportThinkingPart(progress: vscode.Progress<vscode.LanguageModelRespon
 }
 
 /**
- * 准备好的聊天请求
+ * Prepared chat request
  */
 export interface PreparedChatRequest {
 	request: ApiRequest;
@@ -90,7 +90,7 @@ export interface PreparedChatRequest {
 }
 
 /**
- * 思考模式配置 schema
+ * Thinking mode configuration schema
  */
 export function buildThinkingEffortSchema() {
 	return {
@@ -114,21 +114,21 @@ export function buildThinkingEffortSchema() {
 }
 
 /**
- * ChatProvider 配置
+ * ChatProvider configuration
  */
 export interface ChatProviderConfig {
-	/** 提供商 ID */
+	/** Provider ID */
 	readonly providerId: string;
-	/** 提供商显示名称 */
+	/** Provider display name */
 	readonly providerName: string;
-	/** 配置节名称 */
+	/** Configuration section name */
 	readonly configSection: string;
-	/** 是否支持思考模式 (可选，默认 false) */
+	/** Whether thinking mode is supported (optional, default false) */
 	readonly supportsThinking?: boolean;
 }
 
 /**
- * 基础 Chat Provider 实现
+ * Base Chat Provider implementation
  */
 export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageModelChatInformation>, vscode.Disposable {
 	protected readonly globalStorageUri: vscode.Uri;
@@ -167,21 +167,21 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 获取配置节名称 (子类可重写)
+	 * Get configuration section name (subclass can override)
 	 */
 	protected getConfigSection(): string {
 		return CONFIG_SECTION;
 	}
 
 	/**
-	 * 获取是否支持思考模式 (子类可重写)
+	 * Get whether thinking mode is supported (subclass can override)
 	 */
 	protected getSupportsThinking(): boolean {
 		return false;
 	}
 
 	/**
-	 * 释放资源
+	 * Dispose resources
 	 */
 	dispose(): void {
 		logger.provider.debug(`[${this.providerId}] Disposing ChatProvider...`);
@@ -190,7 +190,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 配置变更时调用
+	 * Called on configuration change
 	 */
 	protected onConfigurationChanged(e: vscode.ConfigurationChangeEvent): void {
 		if (this.isActive && this.affectsConfiguration(e)) {
@@ -200,7 +200,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 检查是否影响本 provider 的配置 (子类可重写)
+	 * Check if configuration affects this provider (subclass can override)
 	 */
 	protected affectsConfiguration(e: vscode.ConfigurationChangeEvent): boolean {
 		return (
@@ -210,7 +210,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 密钥变更时调用
+	 * Called on secret change
 	 */
 	protected onSecretsChanged(e: vscode.SecretStorageChangeEvent): void {
 		logger.auth.debug(`[${this.providerId}] Secret changed: ${e.key}`);
@@ -221,14 +221,14 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 检查是否影响本 provider 的密钥 (子类可重写)
+	 * Check if secret affects this provider (subclass can override)
 	 */
 	protected affectsSecretKey(e: vscode.SecretStorageChangeEvent): boolean {
 		return e.key === this.modelProvider.config.apiKeySecretKey;
 	}
 
 	/**
-	 * 获取模型选择器信息
+	 * Get model picker information
 	 */
 	async provideLanguageModelChatInformation(
 		_options: vscode.PrepareLanguageModelChatModelOptions,
@@ -247,7 +247,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 将模型定义转换为 Chat 信息 (子类可重写)
+	 * Convert model definition to chat info (subclass can override)
 	 */
 	protected toChatInfo(model: ModelDefinition, hasApiKey: boolean): ModelPickerChatInformation {
 		logger.provider.debug(`[${this.providerId}] Converting model to chat info: ${model.id}, hasApiKey: ${hasApiKey}`);
@@ -271,7 +271,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 获取对话段信息
+	 * Get conversation segment info
 	 */
 	protected resolveConversationSegment(messages: readonly vscode.LanguageModelChatRequestMessage[]): ConversationSegment {
 		if (messages.length === 0) {
@@ -300,7 +300,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 准备聊天请求
+	 * Prepare chat request
 	 */
 	protected async prepareChatRequest(
 		modelInfo: vscode.LanguageModelChatInformation,
@@ -336,7 +336,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 			...(tools && tools.length > 0 ? { tool_choice: 'auto' } : {}),
 		};
 
-		// 如果是思考模型，添加思考相关参数
+		// If thinking model, add thinking-related parameters
 		if (isThinkingModel) {
 			this.convertThinkingParams(request, thinkingEffort);
 		}
@@ -354,7 +354,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 获取配置的思考努力程度
+	 * Get configured thinking effort
 	 */
 	protected getConfiguredThinkingEffort(options: ModelConfigurationOptions): ThinkingEffort {
 		const configuredEffort =
@@ -372,11 +372,11 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 		if (configuredEffort === 'low') {
 			return 'low';
 		}
-		return 'high'; // 默认值
+		return 'high'; // default value
 	}
 
 	/**
-	 * 获取 API 模型 ID
+	 * Get API model ID
 	 */
 	protected getApiModelId(vscodeModelId: string): string {
 		if ('getApiModelId' in this.modelProvider && typeof this.modelProvider.getApiModelId === 'function') {
@@ -386,17 +386,17 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 转换思考参数到 API 特定格式 (子类可重写)
+	 * Convert thinking params to API-specific format (subclass can override)
 	 */
 	protected convertThinkingParams(request: ApiRequest, effort: ThinkingEffort): void {
-		// 默认实现：使用 reasoning_effort 参数
+		// Default implementation: use reasoning_effort parameter
 		if (effort !== 'none') {
 			request.reasoning_effort = effort;
 		}
 	}
 
 	/**
-	 * 转换消息格式 (子类可重写)
+	 * Convert message format (subclass can override)
 	 */
 	protected convertMessages(
 		messages: readonly vscode.LanguageModelChatRequestMessage[],
@@ -527,7 +527,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 映射 VS Code 消息角色到 API 角色
+	 * Map VS Code message role to API role
 	 */
 	protected mapRole(role: vscode.LanguageModelChatMessageRole): 'user' | 'assistant' {
 		switch (role) {
@@ -541,7 +541,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 转换工具定义
+	 * Convert tool definitions
 	 */
 	protected convertTools(
 		tools: readonly vscode.LanguageModelChatTool[] | undefined,
@@ -561,7 +561,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 发送流式聊天补全请求 (子类可重写)
+	 * Send streaming chat completion request (subclass can override)
 	 */
 	protected async sendStreamRequest(
 		request: ApiRequest,
@@ -604,7 +604,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 创建流式回调
+	 * Create stream callbacks
 	 */
 	protected createStreamCallbacks(progress: vscode.Progress<vscode.LanguageModelResponsePart>): StreamCallbacks {
 		let content = '';
@@ -647,17 +647,17 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 				throw error;
 			},
 			onDone: () => {
-				// 打印完整响应内容
+				// Log full response content
 				if (content) {
 					logger.stream.debug(`[${this.providerId}] === Response Content ===\n${content}`);
 				}
 
-				// 打印思考内容
+				// Log thinking content
 				if (thinking) {
 					logger.stream.debug(`[${this.providerId}] === Thinking Content ===\n${thinking}`);
 				}
 
-				// 打印工具调用
+				// Log tool calls
 				if (toolCalls.length > 0) {
 					logger.stream.debug(`[${this.providerId}] === Tool Calls (${toolCalls.length}) ===`);
 					for (const tc of toolCalls) {
@@ -665,7 +665,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 					}
 				}
 
-				// 打印 Token 使用统计
+				// Log token usage statistics
 				if (finalUsage) {
 					logger.stream.debug(
 						`[${this.providerId}] === Token Usage ===\n` +
@@ -679,7 +679,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 提供聊天响应
+	 * Provide chat response
 	 */
 	async provideLanguageModelChatResponse(
 		modelInfo: vscode.LanguageModelChatInformation,
@@ -702,7 +702,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 提供令牌计数估算
+	 * Provide token count estimation
 	 */
 	async provideTokenCount(
 		_modelInfo: vscode.LanguageModelChatInformation,
@@ -714,16 +714,16 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 精确计算 token 数量
-	 * 使用 o200k_base 编码（通过 @dqbd/tiktoken WASM）
-	 * 在 WASM 加载失败时自动回退到启发式算法
+	 * Calculate token count accurately
+	 * Uses o200k_base encoding (via @dqbd/tiktoken WASM)
+	 * Falls back to heuristic estimation when WASM fails to load
 	 */
 	private estimateTokenCount(text: string): number {
 		return countTokens(text);
 	}
 
 	/**
-	 * 从消息中提取文本内容
+	 * Extract text content from message
 	 */
 	private getMaxImageSize(): number {
 		const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
@@ -754,7 +754,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 刷新模型选择器
+	 * Refresh model picker
 	 */
 	refreshModelPicker(): void {
 		logger.provider.debug(`[${this.providerId}] Refreshing model picker`);
@@ -762,7 +762,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 准备停用
+	 * Prepare for deactivation
 	 */
 	async prepareForDeactivate(): Promise<void> {
 		logger.provider.debug(`[${this.providerId}] Preparing for deactivation`);
@@ -771,7 +771,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 配置 API 密钥
+	 * Configure API key
 	 */
 	async configureApiKey(): Promise<void> {
 		logger.auth.info(`[${this.providerId}] Configuring API key...`);
@@ -785,7 +785,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 清除 API 密钥
+	 * Clear API key
 	 */
 	async clearApiKey(): Promise<void> {
 		logger.auth.info(`[${this.providerId}] Clearing API key...`);
@@ -795,7 +795,7 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	}
 
 	/**
-	 * 刷新模型列表
+	 * Refresh model list
 	 */
 	async refreshModels(): Promise<void> {
 		logger.provider.info(`[${this.providerId}] Refreshing models...`);

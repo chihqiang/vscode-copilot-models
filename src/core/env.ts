@@ -1,5 +1,5 @@
 /**
- * 运行环境检测工具
+ * Runtime environment detection utility
  */
 
 export function isTestEnvironment(): boolean {

@@ -1,5 +1,5 @@
 /**
- * 模型注册表 - 管理所有注册的模型提供商和模型定义
+ * Model Registry - Manage all registered model providers and model definitions
  */
 
 import type {ModelDefinition } from './models';
@@ -7,7 +7,7 @@ import { logger } from './logger';
 import { IModelProvider } from './model-provider';
 
 /**
- * 全局模型注册表
+ * Global model registry
  */
 export class ModelRegistry {
 	private static instance: ModelRegistry | undefined;
@@ -19,7 +19,7 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 获取单例实例
+	 * Get singleton instance
 	 */
 	static getInstance(): ModelRegistry {
 		if (!ModelRegistry.instance) {
@@ -29,7 +29,7 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 重置单例实例 (仅用于测试)
+	 * Reset singleton instance (for testing only)
 	 * @internal
 	 */
 	static _resetInstance(): void {
@@ -41,7 +41,7 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 检查实例是否已初始化 (用于测试)
+	 * Check if instance is initialized (for testing)
 	 * @internal
 	 */
 	static _isInitialized(): boolean {
@@ -49,7 +49,7 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 注册模型提供商
+	 * Register model provider
 	 */
 	registerProvider(provider: IModelProvider): void {
 		if (this.providers.has(provider.id)) {
@@ -67,7 +67,7 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 注销模型提供商
+	 * Unregister model provider
 	 */
 	unregisterProvider(providerId: string): void {
 		if (this.providers.delete(providerId)) {
@@ -79,7 +79,7 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 获取提供商
+	 * Get provider
 	 */
 	getProvider(providerId: string): IModelProvider | undefined {
 		const provider = this.providers.get(providerId);
@@ -90,7 +90,7 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 获取所有提供商
+	 * Get all providers
 	 */
 	getAllProviders(): IModelProvider[] {
 		const providers = Array.from(this.providers.values());
@@ -99,7 +99,7 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 获取提供商的模型列表
+	 * Get provider's model list
 	 */
 	getModelsForProvider(providerId: string): ModelDefinition[] {
 		const models = this.models.get(providerId) || [];
@@ -108,7 +108,7 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 获取所有模型
+	 * Get all models
 	 */
 	getAllModels(): ModelDefinition[] {
 		const allModels: ModelDefinition[] = [];
@@ -120,7 +120,7 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 根据模型 ID 查找模型定义
+	 * Find model definition by model ID
 	 */
 	findModelById(modelId: string): ModelDefinition | undefined {
 		for (const models of this.models.values()) {
@@ -135,7 +135,7 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 根据模型 ID 查找所属的提供商
+	 * Find provider by model ID
 	 */
 	findProviderByModelId(modelId: string): IModelProvider | undefined {
 		for (const [providerId, models] of this.models.entries()) {
@@ -150,14 +150,14 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * 检查是否有任何提供商已注册
+	 * Check if any provider is registered
 	 */
 	hasProviders(): boolean {
 		return this.providers.size > 0;
 	}
 
 	/**
-	 * 清空所有注册
+	 * Clear all registrations
 	 */
 	clear(): void {
 		const count = this.providers.size;

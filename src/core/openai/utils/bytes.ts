@@ -1,11 +1,11 @@
 /**
- * 字节工具函数
+ * Byte utility functions
  *
- * 提供 Uint8Array 合并、UTF-8 编解码的惰性单例封装
- * 从 OpenAI SDK v6.38.0 移植
+ * Provides Uint8Array merging, UTF-8 encoding/decoding with lazy singleton wrappers
+ * Ported from OpenAI SDK v6.38.0
  */
 
-/** 合并多个 Uint8Array */
+/** Merge multiple Uint8Arrays */
 export function concatBytes(buffers: Uint8Array[]): Uint8Array {
   let length = 0;
   for (const buffer of buffers) {
@@ -21,7 +21,7 @@ export function concatBytes(buffers: Uint8Array[]): Uint8Array {
 }
 
 let encodeUTF8_: (str: string) => Uint8Array;
-/** 将字符串编码为 UTF-8 Uint8Array（惰性创建 TextEncoder） */
+/** Encode string to UTF-8 Uint8Array (lazy TextEncoder creation) */
 export function encodeUTF8(str: string): Uint8Array {
   return (
     encodeUTF8_ ??
@@ -30,7 +30,7 @@ export function encodeUTF8(str: string): Uint8Array {
 }
 
 let decodeUTF8_: (bytes: Uint8Array) => string;
-/** 将 UTF-8 Uint8Array 解码为字符串（惰性创建 TextDecoder） */
+/** Decode UTF-8 Uint8Array to string (lazy TextDecoder creation) */
 export function decodeUTF8(bytes: Uint8Array): string {
   return (
     decodeUTF8_ ??

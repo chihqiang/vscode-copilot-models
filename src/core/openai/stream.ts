@@ -1,19 +1,19 @@
 /**
- * SSE 流解析器
+ * SSE stream parser
  *
- * 从 OpenAI SDK v6.38.0 移植，仅保留运行所需的最小代码：
- * - Stream 类：AsyncIterable 包装，支持 SSE 解析
- * - SSEDecoder：逐行解析 SSE 协议
- * - _iterSSEMessages：从 Response body 迭代 SSE 消息
- * - iterSSEChunks：处理分块传输编码，按双换行分割
- * - readableStreamToAsyncIterable：桥接 Web Stream 与 AsyncIterator
+ * Ported from OpenAI SDK v6.38.0, retaining only the minimal runtime code:
+ * - Stream class: AsyncIterable wrapper with SSE parsing support
+ * - SSEDecoder: line-by-line SSE protocol parser
+ * - _iterSSEMessages: iterate SSE messages from Response body
+ * - iterSSEChunks: handle chunked transfer encoding, split by double newlines
+ * - readableStreamToAsyncIterable: bridge Web Stream to AsyncIterator
  */
 
 import { encodeUTF8 } from './utils/bytes';
 import { findDoubleNewlineIndex, LineDecoder } from './decoders/line';
 import { logger } from '../logger';
 
-/** SSE 消息结构 */
+/** SSE message structure */
 export interface ServerSentEvent {
   event: string | null;
   data: string;
@@ -21,8 +21,8 @@ export interface ServerSentEvent {
 }
 
 /**
- * 异步可迭代流
- * 包装 SSE 响应，提供 for await...of 遍历接口
+ * Async iterable stream
+ * Wraps SSE response, provides for await...of iteration interface
  */
 export class Stream<Item> implements AsyncIterable<Item> {
   controller: AbortController;
@@ -35,9 +35,9 @@ export class Stream<Item> implements AsyncIterable<Item> {
   }
 
   /**
-   * 从 HTTP Response 创建流
-   * 解析 SSE 数据，跳过 [DONE] 标记和 thread.* 事件，
-   * 对数据行进行 JSON 解析并逐个 yield
+   * Create stream from HTTP Response
+   * Parse SSE data, skip [DONE] marker and thread.* events,
+   * JSON-parse data lines and yield them one by one
    */
   static fromSSEResponse<Item>(response: Response, controller: AbortController): Stream<Item> {
     let consumed = false;
@@ -105,8 +105,8 @@ export class Stream<Item> implements AsyncIterable<Item> {
 }
 
 /**
- * 从 Response body 迭代 SSE 消息
- * 组合 LineDecoder（按行分割）和 SSEDecoder（按空行分割）
+ * Iterate SSE messages from Response body
+ * Combines LineDecoder (line splitting) and SSEDecoder (empty line splitting)
  */
 export async function* _iterSSEMessages(
   response: Response,
@@ -135,8 +135,8 @@ export async function* _iterSSEMessages(
 }
 
 /**
- * 分块传输处理
- * 累积二进制块，按双换行(\n\n / \r\n\r\n)分割为独立的 SSE chunk
+ * Chunked transfer handling
+ * Accumulates binary chunks, splits by double newlines (\n\n / \r\n\r\n) into individual SSE chunks
  */
 async function* iterSSEChunks(iterator: AsyncIterableIterator<Uint8Array>): AsyncGenerator<Uint8Array> {
   let data = new Uint8Array();
@@ -167,12 +167,12 @@ async function* iterSSEChunks(iterator: AsyncIterableIterator<Uint8Array>): Asyn
 }
 
 /**
- * SSE 协议解码器
- * 按 SSE 规范解析字段：
- * - event: 事件类型
- * - data: 数据行（多行用 \n 拼接）
- * - 空行触发完成事件
- * - 以 : 开头的行是注释，忽略
+ * SSE protocol decoder
+ * Parses fields according to SSE specification:
+ * - event: event type
+ * - data: data line (multiple lines joined with \n)
+ * - empty line triggers complete event
+ * - lines starting with : are comments, ignored
  */
 class SSEDecoder {
   private data: string[];
@@ -226,7 +226,7 @@ class SSEDecoder {
   }
 }
 
-/** 按分隔符拆分字符串 */
+/** Split string by delimiter */
 function partition(str: string, delimiter: string): [string, string, string] {
   const index = str.indexOf(delimiter);
   if (index !== -1) {
@@ -236,8 +236,8 @@ function partition(str: string, delimiter: string): [string, string, string] {
 }
 
 /**
- * 将 Web ReadableStream 转为 AsyncIterableIterator
- * 桥接 Web Streams API 与 for await...of 语法
+ * Convert Web ReadableStream to AsyncIterableIterator
+ * Bridges Web Streams API with for await...of syntax
  */
 function readableStreamToAsyncIterable<T>(stream: ReadableStream<T>): AsyncIterableIterator<T> {
   if ((stream as any)[Symbol.asyncIterator]) {return stream as any;}
@@ -266,7 +266,7 @@ function readableStreamToAsyncIterable<T>(stream: ReadableStream<T>): AsyncItera
   };
 }
 
-/** 判断是否为中止错误 */
+/** Check if error is an abort error */
 function isAbortError(err: unknown): boolean {
   return (
     typeof err === 'object' &&

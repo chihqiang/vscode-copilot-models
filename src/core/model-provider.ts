@@ -1,5 +1,5 @@
 /**
- * 基础 Model Provider - 通用的模型提供商实现
+ * Base Model Provider - Generic model provider implementation
  */
 
 import vscode from 'vscode';
@@ -9,67 +9,67 @@ import { BaseAuthManager } from './auth-manager';
 import { ClientOptions, IApiClient } from './client';
 
 /**
- * 模型提供商配置信息
+ * Model provider configuration
  */
 export interface ProviderConfig {
-	/** 提供商 ID (vendor name) */
+	/** Provider ID (vendor name) */
 	vendorId: string;
-	/** 提供商显示名称 */
+	/** Provider display name */
 	vendorName: string;
-	/** API 基础 URL */
+	/** API base URL */
 	baseUrl: string;
-	/** SecretStorage 键名 */
+	/** SecretStorage key name */
 	apiKeySecretKey: string;
 }
 
 
 /**
- * 模型提供商接口
+ * Model provider interface
  */
 export interface IModelProvider {
-	/** 提供商配置 */
+	/** Provider configuration */
 	readonly config: ProviderConfig;
-	/** 提供商 ID */
+	/** Provider ID */
 	readonly id: string;
-	/** 获取 API 密钥 */
+	/** Get API key */
 	getApiKey(): Promise<string | undefined>;
-	/** 检查是否已配置 API 密钥 */
+	/** Check if API key is configured */
 	hasApiKey(): Promise<boolean>;
-	/** 提示用户输入 API 密钥 */
+	/** Prompt user for API key */
 	promptForApiKey(): Promise<boolean>;
-	/** 删除已存储的 API 密钥 */
+	/** Delete stored API key */
 	deleteApiKey(): Promise<void>;
-	/** 获取该提供商的模型列表 */
+	/** Get model list for this provider */
 	getModels(): ModelDefinition[];
-	/** 获取 API 客户端 */
+	/** Get API client */
 	createClient(apiKey: string, options?: ClientOptions): IApiClient;
 }
 
 /**
- * ModelProvider 配置
+ * ModelProvider configuration
  */
 export interface ModelProviderConfig {
-	/** 提供商 ID */
+	/** Provider ID */
 	readonly providerId: string;
-	/** 提供商显示名称 */
+	/** Provider display name */
 	readonly providerName: string;
-	/** 配置节名称 */
+	/** Configuration section name */
 	readonly configSection: string;
-	/** 默认基础 URL */
+	/** Default base URL */
 	readonly defaultBaseUrl: string;
-	/** 模型列表 */
+	/** Model list */
 	readonly models: ModelDefinition[];
-	/** API 密钥提示文案 */
+	/** API key prompt text */
 	readonly apiKeyPrompt?: string;
-	/** API 密钥 placeholder */
+	/** API key placeholder */
 	readonly apiKeyPlaceholder?: string;
-	/** 创建 API 客户端工厂函数 */
+	/** Create API client factory function */
 	createClient(baseUrl: string, apiKey: string, options?: ClientOptions): IApiClient;
 }
 
 /**
- * 基础 ModelProvider 实现
- * 通用的模型提供商，封装所有 Provider 通用的逻辑
+ * Base ModelProvider implementation
+ * Generic model provider encapsulating common provider logic
  */
 export class BaseModelProvider implements IModelProvider {
 	readonly config: ProviderConfig;

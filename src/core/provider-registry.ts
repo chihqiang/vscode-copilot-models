@@ -1,5 +1,5 @@
 /**
- * 提供者工厂接口 - 用于动态注册模型提供者
+ * Provider factory interface - for dynamic model provider registration
  */
 
 import vscode from 'vscode';
@@ -8,22 +8,22 @@ import { logger } from './logger';
 import { isTestEnvironment } from './env';
 
 /**
- * 提供者工厂接口
- * 所有模型提供者必须实现此接口以支持动态注册
+ * Provider factory interface
+ * All model providers must implement this interface for dynamic registration
  */
 export interface IProviderFactory {
-	/** 提供者 ID (与 vscode.lm.registerLanguageModelChatProvider 的 vendorId 对应) */
+	/** Provider ID (corresponds to vendorId in vscode.lm.registerLanguageModelChatProvider) */
 	readonly providerId: string;
-	/** 提供者显示名称 */
+	/** Provider display name */
 	readonly providerName: string;
-	/** 是否启用此提供者 (可通过配置控制) */
+	/** Whether this provider is enabled (configurable) */
 	isEnabled(): boolean;
-	/** 创建 Chat Provider 实例 */
+	/** Create Chat Provider instance */
 	createChatProvider(context: vscode.ExtensionContext): IChatProvider;
 }
 
 /**
- * 提供者注册表 - 管理所有已注册的使用者工厂
+ * Provider factory registry - manages all registered provider factories
  */
 export class ProviderFactoryRegistry {
 	private static instance: ProviderFactoryRegistry | undefined;
@@ -39,7 +39,7 @@ export class ProviderFactoryRegistry {
 	}
 
 	/**
-	 * 重置单例实例 (仅用于测试)
+	 * Reset singleton instance (for testing only)
 	 * @internal
 	 */
 	static _resetInstance(): void {
@@ -50,7 +50,7 @@ export class ProviderFactoryRegistry {
 	}
 
 	/**
-	 * 检查实例是否已初始化 (用于测试)
+	 * Check if instance is initialized (for testing)
 	 * @internal
 	 */
 	static _isInitialized(): boolean {
@@ -58,7 +58,7 @@ export class ProviderFactoryRegistry {
 	}
 
 	/**
-	 * 注册提供者工厂
+	 * Register provider factory
 	 */
 	register(factory: IProviderFactory): void {
 		if (this.factories.has(factory.providerId)) {
@@ -70,42 +70,42 @@ export class ProviderFactoryRegistry {
 	}
 
 	/**
-	 * 获取已注册的提供者工厂
+	 * Get registered provider factory
 	 */
 	getFactory(providerId: string): IProviderFactory | undefined {
 		return this.factories.get(providerId);
 	}
 
 	/**
-	 * 获取所有已启用的提供者工厂
+	 * Get all enabled provider factories
 	 */
 	getEnabledFactories(): IProviderFactory[] {
 		return Array.from(this.factories.values()).filter((f) => f.isEnabled());
 	}
 
 	/**
-	 * 获取所有已注册工厂
+	 * Get all registered factories
 	 */
 	getAllFactories(): IProviderFactory[] {
 		return Array.from(this.factories.values());
 	}
 
 	/**
-	 * 检查是否已注册
+	 * Check if registered
 	 */
 	has(providerId: string): boolean {
 		return this.factories.has(providerId);
 	}
 
 	/**
-	 * 获取已注册数量
+	 * Get registration count
 	 */
 	get count(): number {
 		return this.factories.size;
 	}
 
 	/**
-	 * 清空注册表
+	 * Clear registry
 	 */
 	clear(): void {
 		this.factories.clear();
@@ -113,13 +113,13 @@ export class ProviderFactoryRegistry {
 }
 
 /**
- * 提供者注册装饰器 - 用于自动注册提供者工厂
+ * Provider registration decorator - for auto-registering provider factories
  */
 export function registerProvider(providerId: string, providerName: string) {
 	return function <
 		T extends new (context: import('vscode').ExtensionContext) => ReturnType<IProviderFactory['createChatProvider']>,
 	>(target: T, _context: ClassFieldDecoratorContext): T {
-		// 在模块加载时自动注册
+		// Auto-register on module load
 		const factory: IProviderFactory = {
 			providerId,
 			providerName,
@@ -127,7 +127,7 @@ export function registerProvider(providerId: string, providerName: string) {
 			createChatProvider: (context: import('vscode').ExtensionContext) => new target(context),
 		};
 
-		// 延迟注册，确保 Registry 已初始化
+		// Defer registration to ensure Registry is initialized
 		if (!isTestEnvironment()) {
 			queueMicrotask(() => {
 				ProviderFactoryRegistry.getInstance().register(factory);
@@ -139,7 +139,7 @@ export function registerProvider(providerId: string, providerName: string) {
 }
 
 /**
- * ProviderFactory 配置
+ * ProviderFactory configuration
  */
 export interface ProviderFactoryConfig {
 	providerId: string;
@@ -150,8 +150,8 @@ export interface ProviderFactoryConfig {
 }
 
 /**
- * 创建 ProviderFactory 的辅助函数
- * 用于减少重复代码
+ * Helper function to create ProviderFactory
+ * Reduces boilerplate code
  */
 export function createProviderFactory(config: ProviderFactoryConfig): IProviderFactory {
 	const { providerId, providerName, configSection, enabledByDefault = true, createChatProvider } = config;
@@ -168,7 +168,7 @@ export function createProviderFactory(config: ProviderFactoryConfig): IProviderF
 }
 
 /**
- * 创建 ProviderFactory 注册函数的辅助函数
+ * Helper function to create ProviderFactory registration function
  */
 export function createProviderFactoryRegister(config: ProviderFactoryConfig) {
 	const factory = createProviderFactory(config);

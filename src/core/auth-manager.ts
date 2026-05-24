@@ -1,5 +1,5 @@
 /**
- * 基础认证管理器 - 通过 VS Code SecretStorage 安全地管理 API 密钥
+ * Base Auth Manager - Securely manage API keys via VS Code SecretStorage
  */
 
 import vscode from 'vscode';
@@ -7,22 +7,22 @@ import { CONFIG_SECTION } from './models';
 import { logger } from './logger';
 
 /**
- * 认证管理器接口
+ * Auth manager interface
  */
 export interface IAuthManager {
-	/** 获取 API 密钥 */
+	/** Get API key */
 	getApiKey(): Promise<string | undefined>;
-	/** 检查是否已配置 API 密钥 */
+	/** Check if API key is configured */
 	hasApiKey(): Promise<boolean>;
-	/** 存储 API 密钥 */
+	/** Store API key */
 	setApiKey(apiKey: string): Promise<void>;
-	/** 删除 API 密钥 */
+	/** Delete API key */
 	deleteApiKey(): Promise<void>;
 }
 
 /**
- * 基础认证管理器实现
- * 安全性：API 密钥仅存储在 VS Code SecretStorage 中，不支持明文配置回退
+ * Base Auth Manager implementation
+ * Security: API keys are stored only in VS Code SecretStorage, no plaintext fallback
  */
 export class BaseAuthManager implements IAuthManager {
 	protected readonly secretStorage: vscode.SecretStorage;
@@ -41,7 +41,7 @@ export class BaseAuthManager implements IAuthManager {
 	}
 
 	/**
-	 * 获取 API 密钥（仅从 SecretStorage 获取）
+	 * Get API key (from SecretStorage only)
 	 */
 	async getApiKey(): Promise<string | undefined> {
 		logger.auth.debug(`[${this.providerId}] Getting API key...`);
@@ -57,7 +57,7 @@ export class BaseAuthManager implements IAuthManager {
 	}
 
 	/**
-	 * 检查是否已配置 API 密钥
+	 * Check if API key is configured
 	 */
 	async hasApiKey(): Promise<boolean> {
 		const key = await this.getApiKey();
@@ -67,7 +67,7 @@ export class BaseAuthManager implements IAuthManager {
 	}
 
 	/**
-	 * 在 SecretStorage 中存储 API 密钥
+	 * Store API key in SecretStorage
 	 */
 	async setApiKey(apiKey: string): Promise<void> {
 			logger.auth.debug(`[${this.providerId}] Storing API key...`);
@@ -76,7 +76,7 @@ export class BaseAuthManager implements IAuthManager {
 	}
 
 	/**
-	 * 删除已存储的 API 密钥
+	 * Delete stored API key
 	 */
 	async deleteApiKey(): Promise<void> {
 			logger.auth.debug(`[${this.providerId}] Deleting API key...`);
@@ -85,7 +85,7 @@ export class BaseAuthManager implements IAuthManager {
 	}
 
 	/**
-	 * 通过输入框提示用户输入 API 密钥
+	 * Prompt user to input API key via input box
 	 */
 	async promptForApiKey(prompt: string, placeholder: string): Promise<boolean> {
 		logger.auth.info(`[${this.providerId}] Prompting for API key...`);
