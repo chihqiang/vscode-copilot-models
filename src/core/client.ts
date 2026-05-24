@@ -507,6 +507,9 @@ function toChatCompletionMessageParam(message: ApiMessage): Record<string, unkno
 						.filter((p): p is { type: 'text'; text: string } => p.type === 'text')
 						.map((p) => ({ type: 'text', text: p.text })),
 			};
+			if (message.reasoning_content) {
+				msg.reasoning_content = message.reasoning_content;
+			}
 			if (message.tool_calls && message.tool_calls.length > 0) {
 				msg.tool_calls = message.tool_calls.map((toolCall) => ({
 					id: toolCall.id,
