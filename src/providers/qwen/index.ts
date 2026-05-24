@@ -8,6 +8,21 @@ import { ApiRequest, ClientOptions, CONFIG_SECTION, createApiClient, createGener
 
 export const QWEN_MODELS: ModelDefinition[] = [
   {
+    id: "qwen3.7-max",
+    name: "Qwen3.7 Max",
+    family: "qwen",
+    version: "3.7",
+    detail: "Flagship reasoning agent model with 1M context window",
+    maxInputTokens: 1000000,
+    maxOutputTokens: 64000,
+    capabilities: {
+      toolCalling: true,
+      imageInput: false,
+      thinking: true,
+    },
+    requiresThinkingParam: true,
+  },
+  {
     id: "qwen3-max",
     name: "Qwen3 Max",
     family: "qwen",
