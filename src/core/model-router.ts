@@ -11,7 +11,7 @@
 import vscode from 'vscode';
 import { IChatProvider } from './chat-provider';
 import { Registry } from './registry';
-import { logger } from './lib/logger';
+import { logger } from './logger';
 import { NetworkError, RateLimitError, ServiceUnavailableError, TimeoutError } from './client';
 
 /** Routing strategy */

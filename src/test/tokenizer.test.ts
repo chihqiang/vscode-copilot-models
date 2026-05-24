@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { countTokens, freeTokenizer } from '../../core/lib/tokenizer';
+import { countTokens, freeTokenizer } from '../core/tokenizer';
 
 suite('Tokenizer Test Suite', () => {
   teardown(() => {

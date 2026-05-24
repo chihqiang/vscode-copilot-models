@@ -5,7 +5,7 @@
 import vscode from 'vscode';
 import type { IChatProvider } from './chat-provider';
 import type { ModelDefinition } from './models';
-import { logger } from './lib/logger';
+import { logger } from './logger';
 import { IModelProvider } from './model-provider';
 
 // ── Provider Factory ────────────────────────────────────

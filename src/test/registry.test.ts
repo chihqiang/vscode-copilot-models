@@ -1,6 +1,6 @@
 import * as assert from 'assert';
-import { Registry } from '../../core/registry';
-import type { IModelProvider, ModelDefinition } from '../../core';
+import { Registry } from '../core/registry';
+import type { IModelProvider, ModelDefinition } from '../core';
 
 suite('Registry Test Suite', () => {
 	const testModels: ModelDefinition[] = [

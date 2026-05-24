@@ -1,6 +1,6 @@
 import * as assert from 'assert';
-import { Registry } from '../../core/registry';
-import type { IProviderFactory } from '../../core/registry';
+import { Registry } from '../core/registry';
+import type { IProviderFactory } from '../core/registry';
 
 suite('Registry Test Suite', () => {
 	// Mock Provider Factory

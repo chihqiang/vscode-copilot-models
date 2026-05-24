@@ -4,7 +4,7 @@
 
 import vscode from 'vscode';
 import {  CONFIG_SECTION, type ModelDefinition } from './models';
-import { createProviderLogger } from './lib/logger';
+import { createProviderLogger } from './logger';
 import { Registry, createProviderFactory } from './registry';
 import { BaseChatProvider, type ThinkingEffort } from './chat-provider';
 import { BaseModelProvider, type ModelProviderConfig } from './model-provider';

@@ -12,7 +12,7 @@ import { IProviderFactory, Registry } from './registry';
 import { CONFIG_SECTION, ModelDefinition } from './models';
 import { createApiClient, ClientOptions } from './client';
 import { createGenericProviderFactory } from './provider-factory';
-import { logger } from './lib/logger';
+import { logger } from './logger';
 
 /** Custom provider model definition */
 export interface CustomProviderModel {

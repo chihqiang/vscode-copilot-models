@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { _iterSSEMessages, encodeUTF8, findDoubleNewlineIndex, LineDecoder, ServerSentEvent, Stream } from '../../core/lib/stream';
+import { _iterSSEMessages, encodeUTF8, findDoubleNewlineIndex, LineDecoder, ServerSentEvent, Stream } from '../core/client';
 
 suite('LineDecoder Test Suite', () => {
   test('decodes lines with \\n endings', () => {

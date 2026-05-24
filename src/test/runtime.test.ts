@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { isTestEnvironment, isDevelopmentEnvironment } from '../../core/lib/logger';
+import { isTestEnvironment, isDevelopmentEnvironment } from '../core/runtime';
 
 suite('env Test Suite', () => {
   const ORIGINAL_NODE_ENV = process.env.NODE_ENV;

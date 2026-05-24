@@ -4,7 +4,7 @@
 
 import vscode from 'vscode';
 import { CONFIG_SECTION, type ModelDefinition } from './models';
-import { logger } from './lib/logger';
+import { logger } from './logger';
 import { ClientOptions, IApiClient } from './client';
 
 /**

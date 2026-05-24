@@ -10,17 +10,7 @@
  */
 
 import vscode from 'vscode';
-
-/**
- * Runtime environment detection utilities
- */
-export function isTestEnvironment(): boolean {
-  return process.env.NODE_ENV === 'test';
-}
-
-export function isDevelopmentEnvironment(): boolean {
-  return process.env.NODE_ENV === 'development';
-}
+import { isDevelopmentEnvironment } from './runtime';
 
 /** Log level */
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
