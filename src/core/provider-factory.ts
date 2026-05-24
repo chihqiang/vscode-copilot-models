@@ -4,9 +4,8 @@
 
 import vscode from 'vscode';
 import {  CONFIG_SECTION, type ModelDefinition } from './models';
-import { createProviderLogger } from './logger';
-import { ModelRegistry } from './model-registry';
-import { ProviderFactoryRegistry, createProviderFactory } from './provider-registry';
+import { createProviderLogger } from './lib/logger';
+import { Registry, createProviderFactory } from './registry';
 import { BaseChatProvider, type ThinkingEffort } from './chat-provider';
 import { BaseModelProvider, type ModelProviderConfig } from './model-provider';
 import { ApiRequest, ClientOptions, IApiClient } from './client';
@@ -142,14 +141,14 @@ export function createGenericProviderFactory(options: GenericProviderOptions): G
 		createChatProvider: (context) => {
 			const chatProvider = new GenericChatProvider(context);
 			// GenericModelProvider extends BaseModelProvider which implements IModelProvider
-			ModelRegistry.getInstance().registerProvider(chatProvider.modelProvider);
+			Registry.getInstance().registerProvider(chatProvider.modelProvider);
 			return chatProvider;
 		},
 	});
 
 	return {
 		factory,
-		register: () => ProviderFactoryRegistry.getInstance().register(factory),
+		register: () => Registry.getInstance().registerFactory(factory),
 		GenericChatProvider,
 		GenericModelProvider,
 	};

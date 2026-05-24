@@ -3,11 +3,11 @@
  */
 
 import vscode from 'vscode';
-import { logger, shouldLog } from './logger';
+import { logger, shouldLog } from './lib/logger';
 import { ApiError, ApiMessage, ApiRequest, ApiTool, ApiToolCall, CancelledError, ContentPart, StreamCallbacks, TimeoutError } from './client';
 import { CONFIG_SECTION, ModelDefinition } from './models';
 import { IModelProvider } from './model-provider';
-import { countTokens } from './tokenizer';
+import { countTokens } from './lib/tokenizer';
 
 
 /**

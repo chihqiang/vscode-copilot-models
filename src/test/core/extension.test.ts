@@ -1,20 +1,19 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { ModelRegistry } from '../core/model-registry';
-import { ProviderFactoryRegistry } from '../core/provider-registry';
+import { Registry } from '../../core/registry';
 
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
 
 	setup(() => {
 		// Clear registries before each test
-		ModelRegistry.getInstance().clear();
-		ProviderFactoryRegistry.getInstance().clear();
+		Registry.getInstance().clear();
+		Registry.getInstance().clear();
 	});
 
 	teardown(() => {
-		ModelRegistry.getInstance().clear();
-		ProviderFactoryRegistry.getInstance().clear();
+		Registry.getInstance().clear();
+		Registry.getInstance().clear();
 	});
 
 	test('Extension should be defined', () => {

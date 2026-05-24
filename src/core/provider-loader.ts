@@ -8,11 +8,11 @@
  */
 
 import vscode from 'vscode';
-import { IProviderFactory, ProviderFactoryRegistry } from './provider-registry';
+import { IProviderFactory, Registry } from './registry';
 import { CONFIG_SECTION, ModelDefinition } from './models';
 import { createApiClient, ClientOptions } from './client';
 import { createGenericProviderFactory } from './provider-factory';
-import { logger } from './logger';
+import { logger } from './lib/logger';
 
 /** Custom provider model definition */
 export interface CustomProviderModel {
@@ -129,7 +129,7 @@ async function scanWorkspaceProviders(_context: vscode.ExtensionContext): Promis
           const manifest: CustomProviderEntry = JSON.parse(new TextDecoder().decode(content));
           manifest.providerId = manifest.providerId || name;
 
-          if (ProviderFactoryRegistry.getInstance().has(manifest.providerId)) {
+          if (Registry.getInstance().hasFactory(manifest.providerId)) {
             logger.provider.warn(`Workspace provider "${manifest.providerId}" conflicts, skipping`);
             continue;
           }
@@ -150,27 +150,27 @@ async function scanWorkspaceProviders(_context: vscode.ExtensionContext): Promis
 
 /** Execute complete provider discovery process */
 export async function discoverAllProviders(builtInFactories: IProviderFactory[], context: vscode.ExtensionContext): Promise<void> {
-  const registry = ProviderFactoryRegistry.getInstance();
+  const registry = Registry.getInstance();
 
   for (const factory of builtInFactories) {
-    if (!registry.has(factory.providerId)) {
-      registry.register(factory);
+    if (!registry.hasFactory(factory.providerId)) {
+      registry.registerFactory(factory);
       logger.provider.debug(`Registered built-in provider: ${factory.providerName}`);
     }
   }
 
   const custom = discoverCustomProvidersFromConfig();
   for (const factory of custom) {
-    if (!registry.has(factory.providerId)) {
-      registry.register(factory);
+    if (!registry.hasFactory(factory.providerId)) {
+      registry.registerFactory(factory);
       logger.provider.info(`Registered custom provider: ${factory.providerName}`);
     }
   }
 
   const workspace = await scanWorkspaceProviders(context);
   for (const factory of workspace) {
-    if (!registry.has(factory.providerId)) {
-      registry.register(factory);
+    if (!registry.hasFactory(factory.providerId)) {
+      registry.registerFactory(factory);
       logger.provider.info(`Registered workspace provider: ${factory.providerName}`);
     }
   }

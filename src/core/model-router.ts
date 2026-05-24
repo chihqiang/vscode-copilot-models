@@ -10,8 +10,8 @@
 
 import vscode from 'vscode';
 import { IChatProvider } from './chat-provider';
-import { ModelRegistry } from './model-registry';
-import { logger } from './logger';
+import { Registry } from './registry';
+import { logger } from './lib/logger';
 import { NetworkError, RateLimitError, ServiceUnavailableError, TimeoutError } from './client';
 
 /** Routing strategy */
@@ -216,7 +216,7 @@ export class ModelRouter implements IChatProvider {
     const fallbackModelId = failoverModels[failedModelId];
     if (!fallbackModelId) {return undefined;}
 
-    const registry = ModelRegistry.getInstance();
+    const registry = Registry.getInstance();
     const fallbackProvider = registry.findProviderByModelId(fallbackModelId);
     if (!fallbackProvider || fallbackProvider.id === failedProviderId) {return undefined;}
 

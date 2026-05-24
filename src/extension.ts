@@ -6,7 +6,7 @@
  */
 
 import vscode from 'vscode';
-import { applyLogLevelFromConfig, discoverAllProviders, IChatProvider, initLogger, IProviderFactory, logger, ModelRegistry, ModelRouter, ProviderFactoryRegistry } from './core';
+import { applyLogLevelFromConfig, discoverAllProviders, IChatProvider, initLogger, IProviderFactory, logger, ModelRouter, Registry } from './core';
 import { getBuiltInProviderFactories } from './providers';
 
 /**
@@ -57,7 +57,7 @@ function registerProvider(factory: IProviderFactory, context: vscode.ExtensionCo
 	logger.core.debug(`Creating provider: ${providerName} (${providerId})...`);
 
 	const chatProvider = factory.createChatProvider(context);
-	const registry = ModelRegistry.getInstance();
+	const registry = Registry.getInstance();
 	const modelProvider = registry.getProvider(providerId);
 	const models = modelProvider?.getModels().map((m) => m.id) ?? [];
 
@@ -85,7 +85,7 @@ async function unregisterProvider(providerId: string): Promise<void> {
 		registrationDisposables.delete(providerId);
 	}
 
-	ModelRegistry.getInstance().unregisterProvider(providerId);
+	Registry.getInstance().unregisterProvider(providerId);
 	logger.core.debug(`Provider "${providerId}" unregistered`);
 }
 
@@ -107,7 +107,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		// Discover all providers via provider-loader (built-in + custom + workspace)
 		await discoverAllProviders(getBuiltInProviderFactories(), context);
 		// Get all enabled providers and register them
-		const factories = ProviderFactoryRegistry.getInstance().getEnabledFactories();
+		const factories = Registry.getInstance().getEnabledFactories();
 		logger.core.info(`Found ${factories.length} enabled provider(s)`);
 
 		modelRouter = new ModelRouter();
@@ -134,7 +134,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					logger.core.info(`Log level updated to: ${logger.level}`);
 				}
 
-				const allFactories = ProviderFactoryRegistry.getInstance().getAllFactories();
+				const allFactories = Registry.getInstance().getAllFactories();
 				let routerChanged = false;
 
 				for (const factory of allFactories) {
@@ -247,8 +247,8 @@ export async function deactivate(): Promise<void> {
 	registrationDisposables.clear();
 
 	// Clear registry
-	ModelRegistry.getInstance().clear();
-	ProviderFactoryRegistry.getInstance().clear();
+	Registry.getInstance().clear();
+	Registry.getInstance().clear();
 
 	logger.core.info('Extension deactivated');
 	logger.dispose();

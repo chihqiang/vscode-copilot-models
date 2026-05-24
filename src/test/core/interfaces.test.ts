@@ -8,7 +8,7 @@ import type {
 	StreamCallbacks,
 	IModelProvider,
 	IApiClient,
-} from '../core';
+} from '../../core';
 
 suite('Interfaces Test Suite', () => {
 	suite('ModelDefinition', () => {
