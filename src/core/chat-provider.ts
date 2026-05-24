@@ -328,12 +328,16 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 
 		logger.chat.debug(`[${this.providerId}] Original messages count: ${messages.length}`);
 
+		const toolChoice = tools && tools.length > 0
+			? options.toolMode === vscode.LanguageModelChatToolMode.Required ? 'required' : 'auto'
+			: undefined;
+
 		const request: ApiRequest = {
 			model: this.getApiModelId(modelInfo.id),
 			messages: apiMessages,
 			stream: true,
 			...(tools ? { tools } : {}),
-			...(tools && tools.length > 0 ? { tool_choice: 'auto' } : {}),
+			...(toolChoice ? { tool_choice: toolChoice } : {}),
 		};
 
 		// If thinking model, add thinking-related parameters
@@ -358,7 +362,9 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 	 */
 	protected getConfiguredThinkingEffort(options: ModelConfigurationOptions): ThinkingEffort {
 		const configuredEffort =
-			options.modelConfiguration?.reasoningEffort ?? options.configuration?.reasoningEffort;
+			options.modelConfiguration?.reasoningEffort
+			?? options.modelOptions?.reasoningEffort
+			?? options.configuration?.reasoningEffort;
 
 		if (configuredEffort === 'none') {
 			return 'none';
@@ -420,6 +426,9 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 					if (p instanceof vscode.LanguageModelDataPart) {
 						return `DataPart(${p.mimeType}, ${p.data.length} bytes)`;
 					}
+					if (p instanceof vscode.LanguageModelPromptTsxPart) {
+						return `PromptTsxPart(...)`;
+					}
 					return `UnknownPart`;
 				});
 				logger.chat.debug(`  Message ${i}: role=${msg.role}, parts=[${partsInfo.join(', ')}]`);
@@ -475,6 +484,13 @@ export abstract class BaseChatProvider implements IChatProvider<vscode.LanguageM
 							arguments: JSON.stringify(part.input),
 						},
 					});
+				} else if (part instanceof vscode.LanguageModelPromptTsxPart) {
+					const val = typeof part.value === 'string' ? part.value : JSON.stringify(part.value);
+					if (hasImages) {
+						contentParts.push({ type: 'text', text: val });
+					} else {
+						textBuffer += val;
+					}
 				} else if (part instanceof vscode.LanguageModelToolResultPart) {
 					let toolContent = '';
 					for (const item of part.content) {
