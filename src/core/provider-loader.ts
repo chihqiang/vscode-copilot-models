@@ -7,12 +7,12 @@
  * 3. Workspace .vscode/copilot-models/providers/ directory
  */
 
-import vscode from 'vscode';
-import { IProviderFactory, Registry } from './registry';
-import { CONFIG_SECTION, ModelDefinition } from './models';
-import { createApiClient, ClientOptions } from './client';
-import { createGenericProviderFactory } from './provider-factory';
-import { logger } from './logger';
+import vscode from "vscode";
+import { IProviderFactory, Registry } from "./registry";
+import { CONFIG_SECTION, ModelDefinition } from "./models";
+import { createApiClient, ClientOptions } from "./client";
+import { createGenericProviderFactory } from "./provider-factory";
+import { logger } from "./logger";
 
 /** Custom provider model definition */
 export interface CustomProviderModel {
@@ -33,17 +33,17 @@ export interface CustomProviderEntry {
   apiKeyPrompt?: string;
   apiKeyPlaceholder?: string;
   models?: CustomProviderModel[];
-  thinkingParamType?: 'reasoning_effort' | 'thinking_enabled' | 'none';
+  thinkingParamType?: "reasoning_effort" | "thinking_enabled" | "none";
 }
 
 /** Convert custom provider model config to internal ModelDefinition */
 function toModelDefinitions(entry: CustomProviderEntry): ModelDefinition[] {
-  const defaults: CustomProviderModel[] = [{ id: 'default' }];
+  const defaults: CustomProviderModel[] = [{ id: "default" }];
   return (entry.models ?? defaults).map((m) => ({
     id: m.id,
     name: m.name ?? m.id,
     family: entry.providerId,
-    version: '1.0',
+    version: "1.0",
     detail: `Custom provider: ${entry.providerName}`,
     maxInputTokens: m.maxInputTokens ?? 128000,
     maxOutputTokens: m.maxOutputTokens ?? 4096,
@@ -56,15 +56,33 @@ function toModelDefinitions(entry: CustomProviderEntry): ModelDefinition[] {
 }
 
 /** Create factory from custom provider configuration */
-function createCustomProviderFactory(entry: CustomProviderEntry): IProviderFactory {
+function createCustomProviderFactory(
+  entry: CustomProviderEntry,
+): IProviderFactory {
   const models = toModelDefinitions(entry);
-  const { providerId, providerName, baseUrl, apiKeyPrompt, apiKeyPlaceholder, thinkingParamType = 'reasoning_effort' } = entry;
+  const {
+    providerId,
+    providerName,
+    baseUrl,
+    apiKeyPrompt,
+    apiKeyPlaceholder,
+    thinkingParamType = "reasoning_effort",
+  } = entry;
 
-  const convertThinkingParams = thinkingParamType === 'thinking_enabled'
-    ? (request: any, effort: string) => { request.thinking = { type: effort === 'none' ? 'disabled' : 'enabled' }; }
-    : thinkingParamType === 'reasoning_effort'
-      ? (request: any, effort: string) => { if (effort !== 'none') { request.reasoning_effort = effort; } }
-      : undefined;
+  const convertThinkingParams =
+    thinkingParamType === "thinking_enabled"
+      ? (request: any, effort: string) => {
+          request.thinking = {
+            type: effort === "none" ? "disabled" : "enabled",
+          };
+        }
+      : thinkingParamType === "reasoning_effort"
+        ? (request: any, effort: string) => {
+            if (effort !== "none") {
+              request.reasoning_effort = effort;
+            }
+          }
+        : undefined;
 
   return createGenericProviderFactory({
     providerId,
@@ -72,7 +90,7 @@ function createCustomProviderFactory(entry: CustomProviderEntry): IProviderFacto
     defaultBaseUrl: baseUrl,
     models,
     apiKeyPrompt: apiKeyPrompt ?? `Enter your ${providerName} API Key`,
-    apiKeyPlaceholder: apiKeyPlaceholder ?? 'your-api-key-here',
+    apiKeyPlaceholder: apiKeyPlaceholder ?? "your-api-key-here",
     configSection: CONFIG_SECTION,
     createClient: (url: string, key: string, options?: ClientOptions) =>
       createApiClient({
@@ -89,7 +107,9 @@ function createCustomProviderFactory(entry: CustomProviderEntry): IProviderFacto
 /** Read custom providers from VS Code configuration */
 function discoverCustomProvidersFromConfig(): IProviderFactory[] {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-  const customProviders = config.get<CustomProviderEntry[] | Record<string, CustomProviderEntry>>('customProviders', []);
+  const customProviders = config.get<
+    CustomProviderEntry[] | Record<string, CustomProviderEntry>
+  >("customProviders", []);
 
   const entries: CustomProviderEntry[] = Array.isArray(customProviders)
     ? customProviders
@@ -98,21 +118,32 @@ function discoverCustomProvidersFromConfig(): IProviderFactory[] {
   return entries
     .filter((e) => e.providerId && e.providerName)
     .map((entry) => {
-      logger.provider.info(`Loading custom provider: ${entry.providerName} (${entry.providerId})`);
+      logger.provider.info(
+        `Loading custom provider: ${entry.providerName} (${entry.providerId})`,
+      );
       return createCustomProviderFactory(entry);
     });
 }
 
 /** Scan workspace directory for provider configurations */
-async function scanWorkspaceProviders(_context: vscode.ExtensionContext): Promise<IProviderFactory[]> {
+async function scanWorkspaceProviders(
+  _context: vscode.ExtensionContext,
+): Promise<IProviderFactory[]> {
   const factories: IProviderFactory[] = [];
 
   const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (!workspaceFolders) { return factories; }
+  if (!workspaceFolders) {
+    return factories;
+  }
 
   for (const folder of workspaceFolders) {
     try {
-      const providerDir = vscode.Uri.joinPath(folder.uri, '.vscode', 'copilot-models', 'providers');
+      const providerDir = vscode.Uri.joinPath(
+        folder.uri,
+        ".vscode",
+        "copilot-models",
+        "providers",
+      );
       let entries: [string, vscode.FileType][];
       try {
         entries = await vscode.workspace.fs.readDirectory(providerDir);
@@ -121,27 +152,45 @@ async function scanWorkspaceProviders(_context: vscode.ExtensionContext): Promis
       }
 
       for (const [name, type] of entries) {
-        if (type !== vscode.FileType.Directory) { continue; }
+        if (type !== vscode.FileType.Directory) {
+          continue;
+        }
 
-        const manifestUri = vscode.Uri.joinPath(providerDir, name, 'provider.json');
+        const manifestUri = vscode.Uri.joinPath(
+          providerDir,
+          name,
+          "provider.json",
+        );
         try {
           const content = await vscode.workspace.fs.readFile(manifestUri);
-          const manifest: CustomProviderEntry = JSON.parse(new TextDecoder().decode(content));
+          const manifest: CustomProviderEntry = JSON.parse(
+            new TextDecoder().decode(content),
+          );
           manifest.providerId = manifest.providerId || name;
 
           if (Registry.getInstance().hasFactory(manifest.providerId)) {
-            logger.provider.warn(`Workspace provider "${manifest.providerId}" conflicts, skipping`);
+            logger.provider.warn(
+              `Workspace provider "${manifest.providerId}" conflicts, skipping`,
+            );
             continue;
           }
 
           factories.push(createCustomProviderFactory(manifest));
-          logger.provider.info(`Discovered workspace provider: ${manifest.providerName} (${manifest.providerId})`);
+          logger.provider.info(
+            `Discovered workspace provider: ${manifest.providerName} (${manifest.providerId})`,
+          );
         } catch (e) {
-          logger.provider.debug(`No valid provider.json in workspace providers/${name}`, e);
+          logger.provider.debug(
+            `No valid provider.json in workspace providers/${name}`,
+            e,
+          );
         }
       }
     } catch (error) {
-      logger.provider.warn(`Error scanning workspace provider folder "${folder.uri}":`, error);
+      logger.provider.warn(
+        `Error scanning workspace provider folder "${folder.uri}":`,
+        error,
+      );
     }
   }
 
@@ -149,13 +198,18 @@ async function scanWorkspaceProviders(_context: vscode.ExtensionContext): Promis
 }
 
 /** Execute complete provider discovery process */
-export async function discoverAllProviders(builtInFactories: IProviderFactory[], context: vscode.ExtensionContext): Promise<void> {
+export async function discoverAllProviders(
+  builtInFactories: IProviderFactory[],
+  context: vscode.ExtensionContext,
+): Promise<void> {
   const registry = Registry.getInstance();
 
   for (const factory of builtInFactories) {
     if (!registry.hasFactory(factory.providerId)) {
       registry.registerFactory(factory);
-      logger.provider.debug(`Registered built-in provider: ${factory.providerName}`);
+      logger.provider.debug(
+        `Registered built-in provider: ${factory.providerName}`,
+      );
     }
   }
 
@@ -163,7 +217,9 @@ export async function discoverAllProviders(builtInFactories: IProviderFactory[],
   for (const factory of custom) {
     if (!registry.hasFactory(factory.providerId)) {
       registry.registerFactory(factory);
-      logger.provider.info(`Registered custom provider: ${factory.providerName}`);
+      logger.provider.info(
+        `Registered custom provider: ${factory.providerName}`,
+      );
     }
   }
 
@@ -171,9 +227,13 @@ export async function discoverAllProviders(builtInFactories: IProviderFactory[],
   for (const factory of workspace) {
     if (!registry.hasFactory(factory.providerId)) {
       registry.registerFactory(factory);
-      logger.provider.info(`Registered workspace provider: ${factory.providerName}`);
+      logger.provider.info(
+        `Registered workspace provider: ${factory.providerName}`,
+      );
     }
   }
 
-  logger.provider.info(`Discovery complete: ${builtInFactories.length} built-in, ${custom.length} custom, ${workspace.length} workspace`);
+  logger.provider.info(
+    `Discovery complete: ${builtInFactories.length} built-in, ${custom.length} custom, ${workspace.length} workspace`,
+  );
 }

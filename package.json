@@ -2,7 +2,7 @@
   "name": "vscode-copilot-models",
   "displayName": "Copilot Models",
   "description": "Unlock third-party large model extensions for GitHub Copilot. Support DeepSeek and more LLMs.",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "publisher": "chihqiang",
   "icon": "resources/icon.png",
   "repository": {
@@ -282,9 +282,10 @@
     "lint": "eslint src",
     "lint:ts": "eslint \"src/**/*.ts\" --ext .ts",
     "lint:md": "markdownlint \"**/*.md\" --ignore node_modules",
-    "test": "node out/test/runTest",
+    "test": "vscode-test",
     "test:compile": "tsc -p ./",
-    "check": "run-s lint lint:ts lint:md compile",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "check": "run-s format lint lint:ts lint:md compile",
     "package:vsix": "npx vsce package",
     "package": "run-s compile package:vsix"
   },
@@ -300,6 +301,7 @@
     "markdownlint-cli": "^0.48.0",
     "mocha": "^11.7.5",
     "npm-run-all2": "^8.0.4",
+    "prettier": "^3.8.3",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
     "vsce": "^2.15.0"

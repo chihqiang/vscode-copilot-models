@@ -7,14 +7,14 @@
  * Resource management: provides freeTokenizer() for memory cleanup on extension deactivation.
  */
 
-import { get_encoding, Tiktoken } from '@dqbd/tiktoken';
+import { get_encoding, Tiktoken } from "@dqbd/tiktoken";
 
 let encoder: Tiktoken | null = null;
 
 /** Get or create tiktoken encoder (lazy initialization) */
 function getEncoder(): Tiktoken {
   if (!encoder) {
-    encoder = get_encoding('o200k_base');
+    encoder = get_encoding("o200k_base");
   }
   return encoder;
 }
@@ -70,7 +70,9 @@ function fallbackCountTokens(text: string): number {
         }
       }
     } else {
-      if (inWord) { inWord = false; }
+      if (inWord) {
+        inWord = false;
+      }
 
       if (code >= 0x30 && code <= 0x39) {
         inDigit = true;
@@ -96,7 +98,9 @@ function fallbackCountTokens(text: string): number {
     }
   }
 
-  if (inDigit) { tokens += digitLen * 0.25; }
+  if (inDigit) {
+    tokens += digitLen * 0.25;
+  }
   tokens += wordCount * 1.3;
 
   return Math.max(1, Math.ceil(tokens + 1));

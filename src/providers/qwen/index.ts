@@ -2,7 +2,16 @@
  * Qwen model provider module
  */
 
-import { ApiRequest, ClientOptions, CONFIG_SECTION, createApiClient, createGenericProviderFactory, IProviderFactory, ModelDefinition, ThinkingEffort } from "../../core";
+import {
+  ApiRequest,
+  ClientOptions,
+  CONFIG_SECTION,
+  createApiClient,
+  createGenericProviderFactory,
+  IProviderFactory,
+  ModelDefinition,
+  ThinkingEffort,
+} from "../../core";
 
 // ── Model Definitions ──────────────────────────────────
 
@@ -71,7 +80,8 @@ export const QWEN_MODELS: ModelDefinition[] = [
 
 export const QWEN_PROVIDER_ID = "qwen";
 
-export const QWEN_DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+export const QWEN_DEFAULT_BASE_URL =
+  "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
 // ── Provider Registration ─────────────────────────────
 const { register, factory: qwenFactory } = createGenericProviderFactory({

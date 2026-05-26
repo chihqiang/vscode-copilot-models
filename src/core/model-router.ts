@@ -8,14 +8,19 @@
  * - Support latency-aware routing: select provider with lowest historical latency
  */
 
-import vscode from 'vscode';
-import { IChatProvider } from './chat-provider';
-import { Registry } from './registry';
-import { logger } from './logger';
-import { NetworkError, RateLimitError, ServiceUnavailableError, TimeoutError } from './client';
+import vscode from "vscode";
+import { IChatProvider } from "./chat-provider";
+import { Registry } from "./registry";
+import { logger } from "./logger";
+import {
+  NetworkError,
+  RateLimitError,
+  ServiceUnavailableError,
+  TimeoutError,
+} from "./client";
 
 /** Routing strategy */
-export type RoutingStrategy = 'failover' | 'latency';
+export type RoutingStrategy = "failover" | "latency";
 
 /** Single request latency record */
 export interface LatencyRecord {
@@ -36,7 +41,7 @@ export interface LatencyStats {
 }
 
 const SLIDING_WINDOW_SIZE = 50;
-const CONFIG_SECTION = 'copilot-models';
+const CONFIG_SECTION = "copilot-models";
 
 /**
  * Latency Tracker
@@ -61,10 +66,14 @@ export class LatencyTracker {
   /** Get latency stats for a provider (successful requests only) */
   getStats(providerId: string): LatencyStats | undefined {
     const list = this.records.get(providerId);
-    if (!list || list.length === 0) {return undefined;}
+    if (!list || list.length === 0) {
+      return undefined;
+    }
 
     const successful = list.filter((r) => r.success);
-    if (successful.length === 0) {return undefined;}
+    if (successful.length === 0) {
+      return undefined;
+    }
 
     const durations = successful.map((r) => r.duration);
     const sum = durations.reduce((a, b) => a + b, 0);
@@ -82,7 +91,9 @@ export class LatencyTracker {
     const result = new Map<string, LatencyStats>();
     for (const providerId of this.records.keys()) {
       const stats = this.getStats(providerId);
-      if (stats) {result.set(providerId, stats);}
+      if (stats) {
+        result.set(providerId, stats);
+      }
     }
     return result;
   }
@@ -98,12 +109,18 @@ let failoverModelsCacheTime = 0;
 const FAILOVER_CACHE_TTL = 30_000;
 
 function getFailoverModels(): Record<string, string> {
-  if (failoverModelsCache !== null && Date.now() - failoverModelsCacheTime < FAILOVER_CACHE_TTL) {
+  if (
+    failoverModelsCache !== null &&
+    Date.now() - failoverModelsCacheTime < FAILOVER_CACHE_TTL
+  ) {
     return failoverModelsCache;
   }
   try {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    failoverModelsCache = config.get<Record<string, string>>('failoverModels', {});
+    failoverModelsCache = config.get<Record<string, string>>(
+      "failoverModels",
+      {},
+    );
     failoverModelsCacheTime = Date.now();
     return failoverModelsCache;
   } catch {
@@ -115,9 +132,9 @@ function getFailoverModels(): Record<string, string> {
 function getRoutingStrategy(): RoutingStrategy {
   try {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    return config.get<RoutingStrategy>('routingStrategy', 'failover');
+    return config.get<RoutingStrategy>("routingStrategy", "failover");
   } catch {
-    return 'failover';
+    return "failover";
   }
 }
 
@@ -138,18 +155,18 @@ function isTransientError(error: unknown): boolean {
   if (error instanceof Error) {
     const msg = error.message.toLowerCase();
     return (
-      msg.includes('timeout') ||
-      msg.includes('network') ||
-      msg.includes('econnrefused') ||
-      msg.includes('econnreset') ||
-      msg.includes('503') ||
-      msg.includes('502') ||
-      msg.includes('429') ||
-      msg.includes('rate limit') ||
-      msg.includes('service unavailable') ||
-      msg.includes('too many requests') ||
-      msg.includes('not configured') ||
-      msg.includes('api key')
+      msg.includes("timeout") ||
+      msg.includes("network") ||
+      msg.includes("econnrefused") ||
+      msg.includes("econnreset") ||
+      msg.includes("503") ||
+      msg.includes("502") ||
+      msg.includes("429") ||
+      msg.includes("rate limit") ||
+      msg.includes("service unavailable") ||
+      msg.includes("too many requests") ||
+      msg.includes("not configured") ||
+      msg.includes("api key")
     );
   }
   return false;
@@ -162,10 +179,15 @@ export class ModelRouter implements IChatProvider {
   readonly latencyTracker = new LatencyTracker();
 
   private readonly onDidChangeEmitter = new vscode.EventEmitter<void>();
-  readonly onDidChangeLanguageModelChatInformation = this.onDidChangeEmitter.event;
+  readonly onDidChangeLanguageModelChatInformation =
+    this.onDidChangeEmitter.event;
 
   /** Register a provider and its hosted model list */
-  addProvider(providerId: string, provider: IChatProvider, models: string[]): void {
+  addProvider(
+    providerId: string,
+    provider: IChatProvider,
+    models: string[],
+  ): void {
     this.providers.set(providerId, provider);
     this.providerModels.set(providerId, models);
 
@@ -206,19 +228,28 @@ export class ModelRouter implements IChatProvider {
   /** Find provider by model ID */
   private findProviderForModel(modelId: string): IChatProvider | undefined {
     const pid = this.modelToPrimaryProvider.get(modelId);
-    if (pid) {return this.providers.get(pid);}
+    if (pid) {
+      return this.providers.get(pid);
+    }
     return undefined;
   }
 
   /** Find fallback provider for failover */
-  private findFallbackProvider(failedModelId: string, failedProviderId: string): IChatProvider | undefined {
+  private findFallbackProvider(
+    failedModelId: string,
+    failedProviderId: string,
+  ): IChatProvider | undefined {
     const failoverModels = getFailoverModels();
     const fallbackModelId = failoverModels[failedModelId];
-    if (!fallbackModelId) {return undefined;}
+    if (!fallbackModelId) {
+      return undefined;
+    }
 
     const registry = Registry.getInstance();
     const fallbackProvider = registry.findProviderByModelId(fallbackModelId);
-    if (!fallbackProvider || fallbackProvider.id === failedProviderId) {return undefined;}
+    if (!fallbackProvider || fallbackProvider.id === failedProviderId) {
+      return undefined;
+    }
 
     return this.providers.get(fallbackProvider.id);
   }
@@ -229,14 +260,18 @@ export class ModelRouter implements IChatProvider {
    */
   private selectLowestLatencyProvider(models: string[]): string | undefined {
     const strategy = getRoutingStrategy();
-    if (strategy !== 'latency') {return undefined;}
+    if (strategy !== "latency") {
+      return undefined;
+    }
 
     let best: string | undefined;
     let bestLatency = Infinity;
 
     for (const modelId of models) {
       const pid = this.modelToPrimaryProvider.get(modelId);
-      if (!pid) {continue;}
+      if (!pid) {
+        continue;
+      }
 
       const stats = this.latencyTracker.getStats(pid);
       const latency = stats?.averageMs ?? Infinity;
@@ -257,12 +292,18 @@ export class ModelRouter implements IChatProvider {
 
     for (const [providerId, provider] of this.providers) {
       try {
-        const result = await provider.provideLanguageModelChatInformation(options, token);
+        const result = await provider.provideLanguageModelChatInformation(
+          options,
+          token,
+        );
         if (result) {
           allInfos.push(...result);
         }
       } catch (error) {
-        logger.router.error(`Error getting model info from "${providerId}"`, error);
+        logger.router.error(
+          `Error getting model info from "${providerId}"`,
+          error,
+        );
       }
     }
 
@@ -288,7 +329,7 @@ export class ModelRouter implements IChatProvider {
     let activeProviderId = this.getProviderIdForModel(modelId);
 
     const strategy = getRoutingStrategy();
-    if (strategy === 'latency') {
+    if (strategy === "latency") {
       const candidatePids = Array.from(this.providerModels.entries())
         .filter(([_, models]) => models.includes(modelId))
         .map(([pid]) => pid);
@@ -304,9 +345,15 @@ export class ModelRouter implements IChatProvider {
     }
 
     try {
-      logger.router.info(`Routing to "${activeProviderId}" for model "${modelId}"`);
+      logger.router.info(
+        `Routing to "${activeProviderId}" for model "${modelId}"`,
+      );
       await primaryProvider.provideLanguageModelChatResponse(
-        modelInfo, messages, options, progress, token,
+        modelInfo,
+        messages,
+        options,
+        progress,
+        token,
       );
       this.latencyTracker.record({
         providerId: activeProviderId,
@@ -328,10 +375,16 @@ export class ModelRouter implements IChatProvider {
         const fallback = this.findFallbackProvider(modelId, activeProviderId);
         if (fallback) {
           const fallbackPid = this.getProviderIdForModel(modelId);
-          logger.router.warn(`Failover to "${fallbackPid}" for model "${modelId}" after error: ${error instanceof Error ? error.message : String(error)}`);
+          logger.router.warn(
+            `Failover to "${fallbackPid}" for model "${modelId}" after error: ${error instanceof Error ? error.message : String(error)}`,
+          );
           const fallbackStart = Date.now();
           await fallback.provideLanguageModelChatResponse(
-            modelInfo, messages, options, progress, token,
+            modelInfo,
+            messages,
+            options,
+            progress,
+            token,
           );
           this.latencyTracker.record({
             providerId: fallbackPid,
@@ -354,7 +407,9 @@ export class ModelRouter implements IChatProvider {
     token: vscode.CancellationToken,
   ): Promise<number> {
     const provider = this.findProviderForModel(modelInfo.id);
-    if (!provider) {return 0;}
+    if (!provider) {
+      return 0;
+    }
     return provider.provideTokenCount(modelInfo, text, token);
   }
 
@@ -383,7 +438,9 @@ export class ModelRouter implements IChatProvider {
 
   async configureApiKey(): Promise<void> {
     const providerIds = Array.from(this.providers.keys());
-    if (providerIds.length === 0) {return;}
+    if (providerIds.length === 0) {
+      return;
+    }
     if (providerIds.length === 1) {
       await this.providers.get(providerIds[0])!.configureApiKey();
       return;
@@ -391,7 +448,7 @@ export class ModelRouter implements IChatProvider {
 
     const selected = await vscode.window.showQuickPick(
       providerIds.map((id) => ({ label: id, id })),
-      { placeHolder: 'Select a provider to configure API key' },
+      { placeHolder: "Select a provider to configure API key" },
     );
     if (selected) {
       await this.providers.get(selected.id)!.configureApiKey();
@@ -405,6 +462,6 @@ export class ModelRouter implements IChatProvider {
   }
 
   private getProviderIdForModel(modelId: string): string {
-    return this.modelToPrimaryProvider.get(modelId) || 'unknown';
+    return this.modelToPrimaryProvider.get(modelId) || "unknown";
   }
 }

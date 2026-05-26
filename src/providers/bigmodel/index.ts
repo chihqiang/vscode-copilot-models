@@ -2,7 +2,16 @@
  * BigModel model provider module
  */
 
-import { ApiRequest, ClientOptions, CONFIG_SECTION, createApiClient, createGenericProviderFactory, IProviderFactory, ModelDefinition, ThinkingEffort } from "../../core";
+import {
+  ApiRequest,
+  ClientOptions,
+  CONFIG_SECTION,
+  createApiClient,
+  createGenericProviderFactory,
+  IProviderFactory,
+  ModelDefinition,
+  ThinkingEffort,
+} from "../../core";
 
 // ── Model Definitions ──────────────────────────────────
 
