@@ -2,11 +2,11 @@
  * Registry - Combined provider factory registry and model registry
  */
 
-import vscode from 'vscode';
-import type { IChatProvider } from './chat-provider';
-import type { ModelDefinition } from './models';
-import { logger } from './logger';
-import { IModelProvider } from './model-provider';
+import vscode from "vscode";
+import type { IChatProvider } from "./chat-provider";
+import type { ModelDefinition } from "./models";
+import { logger } from "./logger";
+import { IModelProvider } from "./model-provider";
 
 // ── Provider Factory ────────────────────────────────────
 
@@ -35,8 +35,16 @@ export interface ProviderFactoryConfig {
 /**
  * Helper function to create ProviderFactory
  */
-export function createProviderFactory(config: ProviderFactoryConfig): IProviderFactory {
-  const { providerId, providerName, configSection, enabledByDefault = true, createChatProvider } = config;
+export function createProviderFactory(
+  config: ProviderFactoryConfig,
+): IProviderFactory {
+  const {
+    providerId,
+    providerName,
+    configSection,
+    enabledByDefault = true,
+    createChatProvider,
+  } = config;
 
   return {
     providerId,
@@ -68,16 +76,19 @@ export function createProviderFactoryRegister(config: ProviderFactoryConfig) {
  */
 export function registerProvider(providerId: string, providerName: string) {
   return function <
-    T extends new (context: import('vscode').ExtensionContext) => ReturnType<IProviderFactory['createChatProvider']>,
+    T extends new (
+      context: import("vscode").ExtensionContext,
+    ) => ReturnType<IProviderFactory["createChatProvider"]>,
   >(target: T, _context: ClassFieldDecoratorContext): T {
     const factory: IProviderFactory = {
       providerId,
       providerName,
       isEnabled: () => true,
-      createChatProvider: (context: import('vscode').ExtensionContext) => new target(context),
+      createChatProvider: (context: import("vscode").ExtensionContext) =>
+        new target(context),
     };
 
-    if (process.env.NODE_ENV !== 'test') {
+    if (process.env.NODE_ENV !== "test") {
       queueMicrotask(() => {
         Registry.getInstance().registerFactory(factory);
       });
@@ -103,7 +114,7 @@ export class Registry {
   private models: Map<string, ModelDefinition[]> = new Map();
 
   private constructor() {
-    logger.registry.debug('Registry initialized');
+    logger.registry.debug("Registry initialized");
   }
 
   static getInstance(): Registry {
@@ -117,7 +128,7 @@ export class Registry {
     if (Registry.instance) {
       Registry.instance.clear();
       Registry.instance = undefined;
-      logger.registry.debug('Registry instance reset');
+      logger.registry.debug("Registry instance reset");
     }
   }
 
@@ -129,7 +140,9 @@ export class Registry {
 
   registerFactory(factory: IProviderFactory): void {
     if (this.factories.has(factory.providerId)) {
-      logger.provider.debug(`Provider factory "${factory.providerId}" is already registered, skipping`);
+      logger.provider.debug(
+        `Provider factory "${factory.providerId}" is already registered, skipping`,
+      );
       return;
     }
     this.factories.set(factory.providerId, factory);
@@ -160,13 +173,17 @@ export class Registry {
 
   registerProvider(provider: IModelProvider): void {
     if (this.providers.has(provider.id)) {
-      logger.registry.warn(`Provider "${provider.id}" is already registered, skipping`);
+      logger.registry.warn(
+        `Provider "${provider.id}" is already registered, skipping`,
+      );
       return;
     }
     const models = provider.getModels();
     this.providers.set(provider.id, provider);
     this.models.set(provider.id, models);
-    logger.registry.debug(`Registered provider: ${provider.id} with ${models.length} models`);
+    logger.registry.debug(
+      `Registered provider: ${provider.id} with ${models.length} models`,
+    );
 
     for (const model of models) {
       logger.registry.debug(`  - Model: ${model.id} (${model.family})`);
@@ -178,7 +195,9 @@ export class Registry {
       this.models.delete(providerId);
       logger.registry.debug(`Unregistered provider: ${providerId}`);
     } else {
-      logger.registry.warn(`Provider "${providerId}" not found, cannot unregister`);
+      logger.registry.warn(
+        `Provider "${providerId}" not found, cannot unregister`,
+      );
     }
   }
 
@@ -198,7 +217,9 @@ export class Registry {
 
   getModelsForProvider(providerId: string): ModelDefinition[] {
     const models = this.models.get(providerId) || [];
-    logger.registry.debug(`Getting models for provider "${providerId}", count: ${models.length}`);
+    logger.registry.debug(
+      `Getting models for provider "${providerId}", count: ${models.length}`,
+    );
     return models;
   }
 
@@ -207,7 +228,9 @@ export class Registry {
     for (const models of this.models.values()) {
       allModels.push(...models);
     }
-    logger.registry.debug(`Getting all models, total count: ${allModels.length}`);
+    logger.registry.debug(
+      `Getting all models, total count: ${allModels.length}`,
+    );
     return allModels;
   }
 
@@ -227,7 +250,9 @@ export class Registry {
     for (const [providerId, models] of this.models.entries()) {
       if (models.some((m) => m.id === modelId)) {
         const provider = this.providers.get(providerId);
-        logger.registry.debug(`Found provider "${providerId}" for model "${modelId}"`);
+        logger.registry.debug(
+          `Found provider "${providerId}" for model "${modelId}"`,
+        );
         return provider;
       }
     }

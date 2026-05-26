@@ -5,9 +5,18 @@
  * Uses ModelRouter for unified routing with failover and latency tracking
  */
 
-import vscode from 'vscode';
-import { applyLogLevelFromConfig, discoverAllProviders, IChatProvider, initLogger, IProviderFactory, logger, ModelRouter, Registry } from './core';
-import { getBuiltInProviderFactories } from './providers';
+import vscode from "vscode";
+import {
+  applyLogLevelFromConfig,
+  discoverAllProviders,
+  IChatProvider,
+  initLogger,
+  IProviderFactory,
+  logger,
+  ModelRouter,
+  Registry,
+} from "./core";
+import { getBuiltInProviderFactories } from "./providers";
 
 class CopilotModelsExtension {
   private modelRouter: ModelRouter | undefined;
@@ -36,17 +45,25 @@ class CopilotModelsExtension {
         this.registerProvider(factory, context);
       }
 
-      const routerDisposable = vscode.lm.registerLanguageModelChatProvider('copilot-models-router', this.modelRouter);
+      const routerDisposable = vscode.lm.registerLanguageModelChatProvider(
+        "copilot-models-router",
+        this.modelRouter,
+      );
       context.subscriptions.push(routerDisposable);
-      this.registrationDisposables.set('copilot-models-router', routerDisposable);
+      this.registrationDisposables.set(
+        "copilot-models-router",
+        routerDisposable,
+      );
 
       this.registerCommands();
 
       context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(async (e) => {
-          if (!e.affectsConfiguration('copilot-models')) { return; }
+          if (!e.affectsConfiguration("copilot-models")) {
+            return;
+          }
 
-          if (e.affectsConfiguration('copilot-models.debugMode')) {
+          if (e.affectsConfiguration("copilot-models.debugMode")) {
             applyLogLevelFromConfig();
             logger.core.info(`Log level updated to: ${logger.level}`);
           }
@@ -56,14 +73,19 @@ class CopilotModelsExtension {
 
           for (const factory of allFactories) {
             const isNowEnabled = factory.isEnabled();
-            const isCurrentlyRegistered = this.modelRouter?.hasProvider(factory.providerId) ?? false;
+            const isCurrentlyRegistered =
+              this.modelRouter?.hasProvider(factory.providerId) ?? false;
 
             if (isNowEnabled && !isCurrentlyRegistered) {
-              logger.core.info(`Config changed: enabling provider "${factory.providerId}"`);
+              logger.core.info(
+                `Config changed: enabling provider "${factory.providerId}"`,
+              );
               this.registerProvider(factory, context);
               routerChanged = true;
             } else if (!isNowEnabled && isCurrentlyRegistered) {
-              logger.core.info(`Config changed: disabling provider "${factory.providerId}"`);
+              logger.core.info(
+                `Config changed: disabling provider "${factory.providerId}"`,
+              );
               await this.unregisterProvider(factory.providerId);
               routerChanged = true;
             }
@@ -75,16 +97,18 @@ class CopilotModelsExtension {
         }),
       );
 
-      logger.core.info(`Extension activated successfully with ${factories.length} provider(s): ${factories.map((f) => f.providerId).join(', ')}`);
+      logger.core.info(
+        `Extension activated successfully with ${factories.length} provider(s): ${factories.map((f) => f.providerId).join(", ")}`,
+      );
       logger.show();
     } catch (error) {
-      logger.core.error('Failed to activate extension:', error);
+      logger.core.error("Failed to activate extension:", error);
       throw error;
     }
   }
 
   async deactivate(): Promise<void> {
-    logger.core.info('Deactivating extension...');
+    logger.core.info("Deactivating extension...");
 
     if (this.modelRouter) {
       await this.modelRouter.prepareForDeactivate();
@@ -105,13 +129,15 @@ class CopilotModelsExtension {
     Registry.getInstance().clear();
     Registry.getInstance().clear();
 
-    logger.core.info('Extension deactivated');
+    logger.core.info("Extension deactivated");
     logger.dispose();
   }
 
-  private async selectProvider(factories: IProviderFactory[]): Promise<IProviderFactory | undefined> {
+  private async selectProvider(
+    factories: IProviderFactory[],
+  ): Promise<IProviderFactory | undefined> {
     if (factories.length === 0) {
-      vscode.window.showWarningMessage('No model providers enabled');
+      vscode.window.showWarningMessage("No model providers enabled");
       return undefined;
     }
 
@@ -121,15 +147,20 @@ class CopilotModelsExtension {
 
     const selected = await vscode.window.showQuickPick(
       factories.map((f) => ({ label: f.providerName, id: f.providerId })),
-      { placeHolder: 'Select a model provider' },
+      { placeHolder: "Select a model provider" },
     );
 
-    if (!selected) { return undefined; }
+    if (!selected) {
+      return undefined;
+    }
 
     return factories.find((f) => f.providerId === selected.id);
   }
 
-  private registerProvider(factory: IProviderFactory, context: vscode.ExtensionContext): IChatProvider {
+  private registerProvider(
+    factory: IProviderFactory,
+    context: vscode.ExtensionContext,
+  ): IChatProvider {
     const { providerId, providerName } = factory;
 
     logger.core.debug(`Creating provider: ${providerName} (${providerId})...`);
@@ -142,7 +173,10 @@ class CopilotModelsExtension {
     if (this.modelRouter) {
       this.modelRouter.addProvider(providerId, chatProvider, models);
     } else {
-      const disposable = vscode.lm.registerLanguageModelChatProvider(providerId, chatProvider);
+      const disposable = vscode.lm.registerLanguageModelChatProvider(
+        providerId,
+        chatProvider,
+      );
       context.subscriptions.push(disposable);
       this.registrationDisposables.set(providerId, disposable);
     }
@@ -165,57 +199,71 @@ class CopilotModelsExtension {
   }
 
   private registerCommands(): void {
-    vscode.commands.registerCommand('copilot-models.setApiKey', async () => {
+    vscode.commands.registerCommand("copilot-models.setApiKey", async () => {
       if (this.modelRouter) {
         await this.modelRouter.configureApiKey();
       }
     });
 
-    vscode.commands.registerCommand('copilot-models.clearApiKey', async () => {
+    vscode.commands.registerCommand("copilot-models.clearApiKey", async () => {
       if (this.modelRouter) {
         await this.modelRouter.clearApiKey();
       }
     });
 
-    vscode.commands.registerCommand('copilot-models.openSettings', () => {
-      logger.core.info('openSettings command invoked');
-      vscode.commands.executeCommand('workbench.action.openSettings', 'copilot-models');
+    vscode.commands.registerCommand("copilot-models.openSettings", () => {
+      logger.core.info("openSettings command invoked");
+      vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        "copilot-models",
+      );
     });
 
-    vscode.commands.registerCommand('copilot-models.showLog', () => {
-      logger.core.info('showLog command invoked');
+    vscode.commands.registerCommand("copilot-models.showLog", () => {
+      logger.core.info("showLog command invoked");
       logger.show();
     });
 
-    vscode.commands.registerCommand('copilot-models.clearLog', () => {
-      logger.core.info('clearLog command invoked');
+    vscode.commands.registerCommand("copilot-models.clearLog", () => {
+      logger.core.info("clearLog command invoked");
       logger.clear();
     });
 
-    vscode.commands.registerCommand('copilot-models.refreshModels', async () => {
-      logger.core.info('refreshModels command invoked');
-      this.modelRouter?.refreshModelPicker();
-      logger.core.info('Models refreshed successfully');
-    });
+    vscode.commands.registerCommand(
+      "copilot-models.refreshModels",
+      async () => {
+        logger.core.info("refreshModels command invoked");
+        this.modelRouter?.refreshModelPicker();
+        logger.core.info("Models refreshed successfully");
+      },
+    );
 
-    vscode.commands.registerCommand('copilot-models.showLatencyStats', () => {
-      if (!this.modelRouter) { return; }
-      const stats = this.modelRouter.latencyTracker.getAllStats();
-      if (stats.size === 0) {
-        vscode.window.showInformationMessage('No latency data available');
+    vscode.commands.registerCommand("copilot-models.showLatencyStats", () => {
+      if (!this.modelRouter) {
         return;
       }
-      const lines = Array.from(stats.entries()).map(([id, s]) =>
-        `${id}: avg=${s.averageMs.toFixed(0)}ms, min=${s.minMs}ms, max=${s.maxMs}ms (${s.count} samples)`,
+      const stats = this.modelRouter.latencyTracker.getAllStats();
+      if (stats.size === 0) {
+        vscode.window.showInformationMessage("No latency data available");
+        return;
+      }
+      const lines = Array.from(stats.entries()).map(
+        ([id, s]) =>
+          `${id}: avg=${s.averageMs.toFixed(0)}ms, min=${s.minMs}ms, max=${s.maxMs}ms (${s.count} samples)`,
       );
-      vscode.window.showInformationMessage('Latency stats:\n' + lines.join('\n'), { modal: true });
+      vscode.window.showInformationMessage(
+        "Latency stats:\n" + lines.join("\n"),
+        { modal: true },
+      );
     });
   }
 }
 
 const extension = new CopilotModelsExtension();
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export async function activate(
+  context: vscode.ExtensionContext,
+): Promise<void> {
   return extension.activate(context);
 }
 
