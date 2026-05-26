@@ -282,7 +282,7 @@
     "lint": "eslint src",
     "lint:ts": "eslint \"src/**/*.ts\" --ext .ts",
     "lint:md": "markdownlint \"**/*.md\" --ignore node_modules",
-    "test": "node out/test/runTest",
+    "test": "vscode-test",
     "test:compile": "tsc -p ./",
     "check": "run-s lint lint:ts lint:md compile",
     "package:vsix": "npx vsce package",

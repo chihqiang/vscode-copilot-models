@@ -4,7 +4,6 @@
  * Provides categorized log output to VS Code OutputChannel with support for:
  * - 4 log levels: debug / info / warn / error
  * - 9 categories: core / registry / provider / auth / api / chat / stream / config / router
- * - Auto-clear: exceeds 10000 lines, automatically clears
  * - Hot-reload: follows copilot-models.debugMode config changes
  * - In development mode, debug level also outputs to console.log
  */
@@ -48,14 +47,10 @@ const CATEGORY_NAMES: Record<LogCategory, string> = {
   router: 'Router',
 };
 
-/** Auto-clear threshold */
-const MAX_LOG_LINES = 10000;
-
 let channel: vscode.OutputChannel | undefined;
 let showCategory = true;
 let currentLogLevel: LogLevel = 'info';
 let isDevelopmentMode = false;
-let lineCount = 0;
 
 /** VS Code configuration section */
 const CONFIG_SECTION = 'copilot-models';
@@ -128,30 +123,14 @@ function lazyFormatMessage(level: string, category: string, args: unknown[]): ()
   };
 }
 
-/** Check if line count exceeds limit, clear OutputChannel if so */
-function checkAutoClear(): void {
-  if (lineCount >= MAX_LOG_LINES) {
-    getChannel().clear();
-    lineCount = 0;
-    const notice = `[${ts()}] [INFO ] [Core] Log truncated: exceeded ${MAX_LOG_LINES} lines`;
-    getChannel().appendLine(notice);
-    if (isDevelopmentMode) {
-      console.log(notice);
-    }
-  }
-}
-
 /** Write log to OutputChannel */
 function write(level: LogLevel, category: string, args: unknown[]): void {
   if (!shouldLog(level)) { return; }
-
-  checkAutoClear();
 
   const levelStr = level.toUpperCase().padEnd(5);
   const formatFn = lazyFormatMessage(levelStr, category, args);
   const text = formatFn();
   getChannel().appendLine(text);
-  lineCount++;
 
   if (isDevelopmentMode && level === 'debug') {
     console.log(text);
@@ -204,7 +183,7 @@ export const logger = {
 
   show: () => getChannel().show(),
   hide: () => getChannel().hide(),
-  clear: () => { getChannel().clear(); lineCount = 0; },
+  clear: () => { getChannel().clear(); },
 
   get level(): LogLevel { return currentLogLevel; },
   set level(level: LogLevel) { currentLogLevel = level; },
