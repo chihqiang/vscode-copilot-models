@@ -13,19 +13,17 @@ jobs:
       - name: clone repo
         uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          version: 10.32.0
-          
-      - name: Check pnpm version
-        run: pnpm -v
+          node-version: 20
+          cache: npm
 
       - name: Install deps
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Build
-        run: pnpm package
+        run: npm run package
 
       - name: Upload artifact
         uses: chihqiang/upload-asset-action@main
