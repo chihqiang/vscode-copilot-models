@@ -828,7 +828,8 @@ export abstract class BaseChatProvider
       );
     } catch (error) {
       logger.chat.error(`[${this.providerId}] Chat response failed:`, error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   }
 
