@@ -140,7 +140,7 @@ async function promptConfirm(
   providerName: string,
   baseUrl: string,
   models: ModelData[],
-): Promise<boolean> {
+): Promise<"save" | "edit" | "cancel"> {
   const lines = [
     `Provider: ${providerId} (${providerName})`,
     `Base URL: ${baseUrl}`,
@@ -158,7 +158,9 @@ async function promptConfirm(
       ignoreFocusOut: true,
     },
   );
-  return pick?.label === "$(check) Save";
+  if (pick?.label === "$(check) Save") return "save";
+  if (pick?.label === "$(edit) Edit") return "edit";
+  return "cancel";
 }
 
 async function promptAddAnotherProvider(): Promise<boolean> {
@@ -295,23 +297,26 @@ function buildEntry(data: {
   return entry;
 }
 
-async function addSingleProvider(config: vscode.WorkspaceConfiguration, existingIds: Set<string>): Promise<boolean> {
+async function addSingleProvider(config: vscode.WorkspaceConfiguration, existingIds: Set<string>): Promise<"saved" | "cancelled"> {
   const providerId = await promptProviderId(existingIds);
-  if (!providerId) return false;
+  if (!providerId) return "cancelled";
 
   const providerName = await promptProviderName();
-  if (!providerName) return false;
+  if (!providerName) return "cancelled";
 
   const baseUrl = await promptBaseUrl();
-  if (!baseUrl) return false;
+  if (!baseUrl) return "cancelled";
 
   const apiKeyPrompt = await promptApiKeyPrompt();
   const apiKeyPlaceholder = await promptApiKeyPlaceholder();
   const thinkingParamType = await promptThinkingParamType();
   const models = await collectModels();
 
-  const confirmed = await promptConfirm(providerId, providerName, baseUrl, models);
-  if (!confirmed) return false;
+  const action = await promptConfirm(providerId, providerName, baseUrl, models);
+  if (action === "edit") {
+    return addSingleProvider(config, existingIds);
+  }
+  if (action === "cancel") return "cancelled";
 
   const entry = buildEntry({
     providerId,
@@ -330,7 +335,7 @@ async function addSingleProvider(config: vscode.WorkspaceConfiguration, existing
   logger.core.info(`Custom provider added via wizard: ${providerName} (${providerId})`);
   vscode.window.showInformationMessage(`Custom provider "${providerName}" added.`);
 
-  return true;
+  return "saved";
 }
 
 export async function openAddCustomProviderWizard(): Promise<void> {
@@ -341,8 +346,8 @@ export async function openAddCustomProviderWizard(): Promise<void> {
     const existing = config.get<CustomProviderEntry[]>("customProviders", []);
     const existingIds = new Set(existing.map((e) => e.providerId));
 
-    const saved = await addSingleProvider(config, existingIds);
-    if (!saved) {
+    const result = await addSingleProvider(config, existingIds);
+    if (result === "cancelled") {
       keepGoing = false;
     } else {
       keepGoing = await promptAddAnotherProvider();
