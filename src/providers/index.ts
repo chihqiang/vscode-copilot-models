@@ -6,18 +6,12 @@ export * from "./deepseek";
 export * from "./bigmodel";
 export * from "./qwen";
 
-import { IProviderFactory } from "../core";
+import type { IProviderFactory } from "../core";
 import { registerDeepSeekProviderFactory } from "./deepseek";
 import { registerBigModelProviderFactory } from "./bigmodel";
 import { registerQwenProviderFactory } from "./qwen";
 
 let builtInFactories: IProviderFactory[] | null = null;
-
-export function registerAllProviders(): void {
-  registerDeepSeekProviderFactory();
-  registerBigModelProviderFactory();
-  registerQwenProviderFactory();
-}
 
 export function getBuiltInProviderFactories(): IProviderFactory[] {
   if (!builtInFactories) {

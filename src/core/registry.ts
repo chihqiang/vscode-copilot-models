@@ -6,7 +6,7 @@ import vscode from "vscode";
 import type { IChatProvider } from "./chat-provider";
 import type { ModelDefinition } from "./models";
 import { logger } from "./logger";
-import { IModelProvider } from "./model-provider";
+import type { IModelProvider } from "./model-provider";
 
 // ── Provider Factory ────────────────────────────────────
 
@@ -54,47 +54,6 @@ export function createProviderFactory(
       return cfg.get<boolean>(`${providerId}.enabled`, enabledByDefault);
     },
     createChatProvider,
-  };
-}
-
-/**
- * Helper function to create ProviderFactory registration function
- */
-export function createProviderFactoryRegister(config: ProviderFactoryConfig) {
-  const factory = createProviderFactory(config);
-
-  return {
-    factory,
-    register: () => {
-      Registry.getInstance().registerFactory(factory);
-    },
-  };
-}
-
-/**
- * Provider registration decorator - for auto-registering provider factories
- */
-export function registerProvider(providerId: string, providerName: string) {
-  return function <
-    T extends new (
-      context: import("vscode").ExtensionContext,
-    ) => ReturnType<IProviderFactory["createChatProvider"]>,
-  >(target: T, _context: ClassFieldDecoratorContext): T {
-    const factory: IProviderFactory = {
-      providerId,
-      providerName,
-      isEnabled: () => true,
-      createChatProvider: (context: import("vscode").ExtensionContext) =>
-        new target(context),
-    };
-
-    if (process.env.NODE_ENV !== "test") {
-      queueMicrotask(() => {
-        Registry.getInstance().registerFactory(factory);
-      });
-    }
-
-    return target;
   };
 }
 

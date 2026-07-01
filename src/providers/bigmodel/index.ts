@@ -21,8 +21,8 @@ export const BIGMODEL_MODELS: ModelDefinition[] = [
     name: "GLM-5.2",
     family: "bigmodel",
     version: "5.2",
-    detail: "Latest flagship model, 200K context, enhanced reasoning",
-    maxInputTokens: 200000,
+    detail: "Latest flagship model, 1M context, enhanced reasoning",
+    maxInputTokens: 1000000,
     maxOutputTokens: 131072,
     capabilities: {
       toolCalling: true,

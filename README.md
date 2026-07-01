@@ -16,7 +16,7 @@ One-click switching and native panel compatibility.
 - **Circuit Breaker**: Automatic failure protection with retry
 - **Secure Authentication**: API keys stored in VS Code SecretStorage
 - **Log Debugging**: 4-level logging with hot-reload
-- **Lightweight**: OpenAI SDK replaced with ~373 lines of local code
+- **Lightweight**: OpenAI SDK replaced with native SSE client code
 
 ## Documentation
 
@@ -57,6 +57,9 @@ select a provider and enter your key.
 
 | Model | Context | Output | Tool Calling | Thinking Mode |
 | :----- | :------: | :----: | :--------: | :--------: |
+| Qwen3.7 Max | 1M | 64K | ✅ | ✅ |
+| Qwen3.7 Plus | 1M | 64K | ✅ | ✅ |
+| Qwen3.6 Flash | 1M | 64K | ✅ | ✅ |
 | Qwen3 Max | 128K | 64K | ✅ | ✅ |
 | Qwen3.6 Plus | 128K | 64K | ✅ | ✅ |
 | Qwen3.5 Flash | 128K | 64K | ✅ | ✅ |
@@ -66,15 +69,17 @@ select a provider and enter your key.
 | Model | Description | Tool Calling | Thinking Mode |
 | :----- | :----- | :--------: | :--------: |
 | DeepSeek V4 Flash | Fast response, supports tool calling | ✅ | ✅ |
-| DeepSeek V4 Pro | Deep thinking, stronger reasoning | ❌ | ✅ |
+| DeepSeek V4 Pro | Deep thinking, stronger reasoning | ✅ | ✅ |
 
 ### Zhipu AI (BigModel)
 
 | Model | Context | Output | Tool Calling | Thinking Mode |
 | :----- | :------: | :----: | :--------: | :--------: |
+| GLM-5.2 | 1M | 128K | ✅ | ✅ |
 | GLM-5.1 | 200K | 128K | ✅ | ✅ |
 | GLM-5-Turbo | 200K | 128K | ✅ | ✅ |
 | GLM-5 | 200K | 128K | ✅ | ✅ |
+| GLM-4.7-Flash | 128K | 16K | ✅ | ❌ |
 
 ## Configuration Options
 

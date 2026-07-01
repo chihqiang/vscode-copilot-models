@@ -174,7 +174,7 @@
         "copilot-models.customProviders": {
           "type": "array",
           "default": [],
-          "description": "Custom model providers (OpenAI-compatible API). Each entry defines a provider with models, base URL, and API key handling.",
+          "description": "Custom model providers (OpenAI-compatible API). Use the 'Add Custom Provider' wizard (Cmd+Shift+P) instead of editing this directly.",
           "items": {
             "type": "object",
             "required": [
