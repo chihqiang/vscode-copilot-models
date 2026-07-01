@@ -123,7 +123,7 @@ async function selectModels(
 
   const items = models.map((m) => ({
     label: m.id,
-    picked: false,
+    picked: true,
   }));
 
   const picked = await vscode.window.showQuickPick(items, {
