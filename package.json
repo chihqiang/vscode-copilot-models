@@ -22,11 +22,19 @@
     "copilot",
     "github copilot",
     "copilot chat",
+    "copilot models",
     "deepseek",
     "qwen",
     "tongyi",
     "alibaba",
+    "bigmodel",
+    "glm",
+    "zhipu",
     "language model",
+    "language-models",
+    "llm",
+    "large language model",
+    "model routing",
     "ai",
     "chat",
     "byok"
@@ -58,6 +66,11 @@
       }
     ],
     "commands": [
+      {
+        "command": "copilot-models.addCustomProvider",
+        "title": "Add Custom Provider",
+        "description": "Add a custom OpenAI-compatible API provider via UI wizard"
+      },
       {
         "command": "copilot-models.setApiKey",
         "title": "Set API Key",

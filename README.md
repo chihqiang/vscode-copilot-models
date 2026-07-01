@@ -9,7 +9,7 @@ One-click switching and native panel compatibility.
 ## Features
 
 - **Multi-Model Support**: DeepSeek V4, Zhipu AI GLM-5, Qwen 3 series
-- **Custom Providers**: Add any OpenAI-compatible API via settings, no coding
+- **Custom Providers**: Add any OpenAI-compatible API via built-in wizard
 - **Model Routing**: Automatic failover and latency-based routing
 - **Tool Calling**: Full Copilot Chat tool calling support
 - **Thinking Mode**: Model reasoning/thinking mode support
@@ -91,7 +91,7 @@ Available in VS Code settings (search `copilot-models`):
 
 | Config | Description | Default |
 | :----- | :---------- | :------ |
-| `customProviders` | JSON array of custom provider definitions | `[]` |
+| `customProviders` | JSON array of custom provider definitions (use the Add Custom Provider wizard) | `[]` |
 | `routingStrategy` | `"failover"` or `"latency"` routing | `"failover"` |
 | `failoverModels` | Primary model → fallback model ID map | `{}` |
 | `maxTokens` | Maximum generated tokens (0 = unlimited) | `0` |
@@ -102,7 +102,16 @@ Available in VS Code settings (search `copilot-models`):
 
 ### Custom Providers
 
-Add any OpenAI-compatible API without writing code:
+Add any OpenAI-compatible API provider through a step-by-step wizard:
+
+1. Press `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`), run `Copilot Models: Add Custom Provider`
+2. Follow the prompts to enter provider ID, name, base URL, and model definitions
+3. Add multiple providers in one session — save all at once
+4. Existing providers are pre-loaded for review and editing
+
+The wizard handles validation, duplicate detection, and saves directly to your settings.
+
+Alternatively, you can edit the `customProviders` array in `settings.json` directly:
 
 ```json
 {
@@ -123,6 +132,7 @@ Add any OpenAI-compatible API without writing code:
 
 | Command | Description |
 | :----- | :----- |
+| `Copilot Models: Add Custom Provider` | Add a custom API provider via interactive wizard |
 | `Copilot Models: Set API Key` | Configure API key (select provider first) |
 | `Copilot Models: Clear API Key` | Clear API key (select provider first) |
 | `Copilot Models: Open Settings` | Open extension settings |

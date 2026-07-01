@@ -17,6 +17,7 @@ import {
   Registry,
 } from "./core";
 import { getBuiltInProviderFactories } from "./providers";
+import { openAddCustomProviderWizard } from "./wizard/add-custom-provider";
 
 class CopilotModelsExtension {
   private modelRouter: ModelRouter | undefined;
@@ -199,6 +200,14 @@ class CopilotModelsExtension {
   }
 
   private registerCommands(): void {
+    vscode.commands.registerCommand(
+      "copilot-models.addCustomProvider",
+      () => {
+        logger.core.info("addCustomProvider command invoked");
+        openAddCustomProviderWizard();
+      },
+    );
+
     vscode.commands.registerCommand("copilot-models.setApiKey", async () => {
       if (this.modelRouter) {
         await this.modelRouter.configureApiKey();
