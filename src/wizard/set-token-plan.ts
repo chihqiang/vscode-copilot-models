@@ -4,7 +4,12 @@
 
 import vscode from "vscode";
 import { logger } from "../core/logger";
-import { TokenPlan, type TokenPlanConfig, type TokenPlanModel, type ProviderPreset } from "../core/token-plan";
+import {
+  TokenPlan,
+  type TokenPlanConfig,
+  type TokenPlanModel,
+  type ProviderPreset,
+} from "../core/token-plan";
 import { ProviderModels } from "../core/provider-models";
 
 // ── Prompt helpers ───────────────────────────────────
@@ -20,7 +25,9 @@ function validateUrl(value: string): string | null {
   return null;
 }
 
-async function promptPlanName(existingNames: string[]): Promise<string | undefined> {
+async function promptPlanName(
+  existingNames: string[],
+): Promise<string | undefined> {
   return vscode.window.showInputBox({
     title: "Set Token Plan (1/4) — Name",
     prompt: "Enter a name for this token plan (optional, press Enter to skip)",
@@ -107,7 +114,9 @@ async function promptToken(): Promise<string | undefined> {
   });
 }
 
-async function selectModels(models: TokenPlanModel[]): Promise<TokenPlanModel[] | undefined> {
+async function selectModels(
+  models: TokenPlanModel[],
+): Promise<TokenPlanModel[] | undefined> {
   if (models.length === 0) {
     return [];
   }
@@ -142,7 +151,9 @@ async function selectModels(models: TokenPlanModel[]): Promise<TokenPlanModel[] 
   return models.filter((m) => picked.some((p) => p.label === m.id));
 }
 
-async function promptEditModelsManually(): Promise<TokenPlanModel[] | undefined> {
+async function promptEditModelsManually(): Promise<
+  TokenPlanModel[] | undefined
+> {
   const allModels = ProviderModels.getInstance().getAllModels();
   if (allModels.length === 0) {
     return [];
@@ -234,7 +245,8 @@ export async function openSetTokenPlanWizard(): Promise<void> {
   const planId = tokenPlan.generatePlanId(baseUrl);
   const plan: TokenPlanConfig = {
     planId,
-    planName: planName.trim() || `Token Plan (${tokenPlan.extractHostname(baseUrl)})`,
+    planName:
+      planName.trim() || `Token Plan (${tokenPlan.extractHostname(baseUrl)})`,
     baseUrl: baseUrl.replace(/\/+$/, ""),
     providerId: detectedPreset?.id ?? tokenPlan.extractHostname(baseUrl),
     models: selectedModels,
@@ -245,7 +257,9 @@ export async function openSetTokenPlanWizard(): Promise<void> {
   await tokenPlan.storeToken(planId, token);
   await tokenPlan.storePlan(plan);
 
-  logger.plan.info(`Token plan saved: "${plan.planName}" (${plan.models.length} models)`);
+  logger.plan.info(
+    `Token plan saved: "${plan.planName}" (${plan.models.length} models)`,
+  );
   vscode.window.showInformationMessage(
     `Token plan "${plan.planName}" configured with ${plan.models.length} model(s).`,
   );

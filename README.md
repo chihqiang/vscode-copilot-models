@@ -16,7 +16,8 @@ One-click switching and native panel compatibility.
 - **Secure Authentication**: API keys stored in VS Code SecretStorage
 - **Log Debugging**: 4-level logging with hot-reload
 - **Lightweight**: OpenAI SDK replaced with native SSE client code
-- **Token Plan**: Unified prepaid billing supporting Qwen, DeepSeek, and GLM token packages via a single endpoint
+- **Token Plan**: Unified prepaid billing for Qwen, DeepSeek, and
+  GLM token packages via a single endpoint
 
 ## Documentation
 
@@ -57,11 +58,11 @@ run `Copilot Models: Set Token Plan` to configure plan access:
 
 The plan token is saved in VS Code SecretStorage.
 
-| Provider | Plan Endpoint |
-| :------- | :------------ |
-| Qwen (Alibaba Cloud) Token Plan | `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` |
+- **Qwen Token Plan** —
+  `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`
 
-The Qwen Token Plan preset covers Qwen, DeepSeek, and GLM models in a single plan.
+The Qwen Token Plan preset covers Qwen, DeepSeek, and GLM models
+in a single plan.
 For other providers, choose "Custom URL" and enter the plan API endpoint.
 
 Run `Copilot Models: Clear Token Plan` to remove a configured plan.
@@ -133,7 +134,7 @@ Available in VS Code settings (search `copilot-models`):
 | :----- | :---------- | :------ |
 | `<provider>.enabled` | Enable this provider | `true` |
 | `<provider>.baseUrl` | API base URL (e.g. `deepseek.baseUrl`) | per provider |
-| `<provider>.modelIdOverrides` | Map internal model IDs to custom API model names | `{}` |
+| `<provider>.modelIdOverrides` | Map model IDs to custom API names | `{}` |
 
 ### Global Settings
 

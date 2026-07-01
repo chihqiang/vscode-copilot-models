@@ -46,9 +46,8 @@
 
 套餐令牌安全存储在 VS Code SecretStorage。
 
-| 服务商 | 套餐端点 |
-| :----- | :------- |
-| 通义千问 (阿里云) Token Plan | `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` |
+- **通义千问 Token Plan** —
+  `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`
 
 通义千问 Token Plan 预设通过单个端点同时覆盖 Qwen、DeepSeek、GLM 模型。
 其他服务商请选择 "Custom URL" 并手动输入套餐 API 端点。

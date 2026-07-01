@@ -122,4 +122,3 @@ export class Tokenizer implements vscode.Disposable {
     return Math.max(1, Math.ceil(tokens + 1));
   }
 }
-

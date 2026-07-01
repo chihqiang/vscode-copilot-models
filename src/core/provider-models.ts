@@ -72,19 +72,27 @@ export class ProviderModels {
   private models = new Map<string, ModelDefinition[]>();
   private modelIdToProviderId = new Map<string, string>();
 
-  private constructor(context: vscode.ExtensionContext, definitions: ProviderDefinition[]) {
+  private constructor(
+    context: vscode.ExtensionContext,
+    definitions: ProviderDefinition[],
+  ) {
     this.context = context;
     this.definitions = definitions;
   }
 
-  static init(context: vscode.ExtensionContext, definitions: ProviderDefinition[]): ProviderModels {
+  static init(
+    context: vscode.ExtensionContext,
+    definitions: ProviderDefinition[],
+  ): ProviderModels {
     ProviderModels.instance = new ProviderModels(context, definitions);
     return ProviderModels.instance;
   }
 
   static getInstance(): ProviderModels {
     if (!ProviderModels.instance) {
-      throw new Error("ProviderModels not initialized. Call ProviderModels.init(context) first.");
+      throw new Error(
+        "ProviderModels not initialized. Call ProviderModels.init(context) first.",
+      );
     }
     return ProviderModels.instance;
   }
@@ -262,7 +270,12 @@ export class ProviderModels {
       createChatProvider: (ctx: vscode.ExtensionContext) => {
         const modelProvider = new GenericModelProvider(ctx, def);
         ProviderModels.getInstance().registerProvider(modelProvider);
-        return new GenericChatProvider(ctx, modelProvider, thinkingFormat, supportsThinking);
+        return new GenericChatProvider(
+          ctx,
+          modelProvider,
+          thinkingFormat,
+          supportsThinking,
+        );
       },
     });
   }
@@ -280,7 +293,11 @@ class GenericModelProvider extends BaseModelProvider {
       models: def.models,
       apiKeyPrompt: def.apiKeyPrompt,
       apiKeyPlaceholder: def.apiKeyPlaceholder,
-      createClient: (baseUrl: string, apiKey: string, options?: ClientOptions) =>
+      createClient: (
+        baseUrl: string,
+        apiKey: string,
+        options?: ClientOptions,
+      ) =>
         createApiClient({
           baseUrl,
           apiKey,
@@ -311,7 +328,10 @@ class GenericChatProvider extends BaseChatProvider {
     return this._supportsThinking;
   }
 
-  protected override convertThinkingParams(request: ApiRequest, effort: ThinkingEffort): void {
+  protected override convertThinkingParams(
+    request: ApiRequest,
+    effort: ThinkingEffort,
+  ): void {
     if (this.thinkingFormat === "thinking_type") {
       request.thinking = { type: effort === "none" ? "disabled" : "enabled" };
     } else {

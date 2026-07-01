@@ -281,11 +281,21 @@ class ApiClientImpl implements IApiClient {
       const tools = request.tools?.map(toChatCompletionTool);
 
       const extraFields: Record<string, unknown> = {};
-      if (request.temperature !== undefined) extraFields.temperature = request.temperature;
-      if (request.top_p !== undefined) extraFields.top_p = request.top_p;
-      if (request.max_tokens !== undefined) extraFields.max_tokens = request.max_tokens;
-      if (tools) extraFields.tools = tools;
-      if (request.tool_choice) extraFields.tool_choice = request.tool_choice;
+      if (request.temperature !== undefined) {
+        extraFields.temperature = request.temperature;
+      }
+      if (request.top_p !== undefined) {
+        extraFields.top_p = request.top_p;
+      }
+      if (request.max_tokens !== undefined) {
+        extraFields.max_tokens = request.max_tokens;
+      }
+      if (tools) {
+        extraFields.tools = tools;
+      }
+      if (request.tool_choice) {
+        extraFields.tool_choice = request.tool_choice;
+      }
 
       const requestBody: Record<string, unknown> = {
         model: request.model,
@@ -433,7 +443,13 @@ class ApiClientImpl implements IApiClient {
           `[${providerName}] POST ${url}  (apiKey=${apiKey ? apiKey.substring(0, 4) + "..." : "none"})`,
         );
 
-        const response = await fetchStream(url, apiKey, requestBody, timeoutMs, signal);
+        const response = await fetchStream(
+          url,
+          apiKey,
+          requestBody,
+          timeoutMs,
+          signal,
+        );
 
         if (!response.ok) {
           await handleResponseError(response, providerName);

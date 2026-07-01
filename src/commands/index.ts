@@ -4,14 +4,17 @@
 
 import vscode from "vscode";
 import { logger, type ModelRouter } from "../core";
-import { openSetApiKeyWizard, openClearApiKeyWizard } from "../wizard/set-api-key";
-import { openSetTokenPlanWizard, openClearTokenPlanWizard } from "../wizard/set-token-plan";
+import {
+  openSetApiKeyWizard,
+  openClearApiKeyWizard,
+} from "../wizard/set-api-key";
+import {
+  openSetTokenPlanWizard,
+  openClearTokenPlanWizard,
+} from "../wizard/set-token-plan";
 
 /** Wrap an async command handler with error handling */
-function safeAsync(
-  name: string,
-  fn: () => Promise<void>,
-): () => Promise<void> {
+function safeAsync(name: string, fn: () => Promise<void>): () => Promise<void> {
   return async () => {
     try {
       await fn();

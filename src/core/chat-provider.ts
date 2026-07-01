@@ -270,7 +270,11 @@ export abstract class BaseChatProvider
     );
 
     return models.map((model) =>
-      this.toChatInfo(model, hasApiKey || planModelIds.has(model.id), planModelIds.has(model.id)),
+      this.toChatInfo(
+        model,
+        hasApiKey || planModelIds.has(model.id),
+        planModelIds.has(model.id),
+      ),
     );
   }
 
@@ -292,7 +296,11 @@ export abstract class BaseChatProvider
       family: model.family,
       version: model.version,
       detail: selectable ? model.detail : "API key required",
-      tooltip: hasPlan ? "Covered by token plan" : selectable ? "" : "Please configure API key",
+      tooltip: hasPlan
+        ? "Covered by token plan"
+        : selectable
+          ? ""
+          : "Please configure API key",
       statusIcon: new vscode.ThemeIcon(selectable ? "check" : "warning"),
       maxInputTokens: model.maxInputTokens,
       maxOutputTokens: model.maxOutputTokens,
@@ -352,7 +360,9 @@ export abstract class BaseChatProvider
       `[${this.providerId}] Preparing chat request, model: ${modelInfo.id}`,
     );
 
-    const planOverride = await TokenPlan.getInstance().resolvePlanOverride(modelInfo.id);
+    const planOverride = await TokenPlan.getInstance().resolvePlanOverride(
+      modelInfo.id,
+    );
 
     if (planOverride) {
       logger.chat.info(
@@ -683,7 +693,9 @@ export abstract class BaseChatProvider
       function: {
         name: tool.name,
         ...(tool.description ? { description: tool.description } : {}),
-        ...(BaseChatProvider.isRecord(tool.inputSchema) ? { parameters: tool.inputSchema } : {}),
+        ...(BaseChatProvider.isRecord(tool.inputSchema)
+          ? { parameters: tool.inputSchema }
+          : {}),
       },
     }));
   }
@@ -696,14 +708,19 @@ export abstract class BaseChatProvider
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     token: vscode.CancellationToken,
     planOverride?: PlanOverride,
-    usageCallback?: (usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }) => void,
+    usageCallback?: (usage: {
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+    }) => void,
   ): Promise<void> {
     const planBaseUrl = planOverride?.baseUrl;
     logger.chat.info(
       `[${this.providerId}] Sending stream request, model: ${request.model}${planOverride ? ` (via token plan, baseUrl=${planBaseUrl})` : ""}`,
     );
 
-    const apiKey = planOverride?.apiKey ?? (await this.modelProvider.getApiKey());
+    const apiKey =
+      planOverride?.apiKey ?? (await this.modelProvider.getApiKey());
     if (!apiKey) {
       throw new Error(`${this.providerName} API key not configured`);
     }
@@ -750,7 +767,11 @@ export abstract class BaseChatProvider
    */
   protected createStreamCallbacks(
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
-    usageCallback?: (usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }) => void,
+    usageCallback?: (usage: {
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+    }) => void,
   ): StreamCallbacks {
     let content = "";
     let thinking = "";
@@ -871,7 +892,11 @@ export abstract class BaseChatProvider
         options,
       );
       const usageCallback = prepared.planOverride
-        ? (usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }) => {
+        ? (usage: {
+            prompt_tokens: number;
+            completion_tokens: number;
+            total_tokens: number;
+          }) => {
             const rate = prepared.planOverride!.consumptionRate ?? 1;
             TokenPlan.getInstance().recordConsumption({
               planId: prepared.planOverride!.planId,
@@ -883,7 +908,13 @@ export abstract class BaseChatProvider
             });
           }
         : undefined;
-      await this.sendStreamRequest(prepared.request, progress, token, prepared.planOverride, usageCallback);
+      await this.sendStreamRequest(
+        prepared.request,
+        progress,
+        token,
+        prepared.planOverride,
+        usageCallback,
+      );
       const duration = Date.now() - startTime;
       logger.chat.info(
         `[${this.providerId}] Chat response completed successfully, duration: ${duration}ms`,
@@ -965,5 +996,4 @@ export abstract class BaseChatProvider
     this.isActive = false;
     this.onDidChangeLanguageModelChatInformationEmitter.fire();
   }
-
 }

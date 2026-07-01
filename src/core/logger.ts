@@ -69,8 +69,16 @@ const CATEGORY_NAMES: Record<LogCategory, string> = {
 };
 
 const ALL_CATEGORIES: LogCategory[] = [
-  "core", "registry", "provider", "auth", "api",
-  "chat", "stream", "config", "router", "plan",
+  "core",
+  "registry",
+  "provider",
+  "auth",
+  "api",
+  "chat",
+  "stream",
+  "config",
+  "router",
+  "plan",
 ];
 
 // ── Logger Class ───────────────────────────────
@@ -118,31 +126,65 @@ export class Logger implements vscode.Disposable {
 
   // ── Category accessors ───────────────────────────
 
-  get core(): CategoryLogger { return this.getCategory("core"); }
-  get registry(): CategoryLogger { return this.getCategory("registry"); }
-  get provider(): CategoryLogger { return this.getCategory("provider"); }
-  get auth(): CategoryLogger { return this.getCategory("auth"); }
-  get api(): CategoryLogger { return this.getCategory("api"); }
-  get chat(): CategoryLogger { return this.getCategory("chat"); }
-  get stream(): CategoryLogger { return this.getCategory("stream"); }
-  get config(): CategoryLogger { return this.getCategory("config"); }
-  get router(): CategoryLogger { return this.getCategory("router"); }
-  get plan(): CategoryLogger { return this.getCategory("plan"); }
+  get core(): CategoryLogger {
+    return this.getCategory("core");
+  }
+  get registry(): CategoryLogger {
+    return this.getCategory("registry");
+  }
+  get provider(): CategoryLogger {
+    return this.getCategory("provider");
+  }
+  get auth(): CategoryLogger {
+    return this.getCategory("auth");
+  }
+  get api(): CategoryLogger {
+    return this.getCategory("api");
+  }
+  get chat(): CategoryLogger {
+    return this.getCategory("chat");
+  }
+  get stream(): CategoryLogger {
+    return this.getCategory("stream");
+  }
+  get config(): CategoryLogger {
+    return this.getCategory("config");
+  }
+  get router(): CategoryLogger {
+    return this.getCategory("router");
+  }
+  get plan(): CategoryLogger {
+    return this.getCategory("plan");
+  }
 
   // ── Top-level log methods (default to "core") ────
 
-  info(...args: unknown[]): void { this.write("info", "core", args); }
-  warn(...args: unknown[]): void { this.write("warn", "core", args); }
-  error(...args: unknown[]): void { this.write("error", "core", args); }
-  debug(...args: unknown[]): void { this.write("debug", "core", args); }
+  info(...args: unknown[]): void {
+    this.write("info", "core", args);
+  }
+  warn(...args: unknown[]): void {
+    this.write("warn", "core", args);
+  }
+  error(...args: unknown[]): void {
+    this.write("error", "core", args);
+  }
+  debug(...args: unknown[]): void {
+    this.write("debug", "core", args);
+  }
 
   // ── Public API ───────────────────────────────────
 
-  get level(): LogLevel { return this.currentLogLevel; }
-  set level(level: LogLevel) { this.currentLogLevel = level; }
+  get level(): LogLevel {
+    return this.currentLogLevel;
+  }
+  set level(level: LogLevel) {
+    this.currentLogLevel = level;
+  }
 
   shouldLog(level: LogLevel): boolean {
-    return LOG_LEVEL_PRIORITY[level] >= LOG_LEVEL_PRIORITY[this.currentLogLevel];
+    return (
+      LOG_LEVEL_PRIORITY[level] >= LOG_LEVEL_PRIORITY[this.currentLogLevel]
+    );
   }
 
   applyLogLevelFromConfig(): void {
@@ -164,9 +206,15 @@ export class Logger implements vscode.Disposable {
     return this.createCategoryLogger(providerId as LogCategory);
   }
 
-  show(): void { this.getChannel().show(); }
-  hide(): void { this.getChannel().hide(); }
-  clear(): void { this.getChannel().clear(); }
+  show(): void {
+    this.getChannel().show();
+  }
+  hide(): void {
+    this.getChannel().hide();
+  }
+  clear(): void {
+    this.getChannel().clear();
+  }
 
   dispose(): void {
     this.channel?.dispose();
@@ -214,7 +262,11 @@ export class Logger implements vscode.Disposable {
     }
   }
 
-  private formatMessage(level: LogLevel, category: string, args: unknown[]): string {
+  private formatMessage(
+    level: LogLevel,
+    category: string,
+    args: unknown[],
+  ): string {
     const ts = new Date().toISOString().slice(11, 23);
     const levelStr = level.toUpperCase().padEnd(5);
     const categoryText = this.showCategory
@@ -246,4 +298,3 @@ export class Logger implements vscode.Disposable {
 
 const _instance = Logger.getInstance();
 export const logger: Logger = _instance;
-

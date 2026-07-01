@@ -13,8 +13,4 @@ export { deepseekConfig } from "./deepseek";
 export { bigmodelConfig } from "./bigmodel";
 export { qwenConfig } from "./qwen";
 
-export const builtInProviders = [
-  deepseekConfig,
-  bigmodelConfig,
-  qwenConfig,
-];
+export const builtInProviders = [deepseekConfig, bigmodelConfig, qwenConfig];

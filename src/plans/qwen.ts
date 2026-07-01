@@ -2,7 +2,8 @@ import type { ProviderPreset } from "../core/token-plan";
 
 export const qwenPreset: ProviderPreset = {
   id: "qwen",
-  defaultBaseUrl: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+  defaultBaseUrl:
+    "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
   models: [
     { id: "qwen3.7-max" },
     { id: "qwen3.7-plus" },

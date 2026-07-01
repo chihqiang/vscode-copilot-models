@@ -7,6 +7,4 @@
 
 import { qwenPreset } from "./qwen";
 
-export const builtInPresets = [
-  qwenPreset,
-];
+export const builtInPresets = [qwenPreset];

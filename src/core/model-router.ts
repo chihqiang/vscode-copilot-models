@@ -138,9 +138,11 @@ export class ModelRouter implements IChatProvider {
     }
 
     if (provider.onDidChangeLanguageModelChatInformation) {
-      const disposable = provider.onDidChangeLanguageModelChatInformation(() => {
-        this.onDidChangeEmitter.fire();
-      });
+      const disposable = provider.onDidChangeLanguageModelChatInformation(
+        () => {
+          this.onDidChangeEmitter.fire();
+        },
+      );
       this.providerEventDisposables.set(providerId, disposable);
     }
   }
@@ -171,7 +173,9 @@ export class ModelRouter implements IChatProvider {
   }
 
   /** Find provider by model ID */
-  private findProviderForModel(modelId: string): { provider: IChatProvider; providerId: string } | undefined {
+  private findProviderForModel(
+    modelId: string,
+  ): { provider: IChatProvider; providerId: string } | undefined {
     const providerId = this.modelToPrimaryProvider.get(modelId);
     if (!providerId) {
       return undefined;
@@ -194,8 +198,12 @@ export class ModelRouter implements IChatProvider {
       return undefined;
     }
 
-    const fallbackModelProvider = ProviderModels.getInstance().findProviderByModelId(fallbackModelId);
-    if (!fallbackModelProvider || triedProviderIds.has(fallbackModelProvider.id)) {
+    const fallbackModelProvider =
+      ProviderModels.getInstance().findProviderByModelId(fallbackModelId);
+    if (
+      !fallbackModelProvider ||
+      triedProviderIds.has(fallbackModelProvider.id)
+    ) {
       return undefined;
     }
 
@@ -211,7 +219,9 @@ export class ModelRouter implements IChatProvider {
    * Latency-aware routing selection
    * Among candidate providers, select the one with lowest historical latency
    */
-  private selectLowestLatencyProvider(providerIds: string[]): string | undefined {
+  private selectLowestLatencyProvider(
+    providerIds: string[],
+  ): string | undefined {
     let best: string | undefined;
     let bestLatency = Infinity;
 
@@ -325,7 +335,8 @@ export class ModelRouter implements IChatProvider {
             break;
           }
 
-          const { provider: fallbackProvider, providerId: fallbackPid } = fallback;
+          const { provider: fallbackProvider, providerId: fallbackPid } =
+            fallback;
           triedProviders.add(fallbackPid);
 
           logger.router.warn(
@@ -437,13 +448,17 @@ export class ModelRouter implements IChatProvider {
   private getRoutingStrategy(): RoutingStrategy {
     if (
       this.routingStrategyCache !== null &&
-      Date.now() - this.routingStrategyCacheTime < ModelRouter.FAILOVER_CACHE_TTL
+      Date.now() - this.routingStrategyCacheTime <
+        ModelRouter.FAILOVER_CACHE_TTL
     ) {
       return this.routingStrategyCache;
     }
     try {
       const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      this.routingStrategyCache = config.get<RoutingStrategy>("routingStrategy", "failover");
+      this.routingStrategyCache = config.get<RoutingStrategy>(
+        "routingStrategy",
+        "failover",
+      );
       this.routingStrategyCacheTime = Date.now();
       return this.routingStrategyCache;
     } catch {

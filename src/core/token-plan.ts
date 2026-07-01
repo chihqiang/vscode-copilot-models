@@ -60,20 +60,28 @@ export class TokenPlan {
   private readonly context: vscode.ExtensionContext;
   private readonly presets: ProviderPreset[];
 
-  private constructor(context: vscode.ExtensionContext, presets: ProviderPreset[]) {
+  private constructor(
+    context: vscode.ExtensionContext,
+    presets: ProviderPreset[],
+  ) {
     this.context = context;
     this.presets = presets;
   }
 
   /** 初始化单例（在 extension activate 时调用一次） */
-  static init(context: vscode.ExtensionContext, presets: ProviderPreset[]): TokenPlan {
+  static init(
+    context: vscode.ExtensionContext,
+    presets: ProviderPreset[],
+  ): TokenPlan {
     TokenPlan.instance = new TokenPlan(context, presets);
     return TokenPlan.instance;
   }
 
   static getInstance(): TokenPlan {
     if (!TokenPlan.instance) {
-      throw new Error("TokenPlan not initialized. Call TokenPlan.init(context) first.");
+      throw new Error(
+        "TokenPlan not initialized. Call TokenPlan.init(context) first.",
+      );
     }
     return TokenPlan.instance;
   }
@@ -94,7 +102,8 @@ export class TokenPlan {
     for (const preset of this.presets) {
       const presetHostname = this.extractHostname(preset.defaultBaseUrl);
       if (
-        hostname === presetHostname || hostname.endsWith("." + presetHostname)
+        hostname === presetHostname ||
+        hostname.endsWith("." + presetHostname)
       ) {
         return preset;
       }
@@ -113,7 +122,10 @@ export class TokenPlan {
   // ── Plan CRUD ────────────────────────────────────
 
   getPlans(): TokenPlanConfig[] {
-    return this.context.globalState.get<TokenPlanConfig[]>(PLANS_STORAGE_KEY, []);
+    return this.context.globalState.get<TokenPlanConfig[]>(
+      PLANS_STORAGE_KEY,
+      [],
+    );
   }
 
   async storePlan(plan: TokenPlanConfig): Promise<void> {
@@ -177,7 +189,10 @@ export class TokenPlan {
   // ── 消费记录 ─────────────────────────────────────
 
   async recordConsumption(consumption: TokenPlanConsumption): Promise<void> {
-    const records = this.context.globalState.get<TokenPlanConsumption[]>(CONSUMPTION_STORAGE_KEY, []);
+    const records = this.context.globalState.get<TokenPlanConsumption[]>(
+      CONSUMPTION_STORAGE_KEY,
+      [],
+    );
     records.push(consumption);
     if (records.length > MAX_CONSUMPTION_RECORDS) {
       records.splice(0, records.length - MAX_CONSUMPTION_RECORDS);
@@ -189,7 +204,10 @@ export class TokenPlan {
   }
 
   getConsumptions(): TokenPlanConsumption[] {
-    return this.context.globalState.get<TokenPlanConsumption[]>(CONSUMPTION_STORAGE_KEY, []);
+    return this.context.globalState.get<TokenPlanConsumption[]>(
+      CONSUMPTION_STORAGE_KEY,
+      [],
+    );
   }
 
   // ── 运行时查询（chat-provider 使用） ─────────────
@@ -198,7 +216,9 @@ export class TokenPlan {
    * 根据 modelId 解析 plan override。
    * 如果有 plan 覆盖该模型且 token 有效，返回 PlanOverride；否则返回 undefined。
    */
-  async resolvePlanOverride(modelId: string): Promise<PlanOverride | undefined> {
+  async resolvePlanOverride(
+    modelId: string,
+  ): Promise<PlanOverride | undefined> {
     const plans = this.getPlans();
     logger.plan.debug(
       `resolvePlanOverride: modelId="${modelId}", plans=${plans.length}`,

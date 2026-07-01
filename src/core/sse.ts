@@ -90,7 +90,7 @@ export class Stream<Item> implements AsyncIterable<Item> {
               const d = data as Record<string, unknown>;
               const err = d.error as Record<string, unknown> | undefined;
               throw new Error(
-                err?.message as string ||
+                (err?.message as string) ||
                   (d.message as string) ||
                   "Unknown SSE error",
               );
@@ -296,7 +296,8 @@ export function isAbortError(err: unknown): boolean {
   return (
     typeof err === "object" &&
     err !== null &&
-    (("name" in err && (err as Record<string, unknown>).name === "AbortError") ||
+    (("name" in err &&
+      (err as Record<string, unknown>).name === "AbortError") ||
       ("message" in err &&
         String((err as Record<string, unknown>).message).includes(
           "FetchRequestCanceledException",
