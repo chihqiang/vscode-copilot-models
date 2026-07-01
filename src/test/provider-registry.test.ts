@@ -1,9 +1,8 @@
 import * as assert from "assert";
-import { Registry } from "../core/registry";
-import type { IProviderFactory } from "../core/registry";
+import { ProviderModels } from "../core/provider-models";
+import type { IProviderFactory } from "../core/provider-models";
 
-suite("Registry Test Suite", () => {
-  // Mock Provider Factory
+suite("ProviderModels Factory Test Suite", () => {
   const createMockFactory = (
     id: string,
     name: string,
@@ -16,16 +15,21 @@ suite("Registry Test Suite", () => {
   });
 
   setup(() => {
-    Registry.getInstance().clear();
+    if (ProviderModels.isInitialized()) {
+      ProviderModels.getInstance().clear();
+    }
   });
 
   teardown(() => {
-    Registry.getInstance().clear();
+    if (ProviderModels.isInitialized()) {
+      ProviderModels.getInstance().clear();
+    }
   });
 
   test("getInstance returns same instance", () => {
-    const instance1 = Registry.getInstance();
-    const instance2 = Registry.getInstance();
+    ProviderModels.init({} as any, []);
+    const instance1 = ProviderModels.getInstance();
+    const instance2 = ProviderModels.getInstance();
     assert.strictEqual(
       instance1,
       instance2,
@@ -34,44 +38,47 @@ suite("Registry Test Suite", () => {
   });
 
   test("resetInstance clears singleton state", () => {
-    const instance1 = Registry.getInstance();
+    ProviderModels.init({} as any, []);
+    const instance1 = ProviderModels.getInstance();
     instance1.registerFactory(
       createMockFactory("factory-reset", "Factory Reset"),
     );
     assert.strictEqual(instance1.factoryCount, 1);
 
-    Registry._resetInstance();
-    assert.strictEqual(Registry._isInitialized(), false);
+    ProviderModels.resetInstance();
+    assert.strictEqual(ProviderModels.isInitialized(), false);
 
-    const instance2 = Registry.getInstance();
+    ProviderModels.init({} as any, []);
+    const instance2 = ProviderModels.getInstance();
     assert.notStrictEqual(instance1, instance2);
     assert.strictEqual(instance2.factoryCount, 0);
   });
 
   test("register adds factory to registry", () => {
-    const registry = Registry.getInstance();
+    ProviderModels.init({} as any, []);
+    const pm = ProviderModels.getInstance();
     const factory = createMockFactory("test-factory", "Test Factory");
 
-    registry.registerFactory(factory);
+    pm.registerFactory(factory);
 
-    assert.strictEqual(registry.hasFactory("test-factory"), true);
-    assert.strictEqual(registry.getFactory("test-factory"), factory);
+    assert.strictEqual(pm.hasFactory("test-factory"), true);
+    assert.strictEqual(pm.getFactory("test-factory"), factory);
   });
 
   test("register prevents duplicate registration", () => {
-    const registry = Registry.getInstance();
+    ProviderModels.init({} as any, []);
+    const pm = ProviderModels.getInstance();
     const factory1 = createMockFactory("test-factory", "Test Factory 1");
     const factory2 = createMockFactory("test-factory", "Test Factory 2");
 
-    registry.registerFactory(factory1);
-    registry.registerFactory(factory2);
+    pm.registerFactory(factory1);
+    pm.registerFactory(factory2);
 
-    // Should keep the first registered factory
-    assert.strictEqual(registry.getFactory("test-factory"), factory1);
+    assert.strictEqual(pm.getFactory("test-factory"), factory1);
   });
 
   test("getEnabledFactories returns only enabled factories", () => {
-    const registry = Registry.getInstance();
+    const pm = ProviderModels.getInstance();
     const enabledFactory = createMockFactory(
       "enabled",
       "Enabled Factory",
@@ -83,62 +90,62 @@ suite("Registry Test Suite", () => {
       false,
     );
 
-    registry.registerFactory(enabledFactory);
-    registry.registerFactory(disabledFactory);
+    pm.registerFactory(enabledFactory);
+    pm.registerFactory(disabledFactory);
 
-    const enabledFactories = registry.getEnabledFactories();
+    const enabledFactories = pm.getEnabledFactories();
     assert.strictEqual(enabledFactories.length, 1);
     assert.strictEqual(enabledFactories[0].providerId, "enabled");
   });
 
   test("getAllFactories returns all registered factories", () => {
-    const registry = Registry.getInstance();
+    const pm = ProviderModels.getInstance();
     const factory1 = createMockFactory("factory-1", "Factory 1");
     const factory2 = createMockFactory("factory-2", "Factory 2");
 
-    registry.registerFactory(factory1);
-    registry.registerFactory(factory2);
+    pm.registerFactory(factory1);
+    pm.registerFactory(factory2);
 
-    const allFactories = registry.getAllFactories();
+    const allFactories = pm.getAllFactories();
     assert.strictEqual(allFactories.length, 2);
   });
 
   test("count returns correct number of factories", () => {
-    const registry = Registry.getInstance();
-    assert.strictEqual(registry.factoryCount, 0);
+    const pm = ProviderModels.getInstance();
+    assert.strictEqual(pm.factoryCount, 0);
 
-    registry.registerFactory(createMockFactory("factory-1", "Factory 1"));
-    assert.strictEqual(registry.factoryCount, 1);
+    pm.registerFactory(createMockFactory("factory-1", "Factory 1"));
+    assert.strictEqual(pm.factoryCount, 1);
 
-    registry.registerFactory(createMockFactory("factory-2", "Factory 2"));
-    assert.strictEqual(registry.factoryCount, 2);
+    pm.registerFactory(createMockFactory("factory-2", "Factory 2"));
+    assert.strictEqual(pm.factoryCount, 2);
   });
 
   test("clear removes all factories", () => {
-    const registry = Registry.getInstance();
-    registry.registerFactory(createMockFactory("factory-1", "Factory 1"));
-    registry.registerFactory(createMockFactory("factory-2", "Factory 2"));
+    const pm = ProviderModels.getInstance();
+    pm.registerFactory(createMockFactory("factory-1", "Factory 1"));
+    pm.registerFactory(createMockFactory("factory-2", "Factory 2"));
 
-    assert.strictEqual(registry.factoryCount, 2);
+    assert.strictEqual(pm.factoryCount, 2);
 
-    registry.clear();
-    assert.strictEqual(registry.factoryCount, 0);
-    assert.strictEqual(registry.hasFactory("factory-1"), false);
+    pm.clear();
+    assert.strictEqual(pm.factoryCount, 0);
+    assert.strictEqual(pm.hasFactory("factory-1"), false);
   });
 
   test("getFactory returns undefined for non-existent factory", () => {
-    const registry = Registry.getInstance();
-    const result = registry.getFactory("non-existent");
+    const pm = ProviderModels.getInstance();
+    const result = pm.getFactory("non-existent");
     assert.strictEqual(result, undefined);
   });
 
   test("has returns correct status", () => {
-    const registry = Registry.getInstance();
+    const pm = ProviderModels.getInstance();
     const factory = createMockFactory("test-factory", "Test Factory");
 
-    assert.strictEqual(registry.hasFactory("test-factory"), false);
+    assert.strictEqual(pm.hasFactory("test-factory"), false);
 
-    registry.registerFactory(factory);
-    assert.strictEqual(registry.hasFactory("test-factory"), true);
+    pm.registerFactory(factory);
+    assert.strictEqual(pm.hasFactory("test-factory"), true);
   });
 });

@@ -3,21 +3,21 @@
  */
 
 import vscode from "vscode";
-import { logger, shouldLog } from "./logger";
+import { logger } from "./logger";
+import { ApiError, CancelledError, TimeoutError } from "./errors";
 import {
-  ApiError,
   ApiMessage,
   ApiRequest,
   ApiTool,
   ApiToolCall,
-  CancelledError,
   ContentPart,
+  IApiClient,
   StreamCallbacks,
-  TimeoutError,
 } from "./client";
 import { CONFIG_SECTION, ModelDefinition } from "./models";
 import { IModelProvider } from "./model-provider";
-import { countTokens } from "./tokenizer";
+import { Tokenizer } from "./tokenizer";
+import { TokenPlan, type PlanOverride } from "./token-plan";
 
 /**
  * Chat Provider interface (simplified, for type checking)
@@ -33,10 +33,6 @@ export interface IChatProvider<
   prepareForDeactivate(): Promise<void>;
   /** Dispose resources */
   dispose(): void;
-  /** Configure API key */
-  configureApiKey(): Promise<void>;
-  /** Clear API key */
-  clearApiKey(): Promise<void>;
 }
 
 /**
@@ -73,25 +69,8 @@ export interface ConversationSegment {
   timestamp: number;
 }
 
-function hasTimestamp(msg: unknown): msg is { timestamp: number } {
-  if (typeof msg !== "object" || msg === null) {
-    return false;
-  }
-
-  const timestamp = Reflect.get(msg, "timestamp");
-  return typeof timestamp === "number";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function reportThinkingPart(
-  progress: vscode.Progress<vscode.LanguageModelResponsePart>,
-  text: string,
-): void {
-  progress.report(new vscode.LanguageModelThinkingPart(text));
-}
+// Re-export PlanOverride for backward compatibility
+export type { PlanOverride } from "./token-plan";
 
 /**
  * Prepared chat request
@@ -103,30 +82,7 @@ export interface PreparedChatRequest {
   tools?: ApiTool[];
   isThinkingModel: boolean;
   thinkingEffort: ThinkingEffort;
-}
-
-/**
- * Thinking mode configuration schema
- */
-export function buildThinkingEffortSchema() {
-  return {
-    properties: {
-      reasoningEffort: {
-        type: "string",
-        title: "Thinking Effort",
-        enum: ["none", "low", "high", "max"],
-        enumItemLabels: ["None", "Low", "High", "Max"],
-        enumDescriptions: [
-          "Disable thinking mode",
-          "Low reasoning effort",
-          "High reasoning effort",
-          "Maximum reasoning effort",
-        ],
-        default: "high",
-        group: "navigation",
-      },
-    },
-  };
+  planOverride?: PlanOverride | undefined;
 }
 
 /**
@@ -146,9 +102,52 @@ export abstract class BaseChatProvider
   protected readonly supportsThinking: boolean;
   protected isActive = true;
   private disposables: vscode.Disposable[] = [];
+  private clientCache = new Map<string, IApiClient>();
 
   readonly onDidChangeLanguageModelChatInformation =
     this.onDidChangeLanguageModelChatInformationEmitter.event;
+
+  // ── Static helpers ───────────────────────────────
+
+  private static hasTimestamp(msg: unknown): msg is { timestamp: number } {
+    if (typeof msg !== "object" || msg === null) {
+      return false;
+    }
+    const timestamp = Reflect.get(msg, "timestamp");
+    return typeof timestamp === "number";
+  }
+
+  private static isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+  }
+
+  private static reportThinkingPart(
+    progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+    text: string,
+  ): void {
+    progress.report(new vscode.LanguageModelThinkingPart(text));
+  }
+
+  static buildThinkingEffortSchema() {
+    return {
+      properties: {
+        reasoningEffort: {
+          type: "string",
+          title: "Thinking Effort",
+          enum: ["none", "low", "high", "max"],
+          enumItemLabels: ["None", "Low", "High", "Max"],
+          enumDescriptions: [
+            "Disable thinking mode",
+            "Low reasoning effort",
+            "High reasoning effort",
+            "Maximum reasoning effort",
+          ],
+          default: "high",
+          group: "navigation",
+        },
+      },
+    };
+  }
 
   constructor(
     protected readonly context: vscode.ExtensionContext,
@@ -192,6 +191,8 @@ export abstract class BaseChatProvider
    */
   dispose(): void {
     logger.provider.debug(`[${this.providerId}] Disposing ChatProvider...`);
+    this.isActive = false;
+    this.clientCache.clear();
     this.disposables.forEach((d) => d.dispose());
     this.disposables = [];
   }
@@ -204,6 +205,7 @@ export abstract class BaseChatProvider
       logger.config.debug(
         `[${this.providerId}] Configuration affects this provider, refreshing...`,
       );
+      this.clientCache.clear();
       this.onDidChangeLanguageModelChatInformationEmitter.fire();
     }
   }
@@ -227,6 +229,12 @@ export abstract class BaseChatProvider
     if (this.isActive && this.affectsSecretKey(e)) {
       logger.auth.debug(
         `[${this.providerId}] Secret affects this provider, refreshing...`,
+      );
+      this.onDidChangeLanguageModelChatInformationEmitter.fire();
+    }
+    if (this.isActive && e.key.startsWith("copilot-models.tokenPlan.")) {
+      logger.auth.debug(
+        `[${this.providerId}] Token plan secret changed, refreshing...`,
       );
       this.onDidChangeLanguageModelChatInformationEmitter.fire();
     }
@@ -254,12 +262,16 @@ export abstract class BaseChatProvider
     }
 
     const hasApiKey = await this.modelProvider.hasApiKey();
+    const planManager = TokenPlan.getInstance();
+    const planModelIds = planManager.getPlanModelIds();
     const models = this.modelProvider.getModels();
     logger.provider.info(
-      `[${this.providerId}] Providing model information, count: ${models.length}, hasApiKey: ${hasApiKey}`,
+      `[${this.providerId}] Providing model information, count: ${models.length}, hasApiKey: ${hasApiKey}, planModels: ${planModelIds.size}`,
     );
 
-    return models.map((model) => this.toChatInfo(model, hasApiKey));
+    return models.map((model) =>
+      this.toChatInfo(model, hasApiKey || planModelIds.has(model.id), planModelIds.has(model.id)),
+    );
   }
 
   /**
@@ -268,27 +280,29 @@ export abstract class BaseChatProvider
   protected toChatInfo(
     model: ModelDefinition,
     hasApiKey: boolean,
+    hasPlan = false,
   ): ModelPickerChatInformation {
+    const selectable = hasApiKey || hasPlan;
     logger.provider.debug(
-      `[${this.providerId}] Converting model to chat info: ${model.id}, hasApiKey: ${hasApiKey}`,
+      `[${this.providerId}] Converting model to chat info: ${model.id}, hasApiKey: ${hasApiKey}, hasPlan: ${hasPlan}, selectable: ${selectable}`,
     );
     return {
       id: model.id,
       name: model.name,
       family: model.family,
       version: model.version,
-      detail: hasApiKey ? model.detail : "API key required",
-      tooltip: hasApiKey ? "" : "Please configure API key",
-      statusIcon: new vscode.ThemeIcon(hasApiKey ? "check" : "warning"),
+      detail: selectable ? model.detail : "API key required",
+      tooltip: hasPlan ? "Covered by token plan" : selectable ? "" : "Please configure API key",
+      statusIcon: new vscode.ThemeIcon(selectable ? "check" : "warning"),
       maxInputTokens: model.maxInputTokens,
       maxOutputTokens: model.maxOutputTokens,
-      isUserSelectable: hasApiKey,
+      isUserSelectable: selectable,
       capabilities: {
         toolCalling: model.capabilities.toolCalling,
         imageInput: model.capabilities.imageInput,
       },
       ...(this.supportsThinking && model.capabilities.thinking
-        ? { configurationSchema: buildThinkingEffortSchema() }
+        ? { configurationSchema: BaseChatProvider.buildThinkingEffortSchema() }
         : {}),
     };
   }
@@ -308,7 +322,7 @@ export abstract class BaseChatProvider
     let index = 0;
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
-      if (hasTimestamp(msg)) {
+      if (BaseChatProvider.hasTimestamp(msg)) {
         latestTimestamp = msg.timestamp;
         index = i;
         break;
@@ -338,10 +352,18 @@ export abstract class BaseChatProvider
       `[${this.providerId}] Preparing chat request, model: ${modelInfo.id}`,
     );
 
-    const apiKey = await this.modelProvider.getApiKey();
-    if (!apiKey) {
-      logger.chat.error(`[${this.providerId}] API key not configured`);
-      throw new Error("API key not configured");
+    const planOverride = await TokenPlan.getInstance().resolvePlanOverride(modelInfo.id);
+
+    if (planOverride) {
+      logger.chat.info(
+        `[${this.providerId}] Using token plan "${planOverride.planId}" for model ${modelInfo.id}`,
+      );
+    } else {
+      const apiKey = await this.modelProvider.getApiKey();
+      if (!apiKey) {
+        logger.chat.error(`[${this.providerId}] API key not configured`);
+        throw new Error("API key not configured");
+      }
     }
 
     const modelDefinition = this.modelProvider
@@ -354,7 +376,7 @@ export abstract class BaseChatProvider
       `[${this.providerId}] Model: ${modelInfo.id}, isThinkingModel: ${isThinkingModel}, thinkingEffort: ${thinkingEffort}`,
     );
 
-    const apiMessages = this.convertMessages(messages, isThinkingModel);
+    const apiMessages = this.convertMessages(messages);
     const tools = modelDefinition?.capabilities.toolCalling
       ? this.convertTools(options.tools)
       : undefined;
@@ -378,6 +400,13 @@ export abstract class BaseChatProvider
       ...(toolChoice ? { tool_choice: toolChoice } : {}),
     };
 
+    const configuredMaxTokens = vscode.workspace
+      .getConfiguration(CONFIG_SECTION)
+      .get<number>("maxTokens", 0);
+    if (configuredMaxTokens > 0) {
+      request.max_tokens = configuredMaxTokens;
+    }
+
     // If thinking model, add thinking-related parameters
     if (isThinkingModel) {
       this.convertThinkingParams(request, thinkingEffort);
@@ -394,6 +423,7 @@ export abstract class BaseChatProvider
       ...(tools ? { tools } : {}),
       isThinkingModel,
       thinkingEffort,
+      planOverride,
     };
   }
 
@@ -449,46 +479,51 @@ export abstract class BaseChatProvider
     }
   }
 
+  private logMessageDetails(
+    messages: readonly vscode.LanguageModelChatRequestMessage[],
+  ): void {
+    if (!logger.shouldLog("debug")) {
+      return;
+    }
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      const partsInfo = msg.content.map((p) => {
+        if (p instanceof vscode.LanguageModelTextPart) {
+          return `TextPart(${p.value.substring(0, 50)}...)`;
+        }
+        if (p instanceof vscode.LanguageModelToolCallPart) {
+          return `ToolCallPart(${p.name})`;
+        }
+        if (p instanceof vscode.LanguageModelToolResultPart) {
+          return `ToolResultPart(${p.callId})`;
+        }
+        if (p instanceof vscode.LanguageModelDataPart) {
+          return `DataPart(${p.mimeType}, ${p.data.length} bytes)`;
+        }
+        if (p instanceof vscode.LanguageModelThinkingPart) {
+          return `ThinkingPart(${p.value.substring(0, 50)}...)`;
+        }
+        if (p instanceof vscode.LanguageModelPromptTsxPart) {
+          return `PromptTsxPart(...)`;
+        }
+        return `UnknownPart`;
+      });
+      logger.chat.debug(
+        `  Message ${i}: role=${msg.role}, parts=[${partsInfo.join(", ")}]`,
+      );
+    }
+  }
+
   /**
    * Convert message format (subclass can override)
    */
   protected convertMessages(
     messages: readonly vscode.LanguageModelChatRequestMessage[],
-    _isThinkingModel: boolean,
   ): ApiMessage[] {
     logger.chat.debug(
       `[${this.providerId}] Converting ${messages.length} messages`,
     );
-
-    if (shouldLog("debug")) {
-      for (let i = 0; i < messages.length; i++) {
-        const msg = messages[i];
-        const partsInfo = msg.content.map((p) => {
-          if (p instanceof vscode.LanguageModelTextPart) {
-            return `TextPart(${p.value.substring(0, 50)}...)`;
-          }
-          if (p instanceof vscode.LanguageModelToolCallPart) {
-            return `ToolCallPart(${p.name})`;
-          }
-          if (p instanceof vscode.LanguageModelToolResultPart) {
-            return `ToolResultPart(${p.callId})`;
-          }
-          if (p instanceof vscode.LanguageModelDataPart) {
-            return `DataPart(${p.mimeType}, ${p.data.length} bytes)`;
-          }
-          if (p instanceof vscode.LanguageModelThinkingPart) {
-            return `ThinkingPart(${p.value.substring(0, 50)}...)`;
-          }
-          if (p instanceof vscode.LanguageModelPromptTsxPart) {
-            return `PromptTsxPart(...)`;
-          }
-          return `UnknownPart`;
-        });
-        logger.chat.debug(
-          `  Message ${i}: role=${msg.role}, parts=[${partsInfo.join(", ")}]`,
-        );
-      }
-    }
+    this.logMessageDetails(messages);
 
     const maxImageSize = this.getMaxImageSize();
     const result: ApiMessage[] = [];
@@ -648,7 +683,7 @@ export abstract class BaseChatProvider
       function: {
         name: tool.name,
         ...(tool.description ? { description: tool.description } : {}),
-        ...(isRecord(tool.inputSchema) ? { parameters: tool.inputSchema } : {}),
+        ...(BaseChatProvider.isRecord(tool.inputSchema) ? { parameters: tool.inputSchema } : {}),
       },
     }));
   }
@@ -660,19 +695,31 @@ export abstract class BaseChatProvider
     request: ApiRequest,
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     token: vscode.CancellationToken,
+    planOverride?: PlanOverride,
+    usageCallback?: (usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }) => void,
   ): Promise<void> {
+    const planBaseUrl = planOverride?.baseUrl;
     logger.chat.info(
-      `[${this.providerId}] Sending stream request, model: ${request.model}`,
+      `[${this.providerId}] Sending stream request, model: ${request.model}${planOverride ? ` (via token plan, baseUrl=${planBaseUrl})` : ""}`,
     );
 
-    const apiKey = await this.modelProvider.getApiKey();
+    const apiKey = planOverride?.apiKey ?? (await this.modelProvider.getApiKey());
     if (!apiKey) {
       throw new Error(`${this.providerName} API key not configured`);
     }
 
     try {
-      const client = this.modelProvider.createClient(apiKey);
-      const callbacks = this.createStreamCallbacks(progress);
+      const baseUrl = planOverride?.baseUrl;
+      const cacheKey = `${baseUrl ?? "__default__"}::${apiKey}`;
+      let client = this.clientCache.get(cacheKey);
+      if (!client) {
+        client = this.modelProvider.createClient(apiKey, { baseUrl });
+        this.clientCache.set(cacheKey, client);
+      }
+      if (planOverride) {
+        request.stream = planOverride.stream;
+      }
+      const callbacks = this.createStreamCallbacks(progress, usageCallback);
       await client.streamChatCompletion(request, callbacks, token);
     } catch (error) {
       if (error instanceof CancelledError) {
@@ -703,6 +750,7 @@ export abstract class BaseChatProvider
    */
   protected createStreamCallbacks(
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+    usageCallback?: (usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }) => void,
   ): StreamCallbacks {
     let content = "";
     let thinking = "";
@@ -720,7 +768,7 @@ export abstract class BaseChatProvider
       },
       onThinking: (text: string) => {
         thinking += text;
-        reportThinkingPart(progress, text);
+        BaseChatProvider.reportThinkingPart(progress, text);
       },
       onToolCall: (toolCall) => {
         try {
@@ -796,6 +844,7 @@ export abstract class BaseChatProvider
               `  completion_tokens: ${finalUsage.completion_tokens}\n` +
               `  total_tokens: ${finalUsage.total_tokens}`,
           );
+          usageCallback?.(finalUsage);
         }
       },
     };
@@ -821,15 +870,27 @@ export abstract class BaseChatProvider
         messages,
         options,
       );
-      await this.sendStreamRequest(prepared.request, progress, token);
+      const usageCallback = prepared.planOverride
+        ? (usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }) => {
+            const rate = prepared.planOverride!.consumptionRate ?? 1;
+            TokenPlan.getInstance().recordConsumption({
+              planId: prepared.planOverride!.planId,
+              modelId: modelInfo.id,
+              promptTokens: Math.round(usage.prompt_tokens * rate),
+              completionTokens: Math.round(usage.completion_tokens * rate),
+              totalTokens: Math.round(usage.total_tokens * rate),
+              timestamp: Date.now(),
+            });
+          }
+        : undefined;
+      await this.sendStreamRequest(prepared.request, progress, token, prepared.planOverride, usageCallback);
       const duration = Date.now() - startTime;
       logger.chat.info(
         `[${this.providerId}] Chat response completed successfully, duration: ${duration}ms`,
       );
     } catch (error) {
       logger.chat.error(`[${this.providerId}] Chat response failed:`, error);
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(message);
+      throw error;
     }
   }
 
@@ -852,7 +913,7 @@ export abstract class BaseChatProvider
    * Falls back to heuristic estimation when WASM fails to load
    */
   private estimateTokenCount(text: string): number {
-    return countTokens(text);
+    return Tokenizer.getInstance().countTokens(text);
   }
 
   /**
@@ -903,32 +964,6 @@ export abstract class BaseChatProvider
     logger.provider.debug(`[${this.providerId}] Preparing for deactivation`);
     this.isActive = false;
     this.onDidChangeLanguageModelChatInformationEmitter.fire();
-  }
-
-  /**
-   * Configure API key
-   */
-  async configureApiKey(): Promise<void> {
-    logger.auth.info(`[${this.providerId}] Configuring API key...`);
-    const saved = await this.modelProvider.promptForApiKey();
-    if (saved) {
-      logger.auth.info(`[${this.providerId}] API key configured successfully`);
-      this.refreshModelPicker();
-    } else {
-      logger.auth.info(`[${this.providerId}] API key configuration cancelled`);
-    }
-  }
-
-  /**
-   * Clear API key
-   */
-  async clearApiKey(): Promise<void> {
-    logger.auth.info(`[${this.providerId}] Clearing API key...`);
-    await this.modelProvider.deleteApiKey();
-    this.refreshModelPicker();
-    vscode.window.showInformationMessage(
-      `${this.providerName} API key cleared`,
-    );
   }
 
 }

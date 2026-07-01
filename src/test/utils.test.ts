@@ -1,125 +1,8 @@
 import * as assert from "assert";
+import { sanitizeForLog, isSensitiveKey } from "../core/sanitize";
 
 suite("Utility Functions Test Suite", () => {
-  suite("safeStringify", () => {
-    // Inline safeStringify for testing (copied from client.ts)
-    function safeStringify(obj: unknown): string {
-      return JSON.stringify(obj, (_, value) => {
-        if (
-          typeof value === "object" &&
-          value !== null &&
-          !(value instanceof Array)
-        ) {
-          if (value instanceof Map) {
-            return Object.fromEntries(value);
-          }
-        }
-        return value;
-      });
-    }
-
-    test("should stringify basic objects", () => {
-      const obj = { name: "test", value: 123 };
-      const result = safeStringify(obj);
-      assert.strictEqual(result, '{"name":"test","value":123}');
-    });
-
-    test("should stringify arrays correctly", () => {
-      const arr = [1, 2, 3, "test"];
-      const result = safeStringify(arr);
-      assert.strictEqual(result, '[1,2,3,"test"]');
-    });
-
-    test("should handle nested objects", () => {
-      const obj = { nested: { value: "test" }, arr: [1, 2] };
-      const result = safeStringify(obj);
-      assert.strictEqual(result, '{"nested":{"value":"test"},"arr":[1,2]}');
-    });
-
-    test("should convert Map to object", () => {
-      const map = new Map<string, number>();
-      map.set("a", 1);
-      map.set("b", 2);
-      const obj = { map };
-      const result = safeStringify(obj);
-      assert.strictEqual(result, '{"map":{"a":1,"b":2}}');
-    });
-
-    test("should handle null values", () => {
-      const obj = { value: null, name: "test" };
-      const result = safeStringify(obj);
-      assert.strictEqual(result, '{"value":null,"name":"test"}');
-    });
-
-    test("should handle boolean and number values", () => {
-      const obj = { bool: true, num: 42, float: 3.14 };
-      const result = safeStringify(obj);
-      assert.strictEqual(result, '{"bool":true,"num":42,"float":3.14}');
-    });
-
-    test("should handle empty objects", () => {
-      const obj = {};
-      const result = safeStringify(obj);
-      assert.strictEqual(result, "{}");
-    });
-
-    test("should handle empty arrays", () => {
-      const arr: number[] = [];
-      const result = safeStringify(arr);
-      assert.strictEqual(result, "[]");
-    });
-
-    test("should NOT convert arrays with length property to objects", () => {
-      const arr = [1, 2, 3];
-      const result = safeStringify(arr);
-      // Should be array, not object
-      assert.strictEqual(result, "[1,2,3]");
-      // Verify it's a valid JSON array
-      const parsed = JSON.parse(result);
-      assert.ok(Array.isArray(parsed));
-    });
-  });
-
   suite("sanitizeForLog", () => {
-    // Inline sanitizeForLog for testing
-    function isSensitiveKey(key: string): boolean {
-      const sensitivePatterns = [
-        "apikey",
-        "api_key",
-        "authorization",
-        "bearer",
-        "password",
-        "token",
-        "secret",
-      ];
-      const lowerKey = key.toLowerCase();
-      return sensitivePatterns.some((pattern) => lowerKey.includes(pattern));
-    }
-
-    function sanitizeForLog(obj: unknown): unknown {
-      if (typeof obj !== "object" || obj === null) {
-        return obj;
-      }
-
-      if (Array.isArray(obj)) {
-        return obj.map(sanitizeForLog);
-      }
-
-      const result: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(
-        obj as Record<string, unknown>,
-      )) {
-        if (isSensitiveKey(key)) {
-          result[key] = "[REDACTED]";
-        } else if (typeof value === "object" && value !== null) {
-          result[key] = sanitizeForLog(value);
-        } else {
-          result[key] = value;
-        }
-      }
-      return result;
-    }
-
     test("should redact apiKey", () => {
       const obj = { apiKey: "sk-xxx", name: "test" };
       const result = sanitizeForLog(obj) as Record<string, unknown>;
@@ -131,6 +14,12 @@ suite("Utility Functions Test Suite", () => {
       const obj = { api_key: "secret", value: 123 };
       const result = sanitizeForLog(obj) as Record<string, unknown>;
       assert.strictEqual(result.api_key, "[REDACTED]");
+    });
+
+    test("should redact api-key (hyphen variant)", () => {
+      const obj = { "api-key": "secret", value: 123 };
+      const result = sanitizeForLog(obj) as Record<string, unknown>;
+      assert.strictEqual(result["api-key"], "[REDACTED]");
     });
 
     test("should redact authorization header", () => {
@@ -166,7 +55,9 @@ suite("Utility Functions Test Suite", () => {
           apiKey: "sk-secret",
         },
       };
-      const result = sanitizeForLog(obj) as { user: Record<string, unknown> };
+      const result = sanitizeForLog(obj) as {
+        user: Record<string, unknown>;
+      };
       assert.strictEqual(result.user.name, "John");
       assert.strictEqual(result.user.apiKey, "[REDACTED]");
     });
@@ -204,7 +95,7 @@ suite("Utility Functions Test Suite", () => {
       assert.deepStrictEqual(result, []);
     });
 
-    test("should redact Bearer authorization", () => {
+    test("should redact Bearer token", () => {
       const obj = { bearer: "token123" };
       const result = sanitizeForLog(obj) as Record<string, unknown>;
       assert.strictEqual(result.bearer, "[REDACTED]");
@@ -220,20 +111,6 @@ suite("Utility Functions Test Suite", () => {
   });
 
   suite("isSensitiveKey", () => {
-    function isSensitiveKey(key: string): boolean {
-      const sensitivePatterns = [
-        "apikey",
-        "api_key",
-        "authorization",
-        "bearer",
-        "password",
-        "token",
-        "secret",
-      ];
-      const lowerKey = key.toLowerCase();
-      return sensitivePatterns.some((pattern) => lowerKey.includes(pattern));
-    }
-
     test("should identify apiKey as sensitive", () => {
       assert.strictEqual(isSensitiveKey("apiKey"), true);
       assert.strictEqual(isSensitiveKey("APIKEY"), true);
@@ -243,6 +120,10 @@ suite("Utility Functions Test Suite", () => {
     test("should identify api_key as sensitive", () => {
       assert.strictEqual(isSensitiveKey("api_key"), true);
       assert.strictEqual(isSensitiveKey("deepseekApiKey"), true);
+    });
+
+    test("should identify api-key as sensitive (hyphen variant)", () => {
+      assert.strictEqual(isSensitiveKey("api-key"), true);
     });
 
     test("should identify password as sensitive", () => {
@@ -263,6 +144,12 @@ suite("Utility Functions Test Suite", () => {
     test("should identify authorization as sensitive", () => {
       assert.strictEqual(isSensitiveKey("authorization"), true);
       assert.strictEqual(isSensitiveKey("Authorization"), true);
+    });
+
+    test("should identify bearer as sensitive (no leading space)", () => {
+      assert.strictEqual(isSensitiveKey("bearer"), true);
+      assert.strictEqual(isSensitiveKey("Bearer"), true);
+      assert.strictEqual(isSensitiveKey("x-bearer-token"), true);
     });
 
     test("should NOT flag non-sensitive keys", () => {

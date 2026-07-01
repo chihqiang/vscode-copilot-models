@@ -3,9 +3,8 @@ import {
   CircuitBreaker,
   CircuitBreakerError,
   CircuitState,
-  delay,
-  calculateDelay,
-} from "../core/client";
+} from "../core/circuit-breaker";
+import { delay, calculateDelay } from "../core/retry";
 
 const TEST_PROVIDER = "test-provider";
 

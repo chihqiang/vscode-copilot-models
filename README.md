@@ -2,14 +2,13 @@
 
 Unlock third-party large language model extensions for GitHub Copilot.
 
-Seamlessly integrate DeepSeek, Zhipu AI, Qwen, and custom LLMs.
+Seamlessly integrate DeepSeek, Zhipu AI, and Qwen LLMs.
 
 One-click switching and native panel compatibility.
 
 ## Features
 
 - **Multi-Model Support**: DeepSeek V4, Zhipu AI GLM-5, Qwen 3 series
-- **Custom Providers**: Add any OpenAI-compatible API via built-in wizard
 - **Model Routing**: Automatic failover and latency-based routing
 - **Tool Calling**: Full Copilot Chat tool calling support
 - **Thinking Mode**: Model reasoning/thinking mode support
@@ -17,6 +16,7 @@ One-click switching and native panel compatibility.
 - **Secure Authentication**: API keys stored in VS Code SecretStorage
 - **Log Debugging**: 4-level logging with hot-reload
 - **Lightweight**: OpenAI SDK replaced with native SSE client code
+- **Token Plan**: Unified prepaid billing supporting Qwen, DeepSeek, and GLM token packages via a single endpoint
 
 ## Documentation
 
@@ -44,7 +44,29 @@ select a provider and enter your key.
 
 **Note:** API keys are stored in VS Code SecretStorage, not as plain settings.
 
-### 3. Start Using
+### 3. (Optional) Configure Token Plan
+
+If you use prepaid token packages (e.g., Alibaba DashScope plan),
+run `Copilot Models: Set Token Plan` to configure plan access:
+
+1. Press `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`), run `Copilot Models: Set Token Plan`
+2. Select a built-in provider preset or enter a custom URL
+   - The Qwen preset is preconfigured with the endpoint URL and 9 supported models
+3. Enter the plan API token
+4. Select the models covered by this plan
+
+The plan token is saved in VS Code SecretStorage.
+
+| Provider | Plan Endpoint |
+| :------- | :------------ |
+| Qwen (Alibaba Cloud) Token Plan | `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` |
+
+The Qwen Token Plan preset covers Qwen, DeepSeek, and GLM models in a single plan.
+For other providers, choose "Custom URL" and enter the plan API endpoint.
+
+Run `Copilot Models: Clear Token Plan` to remove a configured plan.
+
+### 4. Start Using
 
 1. Open GitHub Copilot Chat panel
 2. Click on the model selector
@@ -60,8 +82,8 @@ select a provider and enter your key.
 | Qwen3.7 Max | 1M | 64K | ✅ | ✅ |
 | Qwen3.7 Plus | 1M | 64K | ✅ | ✅ |
 | Qwen3.6 Flash | 1M | 64K | ✅ | ✅ |
-| Qwen3 Max | 128K | 64K | ✅ | ✅ |
 | Qwen3.6 Plus | 128K | 64K | ✅ | ✅ |
+| Qwen3 Max | 128K | 64K | ✅ | ✅ |
 | Qwen3.5 Flash | 128K | 64K | ✅ | ✅ |
 
 ### DeepSeek
@@ -81,6 +103,26 @@ select a provider and enter your key.
 | GLM-5 | 200K | 128K | ✅ | ✅ |
 | GLM-4.7-Flash | 128K | 16K | ✅ | ❌ |
 
+### Token Plan Coverage
+
+The built-in **Qwen Token Plan** preset supports the following models through
+a single unified endpoint:
+
+| Model | ID |
+| :---- | :- |
+| Qwen3.7 Max | `qwen3.7-max` |
+| Qwen3.7 Plus | `qwen3.7-plus` |
+| Qwen3.6 Flash | `qwen3.6-flash` |
+| Qwen3.6 Plus | `qwen3.6-plus` |
+| GLM-5.2 | `glm-5.2` |
+| GLM-5.1 | `glm-5.1` |
+| GLM-5 | `glm-5` |
+| DeepSeek V4 Pro | `deepseek-v4-pro` |
+| DeepSeek V4 Flash | `deepseek-v4-flash` |
+
+Models not listed (e.g. Qwen3 Max, GLM-5-Turbo) are still available via direct
+provider API access — they are simply not covered by this Token Plan preset.
+
 ## Configuration Options
 
 Available in VS Code settings (search `copilot-models`):
@@ -91,12 +133,12 @@ Available in VS Code settings (search `copilot-models`):
 | :----- | :---------- | :------ |
 | `<provider>.enabled` | Enable this provider | `true` |
 | `<provider>.baseUrl` | API base URL (e.g. `deepseek.baseUrl`) | per provider |
+| `<provider>.modelIdOverrides` | Map internal model IDs to custom API model names | `{}` |
 
 ### Global Settings
 
 | Config | Description | Default |
 | :----- | :---------- | :------ |
-| `customProviders` | JSON array of custom provider definitions (use the Add Custom Provider wizard) | `[]` |
 | `routingStrategy` | `"failover"` or `"latency"` routing | `"failover"` |
 | `failoverModels` | Primary model → fallback model ID map | `{}` |
 | `maxTokens` | Maximum generated tokens (0 = unlimited) | `0` |
@@ -105,39 +147,10 @@ Available in VS Code settings (search `copilot-models`):
 | `maxRetries` | Maximum retry attempts | `1` |
 | `debugMode` | Log level: `minimal / metadata / verbose` | `minimal` |
 
-### Custom Providers
-
-Add any OpenAI-compatible API provider through a step-by-step wizard:
-
-1. Press `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`), run `Copilot Models: Add Custom Provider`
-2. Follow the prompts to enter provider ID, name, base URL, and model definitions
-3. Add multiple providers in one session — save all at once
-4. Existing providers are pre-loaded for review and editing
-
-The wizard handles validation, duplicate detection, and saves directly to your settings.
-
-Alternatively, you can edit the `customProviders` array in `settings.json` directly:
-
-```json
-{
-  "copilot-models.customProviders": [
-    {
-      "providerId": "my-provider",
-      "providerName": "My Provider",
-      "baseUrl": "https://api.example.com/v1",
-      "models": [
-        { "id": "model-x", "name": "Model X", "toolCalling": true }
-      ]
-    }
-  ]
-}
-```
-
 ## Commands
 
 | Command | Description |
 | :----- | :----- |
-| `Copilot Models: Add Custom Provider` | Add a custom API provider via interactive wizard |
 | `Copilot Models: Set API Key` | Configure API key (select provider first) |
 | `Copilot Models: Clear API Key` | Clear API key (select provider first) |
 | `Copilot Models: Open Settings` | Open extension settings |
@@ -145,6 +158,8 @@ Alternatively, you can edit the `customProviders` array in `settings.json` direc
 | `Copilot Models: Clear Log` | Clear logs |
 | `Copilot Models: Refresh Models` | Refresh model list |
 | `Copilot Models: Show Latency Stats` | Show provider latency statistics |
+| `Copilot Models: Set Token Plan` | Configure prepaid token plan |
+| `Copilot Models: Clear Token Plan` | Remove configured token plan |
 
 ## Debugging
 
