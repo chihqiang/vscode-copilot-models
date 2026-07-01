@@ -130,20 +130,6 @@ export function buildThinkingEffortSchema() {
 }
 
 /**
- * ChatProvider configuration
- */
-export interface ChatProviderConfig {
-  /** Provider ID */
-  readonly providerId: string;
-  /** Provider display name */
-  readonly providerName: string;
-  /** Configuration section name */
-  readonly configSection: string;
-  /** Whether thinking mode is supported (optional, default false) */
-  readonly supportsThinking?: boolean;
-}
-
-/**
  * Base Chat Provider implementation
  */
 export abstract class BaseChatProvider
@@ -842,7 +828,8 @@ export abstract class BaseChatProvider
       );
     } catch (error) {
       logger.chat.error(`[${this.providerId}] Chat response failed:`, error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   }
 
@@ -944,11 +931,4 @@ export abstract class BaseChatProvider
     );
   }
 
-  /**
-   * Refresh model list
-   */
-  async refreshModels(): Promise<void> {
-    logger.provider.info(`[${this.providerId}] Refreshing models...`);
-    this.refreshModelPicker();
-  }
 }

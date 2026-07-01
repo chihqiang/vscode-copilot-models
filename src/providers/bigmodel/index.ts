@@ -17,6 +17,36 @@ import {
 
 export const BIGMODEL_MODELS: ModelDefinition[] = [
   {
+    id: "glm-5.2",
+    name: "GLM-5.2",
+    family: "bigmodel",
+    version: "5.2",
+    detail: "Latest flagship model, 1M context, enhanced reasoning",
+    maxInputTokens: 1000000,
+    maxOutputTokens: 131072,
+    capabilities: {
+      toolCalling: true,
+      imageInput: false,
+      thinking: true,
+    },
+    requiresThinkingParam: true,
+  },
+  {
+    id: "glm-4.7-flash",
+    name: "GLM-4.7-Flash",
+    family: "bigmodel",
+    version: "4.7",
+    detail: "Fast, lightweight model for quick tasks",
+    maxInputTokens: 128000,
+    maxOutputTokens: 16384,
+    capabilities: {
+      toolCalling: true,
+      imageInput: false,
+      thinking: false,
+    },
+    requiresThinkingParam: false,
+  },
+  {
     id: "glm-5.1",
     name: "GLM-5.1",
     family: "bigmodel",

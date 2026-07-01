@@ -160,11 +160,6 @@ export function calculateDelay(
   return Math.round(exponential + jitter);
 }
 
-/** Retryable error check function type */
-export interface RetryableCheck {
-  (error: unknown): boolean;
-}
-
 /** Streaming chat completion response chunk */
 export interface ChatCompletionChunk {
   id: string;

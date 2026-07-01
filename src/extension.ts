@@ -17,6 +17,7 @@ import {
   Registry,
 } from "./core";
 import { getBuiltInProviderFactories } from "./providers";
+import { openAddCustomProviderWizard } from "./wizard/add-custom-provider";
 
 class CopilotModelsExtension {
   private modelRouter: ModelRouter | undefined;
@@ -127,34 +128,9 @@ class CopilotModelsExtension {
     this.registrationDisposables.clear();
 
     Registry.getInstance().clear();
-    Registry.getInstance().clear();
 
     logger.core.info("Extension deactivated");
     logger.dispose();
-  }
-
-  private async selectProvider(
-    factories: IProviderFactory[],
-  ): Promise<IProviderFactory | undefined> {
-    if (factories.length === 0) {
-      vscode.window.showWarningMessage("No model providers enabled");
-      return undefined;
-    }
-
-    if (factories.length === 1) {
-      return factories[0];
-    }
-
-    const selected = await vscode.window.showQuickPick(
-      factories.map((f) => ({ label: f.providerName, id: f.providerId })),
-      { placeHolder: "Select a model provider" },
-    );
-
-    if (!selected) {
-      return undefined;
-    }
-
-    return factories.find((f) => f.providerId === selected.id);
   }
 
   private registerProvider(
@@ -199,6 +175,14 @@ class CopilotModelsExtension {
   }
 
   private registerCommands(): void {
+    vscode.commands.registerCommand(
+      "copilot-models.addCustomProvider",
+      () => {
+        logger.core.info("addCustomProvider command invoked");
+        openAddCustomProviderWizard();
+      },
+    );
+
     vscode.commands.registerCommand("copilot-models.setApiKey", async () => {
       if (this.modelRouter) {
         await this.modelRouter.configureApiKey();

@@ -107,13 +107,7 @@ function createCustomProviderFactory(
 /** Read custom providers from VS Code configuration */
 function discoverCustomProvidersFromConfig(): IProviderFactory[] {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-  const customProviders = config.get<
-    CustomProviderEntry[] | Record<string, CustomProviderEntry>
-  >("customProviders", []);
-
-  const entries: CustomProviderEntry[] = Array.isArray(customProviders)
-    ? customProviders
-    : Object.values(customProviders);
+  const entries = config.get<CustomProviderEntry[]>("customProviders", []);
 
   return entries
     .filter((e) => e.providerId && e.providerName)
@@ -126,9 +120,7 @@ function discoverCustomProvidersFromConfig(): IProviderFactory[] {
 }
 
 /** Scan workspace directory for provider configurations */
-async function scanWorkspaceProviders(
-  _context: vscode.ExtensionContext,
-): Promise<IProviderFactory[]> {
+async function scanWorkspaceProviders(): Promise<IProviderFactory[]> {
   const factories: IProviderFactory[] = [];
 
   const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -200,7 +192,7 @@ async function scanWorkspaceProviders(
 /** Execute complete provider discovery process */
 export async function discoverAllProviders(
   builtInFactories: IProviderFactory[],
-  context: vscode.ExtensionContext,
+  _context: vscode.ExtensionContext,
 ): Promise<void> {
   const registry = Registry.getInstance();
 
@@ -223,7 +215,7 @@ export async function discoverAllProviders(
     }
   }
 
-  const workspace = await scanWorkspaceProviders(context);
+  const workspace = await scanWorkspaceProviders();
   for (const factory of workspace) {
     if (!registry.hasFactory(factory.providerId)) {
       registry.registerFactory(factory);
