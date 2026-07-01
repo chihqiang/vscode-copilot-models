@@ -1,15 +1,14 @@
 /**
- * Core module exports
+ * Core module exports — public API only
  */
 
 export * from "./logger";
-export { logger, initLogger } from "./logger";
 export * from "./models";
-export * from "./chat-provider";
+export * from "./errors";
 export * from "./client";
 export * from "./model-provider";
-export * from "./registry";
-export * from "./provider-factory";
+export * from "./provider-models";
+export * from "./chat-provider";
 export * from "./tokenizer";
-export * from "./provider-loader";
 export * from "./model-router";
+export * from "./token-plan";

@@ -1,25 +1,16 @@
 /**
- * Provider module exports
+ * Built-in provider configs (pure data)
+ *
+ * 每个服务商一个文件，只定义数据对象。
+ * 所有注册和运行时逻辑在 src/core/provider-models.ts 的 ProviderModels 类中。
  */
 
-export * from "./deepseek";
-export * from "./bigmodel";
-export * from "./qwen";
+import { deepseekConfig } from "./deepseek";
+import { bigmodelConfig } from "./bigmodel";
+import { qwenConfig } from "./qwen";
 
-import type { IProviderFactory } from "../core";
-import { registerDeepSeekProviderFactory } from "./deepseek";
-import { registerBigModelProviderFactory } from "./bigmodel";
-import { registerQwenProviderFactory } from "./qwen";
+export { deepseekConfig } from "./deepseek";
+export { bigmodelConfig } from "./bigmodel";
+export { qwenConfig } from "./qwen";
 
-let builtInFactories: IProviderFactory[] | null = null;
-
-export function getBuiltInProviderFactories(): IProviderFactory[] {
-  if (!builtInFactories) {
-    builtInFactories = [
-      registerDeepSeekProviderFactory(),
-      registerBigModelProviderFactory(),
-      registerQwenProviderFactory(),
-    ];
-  }
-  return builtInFactories;
-}
+export const builtInProviders = [deepseekConfig, bigmodelConfig, qwenConfig];

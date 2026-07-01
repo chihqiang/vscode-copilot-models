@@ -67,11 +67,6 @@
     ],
     "commands": [
       {
-        "command": "copilot-models.addCustomProvider",
-        "title": "Add Custom Provider",
-        "description": "Add a custom OpenAI-compatible API provider via UI wizard"
-      },
-      {
         "command": "copilot-models.setApiKey",
         "title": "Set API Key",
         "description": "Configure API key for model provider (select provider first)"
@@ -100,6 +95,16 @@
         "command": "copilot-models.refreshModels",
         "title": "Refresh Models",
         "description": "Refresh the model list"
+      },
+      {
+        "command": "copilot-models.setTokenPlan",
+        "title": "Set Token Plan",
+        "description": "Configure a token plan for prepaid model usage"
+      },
+      {
+        "command": "copilot-models.clearTokenPlan",
+        "title": "Clear Token Plan",
+        "description": "Remove configured token plan"
       },
       {
         "command": "copilot-models.showLatencyStats",
@@ -169,91 +174,6 @@
           "description": "Model failover mappings: primary model ID → fallback model ID on another provider",
           "additionalProperties": {
             "type": "string"
-          }
-        },
-        "copilot-models.customProviders": {
-          "type": "array",
-          "default": [],
-          "description": "Custom model providers (OpenAI-compatible API). Use the 'Add Custom Provider' wizard (Cmd+Shift+P) instead of editing this directly.",
-          "items": {
-            "type": "object",
-            "required": [
-              "providerId",
-              "providerName",
-              "baseUrl"
-            ],
-            "properties": {
-              "providerId": {
-                "type": "string",
-                "description": "Unique provider identifier (e.g. 'my-provider')"
-              },
-              "providerName": {
-                "type": "string",
-                "description": "Display name (e.g. 'My Provider')"
-              },
-              "baseUrl": {
-                "type": "string",
-                "description": "OpenAI-compatible API base URL"
-              },
-              "apiKeyPrompt": {
-                "type": "string",
-                "description": "Prompt text shown when requesting API key"
-              },
-              "apiKeyPlaceholder": {
-                "type": "string",
-                "description": "Placeholder text in API key input"
-              },
-              "thinkingParamType": {
-                "type": "string",
-                "enum": [
-                  "reasoning_effort",
-                  "thinking_enabled",
-                  "none"
-                ],
-                "default": "reasoning_effort",
-                "description": "How to send thinking/reasoning parameter"
-              },
-              "models": {
-                "type": "array",
-                "description": "Model definitions (if omitted, a single 'default' model is created)",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "id"
-                  ],
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "description": "Model ID sent to the API"
-                    },
-                    "name": {
-                      "type": "string",
-                      "description": "Human-readable model name"
-                    },
-                    "maxInputTokens": {
-                      "type": "number",
-                      "description": "Maximum input tokens"
-                    },
-                    "maxOutputTokens": {
-                      "type": "number",
-                      "description": "Maximum output tokens"
-                    },
-                    "toolCalling": {
-                      "type": "boolean",
-                      "description": "Supports tool/function calling"
-                    },
-                    "imageInput": {
-                      "type": "boolean",
-                      "description": "Supports image input"
-                    },
-                    "thinking": {
-                      "type": "boolean",
-                      "description": "Supports thinking/reasoning"
-                    }
-                  }
-                }
-              }
-            }
           }
         },
         "copilot-models.deepseek.enabled": {

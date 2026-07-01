@@ -231,7 +231,7 @@ export class BaseModelProvider implements IModelProvider {
   }
 
   createClient(apiKey: string, options?: ClientOptions): IApiClient {
-    const baseUrl = this.getBaseUrl();
+    const baseUrl = options?.baseUrl ?? this.getBaseUrl();
     logger.provider.debug(`[${this.id}] Creating client, baseUrl: ${baseUrl}`);
 
     const config = vscode.workspace.getConfiguration(this._configSection);

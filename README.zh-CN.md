@@ -1,11 +1,10 @@
 # Copilot Models
 
-给 GitHub Copilot 解锁第三方大模型扩展，无缝接入 DeepSeek、智谱 AI、通义千问及自定义 LLM。
+给 GitHub Copilot 解锁第三方大模型扩展，无缝接入 DeepSeek、智谱 AI、通义千问。
 
 ## 功能特性
 
 - **多模型支持**: DeepSeek V4、智谱 AI GLM-5、通义千问 Qwen 3 系列
-- **自定义服务商**: 通过内置向导接入任意兼容 OpenAI 的 API
 - **模型路由**: 自动故障转移和延迟感知路由
 - **工具调用**: 支持 Copilot Chat 工具调用功能
 - **思考模式**: 支持模型的思考/推理模式
@@ -13,6 +12,7 @@
 - **安全认证**: API 密钥安全存储在 VS Code SecretStorage
 - **日志调试**: 4 级日志系统，支持热重载
 - **轻量**: 移除 OpenAI SDK，原生 SSE 客户端实现
+- **令牌套餐**: 统一预付费计费，通过单个端点同时覆盖通义千问、DeepSeek、GLM 的令牌套餐
 
 ## 快速开始
 
@@ -33,7 +33,28 @@
 
 **注意**：API 密钥通过命令面板设置，安全存储在 VS Code SecretStorage 中。
 
-### 3. 开始使用
+### 3. (可选) 配置令牌套餐
+
+如果你使用预付费令牌套餐（例如阿里云 DashScope 套餐），
+可以运行 `Copilot Models: Set Token Plan` 配置套餐接入：
+
+1. 按 `Ctrl+Shift+P`，运行 `Copilot Models: Set Token Plan`
+2. 选择内置服务商预设或输入自定义 URL
+   - 通义千问预设已预配好端点 URL 和 9 个支持的模型
+3. 输入套餐 API 令牌
+4. 选择该套餐覆盖的模型
+
+套餐令牌安全存储在 VS Code SecretStorage。
+
+- **通义千问 Token Plan** —
+  `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`
+
+通义千问 Token Plan 预设通过单个端点同时覆盖 Qwen、DeepSeek、GLM 模型。
+其他服务商请选择 "Custom URL" 并手动输入套餐 API 端点。
+
+运行 `Copilot Models: Clear Token Plan` 可删除已配置的套餐。
+
+### 4. 开始使用
 
 1. 打开 GitHub Copilot Chat 面板
 2. 点击模型选择器
@@ -49,8 +70,8 @@
 | Qwen3.7 Max | 1M | 64K | ✅ | ✅ |
 | Qwen3.7 Plus | 1M | 64K | ✅ | ✅ |
 | Qwen3.6 Flash | 1M | 64K | ✅ | ✅ |
-| Qwen3 Max | 128K | 64K | ✅ | ✅ |
 | Qwen3.6 Plus | 128K | 64K | ✅ | ✅ |
+| Qwen3 Max | 128K | 64K | ✅ | ✅ |
 | Qwen3.5 Flash | 128K | 64K | ✅ | ✅ |
 
 ### DeepSeek
@@ -70,6 +91,25 @@
 | GLM-5 | 200K | 128K | ✅ | ✅ |
 | GLM-4.7-Flash | 128K | 16K | ✅ | ❌ |
 
+### 令牌套餐覆盖范围
+
+内置的**通义千问 Token Plan** 预设通过单个统一端点支持以下模型：
+
+| 模型 | ID |
+| :--- | :- |
+| Qwen3.7 Max | `qwen3.7-max` |
+| Qwen3.7 Plus | `qwen3.7-plus` |
+| Qwen3.6 Flash | `qwen3.6-flash` |
+| Qwen3.6 Plus | `qwen3.6-plus` |
+| GLM-5.2 | `glm-5.2` |
+| GLM-5.1 | `glm-5.1` |
+| GLM-5 | `glm-5` |
+| DeepSeek V4 Pro | `deepseek-v4-pro` |
+| DeepSeek V4 Flash | `deepseek-v4-flash` |
+
+未列出的模型（如 Qwen3 Max、GLM-5-Turbo）仍可通过直接 Provider API 访问，
+只是不在这个 Token Plan 预设的覆盖范围内。
+
 ## 配置选项
 
 在 VS Code 设置中搜索 `copilot-models` 配置：
@@ -80,12 +120,12 @@
 | :--- | :--- | :----- |
 | `<provider>.enabled` | 启用该 provider | `true` |
 | `<provider>.baseUrl` | API 基础地址（如 `deepseek.baseUrl`） | 各 provider 不同 |
+| `<provider>.modelIdOverrides` | 将内部模型 ID 映射为自定义 API 模型名 | `{}` |
 
 ### 全局设置
 
 | 配置 | 说明 | 默认值 |
 | :--- | :--- | :----- |
-| `customProviders` | 自定义服务商定义（JSON 数组，建议使用添加向导） | `[]` |
 | `routingStrategy` | 路由策略：`failover` 或 `latency` | `"failover"` |
 | `failoverModels` | 主模型→备用模型 ID 映射 | `{}` |
 | `maxTokens` | 最大生成令牌数（0=无限制） | `0` |
@@ -94,39 +134,10 @@
 | `maxRetries` | 最大重试次数 | `1` |
 | `debugMode` | 日志级别：`minimal / metadata / verbose` | `minimal` |
 
-### 自定义服务商
-
-通过内置的分步向导添加任意兼容 OpenAI 的 API 服务商：
-
-1. 按 `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`)，运行 `Copilot Models: Add Custom Provider`
-2. 跟随提示依次输入服务商 ID、名称、接口地址和模型定义
-3. 支持一次会话中添加多个服务商 — 全部填写完毕后统一保存
-4. 已存在的服务商会自动加载，方便查看和修改
-
-向导会实时校验输入、检测重复，并自动写入设置。
-
-也可以直接在 `settings.json` 中编辑 `customProviders` 数组：
-
-```json
-{
-  "copilot-models.customProviders": [
-    {
-      "providerId": "my-provider",
-      "providerName": "我的服务商",
-      "baseUrl": "https://api.example.com/v1",
-      "models": [
-        { "id": "model-x", "name": "Model X", "toolCalling": true }
-      ]
-    }
-  ]
-}
-```
-
 ## 命令
 
 | 命令 | 说明 |
 | :----- | :----- |
-| `Copilot Models: Add Custom Provider` | 通过交互式向导添加自定义 API 服务商 |
 | `Copilot Models: Set API Key` | 配置 API 密钥（先选择服务商） |
 | `Copilot Models: Clear API Key` | 清除 API 密钥（先选择服务商） |
 | `Copilot Models: Open Settings` | 打开扩展设置 |
@@ -134,6 +145,8 @@
 | `Copilot Models: Clear Log` | 清除日志 |
 | `Copilot Models: Refresh Models` | 刷新模型列表 |
 | `Copilot Models: Show Latency Stats` | 查看 Provider 延迟统计 |
+| `Copilot Models: Set Token Plan` | 配置预付费令牌套餐 |
+| `Copilot Models: Clear Token Plan` | 删除已配置的令牌套餐 |
 
 ## 调试
 
