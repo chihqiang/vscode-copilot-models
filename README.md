@@ -142,11 +142,12 @@ Available in VS Code settings (search `copilot-models`):
 | :----- | :---------- | :------ |
 | `routingStrategy` | `"failover"` or `"latency"` routing | `"failover"` |
 | `failoverModels` | Primary model → fallback model ID map | `{}` |
-| `maxTokens` | Maximum generated tokens (0 = unlimited) | `0` |
 | `maxImageSize` | Max image input size in bytes | `5242880` |
 | `timeoutMs` | Request timeout in milliseconds | `60000` |
 | `maxRetries` | Maximum retry attempts | `1` |
 | `debugMode` | Log level: `minimal / metadata / verbose` | `minimal` |
+
+> **Note:** The `maxTokens` config has been removed. Each model now automatically uses its own `maxOutputTokens` as the API's `max_tokens` parameter — no manual configuration needed. See the "Output" column in the Supported Models tables above.
 
 ## Commands
 

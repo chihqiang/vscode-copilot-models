@@ -410,11 +410,8 @@ export abstract class BaseChatProvider
       ...(toolChoice ? { tool_choice: toolChoice } : {}),
     };
 
-    const configuredMaxTokens = vscode.workspace
-      .getConfiguration(CONFIG_SECTION)
-      .get<number>("maxTokens", 0);
-    if (configuredMaxTokens > 0) {
-      request.max_tokens = configuredMaxTokens;
+    if (modelDefinition && modelDefinition.maxOutputTokens > 0) {
+      request.max_tokens = modelDefinition.maxOutputTokens;
     }
 
     // If thinking model, add thinking-related parameters

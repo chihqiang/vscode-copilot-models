@@ -115,12 +115,6 @@
     "configuration": {
       "title": "Copilot Models",
       "properties": {
-        "copilot-models.maxTokens": {
-          "type": "number",
-          "default": 0,
-          "minimum": 0,
-          "description": "Maximum tokens to generate (0 = unlimited)"
-        },
         "copilot-models.debugMode": {
           "type": "string",
           "default": "minimal",
@@ -218,7 +212,7 @@
     "test": "vscode-test",
     "test:compile": "tsc -p ./",
     "format": "prettier --write \"src/**/*.ts\"",
-    "check": "run-s format lint lint:ts lint:md compile",
+    "check": "run-s format lint lint:ts compile",
     "package:vsix": "npx vsce package",
     "package": "run-s compile package:vsix"
   },

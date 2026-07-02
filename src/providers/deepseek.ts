@@ -7,6 +7,7 @@ export const deepseekConfig = {
   apiKeyPrompt: "Enter your DeepSeek API Key",
   apiKeyPlaceholder: "sk-xxxxxxxxxxxxxxxxxxxxxxxx",
   supportsThinking: true,
+  thinkingFormat: "thinking_type",
   models: [
     {
       id: "deepseek-v4-flash",
