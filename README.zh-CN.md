@@ -128,11 +128,12 @@
 | :--- | :--- | :----- |
 | `routingStrategy` | 路由策略：`failover` 或 `latency` | `"failover"` |
 | `failoverModels` | 主模型→备用模型 ID 映射 | `{}` |
-| `maxTokens` | 最大生成令牌数（0=无限制） | `0` |
 | `maxImageSize` | 图片输入最大字节数 | `5242880` |
 | `timeoutMs` | API 请求超时（毫秒） | `60000` |
 | `maxRetries` | 最大重试次数 | `1` |
 | `debugMode` | 日志级别：`minimal / metadata / verbose` | `minimal` |
+
+> **注意：** 移除了 `maxTokens` 配置。每个模型自动使用其自身最大输出上限（`maxOutputTokens`）作为 API 的 `max_tokens` 参数，无需手动设置。详见上方"支持的模型"表格中的"输出"列。
 
 ## 命令
 
