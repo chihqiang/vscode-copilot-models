@@ -301,6 +301,7 @@ class ApiClientImpl implements IApiClient {
         model: request.model,
         messages,
         stream: true,
+        stream_options: request.stream_options ?? { include_usage: true },
         ...extraFields,
       };
 
@@ -375,6 +376,17 @@ class ApiClientImpl implements IApiClient {
                 pending.function.arguments += tc.function.arguments;
               }
             }
+          }
+        }
+
+        if (choice.finish_reason) {
+          logger.api.debug(
+            `[${providerName}] finish_reason="${choice.finish_reason}"`,
+          );
+          if (choice.finish_reason === "length") {
+            logger.api.warn(
+              `[${providerName}] Response truncated due to max_tokens limit (finish_reason="length")`,
+            );
           }
         }
 
