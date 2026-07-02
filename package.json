@@ -2,7 +2,7 @@
   "name": "vscode-copilot-models",
   "displayName": "Copilot Models",
   "description": "Unlock third-party large model extensions for GitHub Copilot. Support DeepSeek and more LLMs.",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "publisher": "chihqiang",
   "icon": "resources/icon.png",
   "repository": {
