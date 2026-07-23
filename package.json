@@ -229,6 +229,18 @@
           "type": "string",
           "default": "",
           "description": "Model ID for vision proxy API endpoint"
+        },
+        "copilot-models.visionProxy.timeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 5000,
+          "description": "Vision proxy API request timeout in milliseconds (default: 60000)"
+        },
+        "copilot-models.visionProxy.maxTokens": {
+          "type": "number",
+          "default": 1024,
+          "minimum": 256,
+          "description": "Maximum tokens for vision proxy response (default: 1024)"
         }
       }
     }

@@ -51,6 +51,14 @@ export interface VisionImagePart {
 }
 
 /**
+ * Separated message parts
+ */
+interface MessageParts {
+  imageParts: vscode.LanguageModelDataPart[];
+  textParts: vscode.LanguageModelTextPart[];
+}
+
+/**
  * Vision description request
  */
 export interface VisionDescriptionRequest {
@@ -149,14 +157,14 @@ export class VSCodeLMVisionDescriber implements VisionDescriber {
         `Using vision model: ${model.id} (${model.family}/${model.name})`,
       );
 
-      const imageParts: vscode.LanguageModelDataPart[] = request.images.map(
+      const imageParts = request.images.map(
         (img) => new vscode.LanguageModelDataPart(img.data, img.mimeType),
       );
 
-      const content: (vscode.LanguageModelTextPart | vscode.LanguageModelDataPart)[] = [
-        new vscode.LanguageModelTextPart(prompt),
-        ...imageParts,
-      ];
+      const content: (
+        | vscode.LanguageModelTextPart
+        | vscode.LanguageModelDataPart
+      )[] = [new vscode.LanguageModelTextPart(prompt), ...imageParts];
 
       const messages: vscode.LanguageModelChatMessage[] = [
         vscode.LanguageModelChatMessage.User(content),
@@ -190,6 +198,8 @@ export interface ApiEndpointConfig {
   url: string;
   modelId: string;
   apiKey?: string;
+  maxTokens?: number | undefined;
+  timeoutMs?: number | undefined;
 }
 
 /**
@@ -214,6 +224,13 @@ export class ApiEndpointVisionDescriber implements VisionDescriber {
       throw new Error("API key not configured for vision proxy");
     }
 
+    const controller = new AbortController();
+    const timeoutMs = this.config.timeoutMs ?? 60_000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const cancelListener = request.token.onCancellationRequested(() => {
+      controller.abort();
+    });
+
     try {
       const imageContents = request.images.map((img) => ({
         type: "image_url",
@@ -233,52 +250,52 @@ export class ApiEndpointVisionDescriber implements VisionDescriber {
             ],
           },
         ],
-        max_tokens: 1024,
+        max_tokens: this.config.maxTokens ?? 1024,
       };
 
       logger.vision.debug(
-        `Sending vision request to ${this.config.url}, model: ${this.config.modelId}`,
+        `Sending vision request to ${this.config.url}, model: ${this.config.modelId}, timeout: ${timeoutMs}ms`,
       );
 
-      const controller = new AbortController();
-      const cancelListener = request.token.onCancellationRequested(() => {
-        controller.abort();
+      const response = await fetch(`${this.config.url}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
       });
 
-      try {
-        const response = await fetch(`${this.config.url}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(
-            `Vision API request failed: ${response.status} ${errorText}`,
-          );
-        }
-
-        const result = (await response.json()) as {
-          choices?: Array<{ message?: { content?: string } }>;
-        };
-        const description = result.choices?.[0]?.message?.content || "";
-
-        logger.vision.debug(
-          `Vision description generated: ${description.length} chars`,
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        throw new Error(
+          `Vision API request failed: ${response.status} ${errorText}`,
         );
-
-        return description.trim();
-      } finally {
-        cancelListener.dispose();
       }
+
+      const result = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const description = result.choices?.[0]?.message?.content || "";
+
+      logger.vision.debug(
+        `Vision description generated: ${description.length} chars`,
+      );
+
+      return description.trim();
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        if (request.token.isCancellationRequested) {
+          throw new Error("Vision request cancelled");
+        }
+        throw new Error(`Vision API request timed out after ${timeoutMs}ms`);
+      }
       logger.vision.error("Failed to generate vision description:", error);
       throw error;
+    } finally {
+      clearTimeout(timeout);
+      cancelListener.dispose();
     }
   }
 
@@ -301,7 +318,9 @@ export class VisionService {
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (
           e.affectsConfiguration(`${CONFIG_SECTION}.visionModel`) ||
-          e.affectsConfiguration(`${CONFIG_SECTION}.visionPrompt`)
+          e.affectsConfiguration(`${CONFIG_SECTION}.visionPrompt`) ||
+          e.affectsConfiguration(`${CONFIG_SECTION}.visionProxy.apiUrl`) ||
+          e.affectsConfiguration(`${CONFIG_SECTION}.visionProxy.apiModelId`)
         ) {
           this.reset();
         }
@@ -326,13 +345,20 @@ export class VisionService {
     const visionModelId = config.get<string>("visionModel");
 
     if (visionModelId) {
-      if (visionModelId.startsWith("api:")) {
+      if (visionModelId === "api:endpoint") {
         const apiUrl = config.get<string>("visionProxy.apiUrl");
         const apiModelId = config.get<string>("visionProxy.apiModelId");
+        const apiTimeoutMs = config.get<number>("visionProxy.timeoutMs");
+        const apiMaxTokens = config.get<number>("visionProxy.maxTokens");
 
         if (apiUrl && apiModelId) {
           this.describer = new ApiEndpointVisionDescriber(
-            { url: apiUrl, modelId: apiModelId },
+            {
+              url: apiUrl,
+              modelId: apiModelId,
+              timeoutMs: apiTimeoutMs,
+              maxTokens: apiMaxTokens,
+            },
             this.context.secrets,
           );
           return this.describer;
@@ -395,6 +421,14 @@ export function getVisionPrompt(): string {
   return config.get<string>("visionPrompt") || DEFAULT_VISION_PROMPT;
 }
 
+/**
+ * Get the configured max image size
+ */
+function getMaxImageSize(): number {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  return config.get<number>("maxImageSize") ?? 20 * 1024 * 1024;
+}
+
 // ── Image Resolution ────────────────────────────────────────
 
 /**
@@ -435,8 +469,9 @@ export async function resolveImageMessages(
   let initialResponseNotice: string | undefined;
 
   for (const [index, message] of messages.entries()) {
-    const imageParts = getImageParts(message);
-    if (imageParts.length === 0) {
+    const parts = separateMessageParts(message);
+
+    if (parts.imageParts.length === 0) {
       result.push(message);
       continue;
     }
@@ -448,29 +483,22 @@ export async function resolveImageMessages(
         const prompt = getVisionPrompt();
         const description = await describer.describe({
           prompt,
-          images: imageParts.map(toVisionImagePart),
+          images: parts.imageParts.map(toVisionImagePart),
           token,
         });
 
         if (description.length > 0) {
           stats.generatedImageMessages += 1;
           const visionText = createImageDescriptionText(description);
-          const nonImageParts = getNonImageParts(message);
-          const textContent =
-            nonImageParts.length > 0
-              ? nonImageParts
-                  .map((p) =>
-                    p instanceof vscode.LanguageModelTextPart ? p.value : "",
-                  )
-                  .join("")
-              : "";
+          const textContent = concatenateTextParts(parts.textParts);
           const combinedText = textContent
             ? `${textContent}\n\n${visionText}`
             : visionText;
 
-          const content: (vscode.LanguageModelTextPart | vscode.LanguageModelDataPart)[] = [
-            new vscode.LanguageModelTextPart(combinedText),
-          ];
+          const content: (
+            | vscode.LanguageModelTextPart
+            | vscode.LanguageModelDataPart
+          )[] = [new vscode.LanguageModelTextPart(combinedText)];
           const newMessage = vscode.LanguageModelChatMessage.User(content);
           result.push(newMessage);
 
@@ -487,10 +515,10 @@ export async function resolveImageMessages(
         result.push(message);
       }
 
-      stats.droppedImageParts += imageParts.length;
+      stats.droppedImageParts += parts.imageParts.length;
     } else {
       stats.omittedImageMessages += 1;
-      stats.droppedImageParts += imageParts.length;
+      stats.droppedImageParts += parts.imageParts.length;
       result.push(message);
     }
   }
@@ -517,17 +545,54 @@ function createVisionResolutionStats(): VisionResolutionStats {
   };
 }
 
+/**
+ * Separate message parts into image and text parts (single pass)
+ */
+function separateMessageParts(
+  message: vscode.LanguageModelChatRequestMessage,
+): MessageParts {
+  const imageParts: vscode.LanguageModelDataPart[] = [];
+  const textParts: vscode.LanguageModelTextPart[] = [];
+
+  const content = message.content as
+    | readonly vscode.LanguageModelInputPart[]
+    | undefined;
+
+  if (!content) {
+    return { imageParts, textParts };
+  }
+
+  for (const part of content) {
+    if (part instanceof vscode.LanguageModelDataPart) {
+      if (part.mimeType.startsWith("image/")) {
+        const maxImageSize = getMaxImageSize();
+        if (part.data.length <= maxImageSize) {
+          imageParts.push(part);
+        } else {
+          logger.vision.warn(
+            `Image too large: ${part.data.length} bytes (max: ${maxImageSize})`,
+          );
+        }
+      }
+    } else if (part instanceof vscode.LanguageModelTextPart) {
+      textParts.push(part);
+    }
+  }
+
+  return { imageParts, textParts };
+}
+
 function collectInputImageStats(
   messages: readonly vscode.LanguageModelChatRequestMessage[],
   stats: VisionResolutionStats,
 ): void {
   for (const message of messages) {
-    const imageParts = getImageParts(message).length;
-    if (imageParts === 0) {
+    const parts = separateMessageParts(message);
+    if (parts.imageParts.length === 0) {
       continue;
     }
     stats.inputImageMessages += 1;
-    stats.inputImageParts += imageParts;
+    stats.inputImageParts += parts.imageParts.length;
   }
 }
 
@@ -542,38 +607,16 @@ function findCurrentImageMessageIndex(
     if (message.role !== vscode.LanguageModelChatMessageRole.User) {
       continue;
     }
-    if (getImageParts(message).length > 0) {
+    const parts = separateMessageParts(message);
+    if (parts.imageParts.length > 0) {
       return index;
     }
   }
   return undefined;
 }
 
-function getImageParts(
-  message: vscode.LanguageModelChatRequestMessage,
-): vscode.LanguageModelDataPart[] {
-  return (
-    (message.content as readonly vscode.LanguageModelInputPart[])?.filter(
-      isImageDataPart,
-    ) ?? []
-  );
-}
-
-function getNonImageParts(
-  message: vscode.LanguageModelChatRequestMessage,
-): vscode.LanguageModelInputPart[] {
-  return (
-    (message.content as readonly vscode.LanguageModelInputPart[])?.filter(
-      (part) => !isImageDataPart(part),
-    ) ?? []
-  );
-}
-
-function isImageDataPart(part: unknown): part is vscode.LanguageModelDataPart {
-  return (
-    part instanceof vscode.LanguageModelDataPart &&
-    part.mimeType.startsWith("image/")
-  );
+function concatenateTextParts(parts: vscode.LanguageModelTextPart[]): string {
+  return parts.map((p) => p.value).join("");
 }
 
 function toVisionImagePart(part: vscode.LanguageModelDataPart): VisionImagePart {
