@@ -62,7 +62,7 @@ class CopilotModelsExtension {
       registerAllCommands(context, this.modelRouter);
 
       context.subscriptions.push(
-        vscode.workspace.onDidChangeConfiguration(async (e) => {
+        vscode.workspace.onDidChangeConfiguration((e) => {
           if (!e.affectsConfiguration("copilot-models")) {
             return;
           }
@@ -72,32 +72,21 @@ class CopilotModelsExtension {
             logger.core.info(`Log level updated to: ${logger.level}`);
           }
 
-          const allFactories = ProviderModels.getInstance().getAllFactories();
-          let routerChanged = false;
-
-          for (const factory of allFactories) {
-            const isNowEnabled = factory.isEnabled();
-            const isCurrentlyRegistered =
-              this.modelRouter?.hasProvider(factory.providerId) ?? false;
-
-            if (isNowEnabled && !isCurrentlyRegistered) {
-              logger.core.info(
-                `Config changed: enabling provider "${factory.providerId}"`,
-              );
-              this.registerProvider(factory, context);
-              routerChanged = true;
-            } else if (!isNowEnabled && isCurrentlyRegistered) {
-              logger.core.info(
-                `Config changed: disabling provider "${factory.providerId}"`,
-              );
-              await this.unregisterProvider(factory.providerId);
-              routerChanged = true;
-            }
+          // Invalidate routing config cache so failoverModels /
+          // routingStrategy changes take effect immediately
+          if (
+            e.affectsConfiguration("copilot-models.failoverModels") ||
+            e.affectsConfiguration("copilot-models.routingStrategy")
+          ) {
+            this.modelRouter?.invalidateConfigCache();
           }
 
-          if (routerChanged && this.modelRouter) {
-            this.modelRouter.refreshModelPicker();
-          }
+          this.handleProviderConfigChange(e, context).catch((error) => {
+            logger.core.error(
+              "Failed to handle configuration change:",
+              error,
+            );
+          });
         }),
       );
 
@@ -174,6 +163,38 @@ class CopilotModelsExtension {
 
     ProviderModels.getInstance().unregisterProvider(providerId);
     logger.core.debug(`Provider "${providerId}" unregistered`);
+  }
+
+  private async handleProviderConfigChange(
+    _e: vscode.ConfigurationChangeEvent,
+    context: vscode.ExtensionContext,
+  ): Promise<void> {
+    const allFactories = ProviderModels.getInstance().getAllFactories();
+    let routerChanged = false;
+
+    for (const factory of allFactories) {
+      const isNowEnabled = factory.isEnabled();
+      const isCurrentlyRegistered =
+        this.modelRouter?.hasProvider(factory.providerId) ?? false;
+
+      if (isNowEnabled && !isCurrentlyRegistered) {
+        logger.core.info(
+          `Config changed: enabling provider "${factory.providerId}"`,
+        );
+        this.registerProvider(factory, context);
+        routerChanged = true;
+      } else if (!isNowEnabled && isCurrentlyRegistered) {
+        logger.core.info(
+          `Config changed: disabling provider "${factory.providerId}"`,
+        );
+        await this.unregisterProvider(factory.providerId);
+        routerChanged = true;
+      }
+    }
+
+    if (routerChanged && this.modelRouter) {
+      this.modelRouter.refreshModelPicker();
+    }
   }
 }
 

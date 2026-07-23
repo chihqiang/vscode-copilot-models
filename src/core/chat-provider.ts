@@ -774,9 +774,13 @@ export abstract class BaseChatProvider
       total_tokens: number;
     }) => void,
   ): StreamCallbacks {
-    let content = "";
-    let thinking = "";
-    let toolCalls: { name: string; args: string }[] = [];
+    // Only accumulate full content for debug logging; skip in production to save memory
+    const shouldLogDebug = logger.shouldLog("debug");
+    let content = shouldLogDebug ? "" : undefined;
+    let thinking = shouldLogDebug ? "" : undefined;
+    let toolCalls = shouldLogDebug
+      ? [] as { name: string; args: string }[]
+      : undefined;
     let finalUsage: {
       prompt_tokens: number;
       completion_tokens: number;
@@ -785,20 +789,26 @@ export abstract class BaseChatProvider
 
     return {
       onContent: (text: string) => {
-        content += text;
+        if (content !== undefined) {
+          content += text;
+        }
         progress.report(new vscode.LanguageModelTextPart(text));
       },
       onThinking: (text: string) => {
-        thinking += text;
+        if (thinking !== undefined) {
+          thinking += text;
+        }
         BaseChatProvider.reportThinkingPart(progress, text);
       },
       onToolCall: (toolCall) => {
         try {
           const args = JSON.parse(toolCall.function.arguments);
-          toolCalls.push({
-            name: toolCall.function.name,
-            args: JSON.stringify(args),
-          });
+          if (toolCalls) {
+            toolCalls.push({
+              name: toolCall.function.name,
+              args: JSON.stringify(args),
+            });
+          }
           progress.report(
             new vscode.LanguageModelToolCallPart(
               toolCall.id,
@@ -807,10 +817,12 @@ export abstract class BaseChatProvider
             ),
           );
         } catch {
-          toolCalls.push({
-            name: toolCall.function.name,
-            args: toolCall.function.arguments,
-          });
+          if (toolCalls) {
+            toolCalls.push({
+              name: toolCall.function.name,
+              args: toolCall.function.arguments,
+            });
+          }
           progress.report(
             new vscode.LanguageModelToolCallPart(
               toolCall.id,
@@ -834,22 +846,22 @@ export abstract class BaseChatProvider
         throw error;
       },
       onDone: () => {
-        // Log full response content
+        // Log full response content (debug only)
         if (content) {
           logger.stream.debug(
             `[${this.providerId}] === Response Content ===\n${content}`,
           );
         }
 
-        // Log thinking content
+        // Log thinking content (debug only)
         if (thinking) {
           logger.stream.debug(
             `[${this.providerId}] === Thinking Content ===\n${thinking}`,
           );
         }
 
-        // Log tool calls
-        if (toolCalls.length > 0) {
+        // Log tool calls (debug only)
+        if (toolCalls && toolCalls.length > 0) {
           logger.stream.debug(
             `[${this.providerId}] === Tool Calls (${toolCalls.length}) ===`,
           );
@@ -858,7 +870,7 @@ export abstract class BaseChatProvider
           }
         }
 
-        // Log token usage statistics
+        // Log token usage statistics and invoke usage callback
         if (finalUsage) {
           logger.stream.debug(
             `[${this.providerId}] === Token Usage ===\n` +

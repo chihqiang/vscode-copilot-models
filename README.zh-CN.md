@@ -8,6 +8,7 @@
 - **模型路由**: 自动故障转移和延迟感知路由
 - **工具调用**: 支持 Copilot Chat 工具调用功能
 - **思考模式**: 支持模型的思考/推理模式
+- **视觉代理**: 通过 VS Code 内置模型或自定义 API 为不支持图片输入的模型提供图像描述代理
 - **熔断保护**: 自动失败保护与重试机制
 - **安全认证**: API 密钥安全存储在 VS Code SecretStorage
 - **日志调试**: 4 级日志系统，支持热重载
@@ -54,7 +55,21 @@
 
 运行 `Copilot Models: Clear Token Plan` 可删除已配置的套餐。
 
-### 4. 开始使用
+### 4. (可选) 配置视觉模型
+
+如果你想在不原生支持图片输入的模型（如 GLM-5 系列、Qwen3.7 Max）中使用图片附件，
+可以配置视觉代理，自动将图片转换为文字描述：
+
+1. 按 `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`)，运行 `Copilot Models: Set Vision Model`
+2. 从列表中选择支持视觉的模型，或选择 "Custom API Endpoint"
+3. 如果选择自定义 API 端点，输入 URL 和模型 ID
+
+视觉代理会在发送消息前先将图片描述为文字，再传递给聊天模型。
+自定义 API 端点需支持 OpenAI 兼容的 `/chat/completions` 接口。
+
+运行 `Copilot Models: Clear Vision Model` 可清除配置。
+
+### 5. 开始使用
 
 1. 打开 GitHub Copilot Chat 面板
 2. 点击模型选择器
@@ -65,31 +80,34 @@
 
 ### 通义千问 (Alibaba Cloud)
 
-| 模型 | 上下文 | 输出 | 工具调用 | 思考模式 |
-| :----- | :------: | :----: | :--------: | :--------: |
-| Qwen3.7 Max | 1M | 64K | ✅ | ✅ |
-| Qwen3.7 Plus | 1M | 64K | ✅ | ✅ |
-| Qwen3.6 Flash | 1M | 64K | ✅ | ✅ |
-| Qwen3.6 Plus | 128K | 64K | ✅ | ✅ |
-| Qwen3 Max | 128K | 64K | ✅ | ✅ |
-| Qwen3.5 Flash | 128K | 64K | ✅ | ✅ |
+| 模型 | 上下文 | 输出 | 工具调用 | 图片输入 | 思考模式 |
+| :----- | :------: | :----: | :--------: | :------: | :--------: |
+| Qwen3.7 Max | 1M | 64K | ✅ | ❌ | ✅ |
+| Qwen3.7 Plus | 1M | 64K | ✅ | ✅ | ✅ |
+| Qwen3.6 Flash | 1M | 64K | ✅ | ✅ | ✅ |
+| Qwen3.6 Plus | 128K | 64K | ✅ | ✅ | ✅ |
+| Qwen3 Max | 128K | 64K | ✅ | ✅ | ✅ |
+| Qwen3.5 Flash | 128K | 64K | ✅ | ✅ | ✅ |
 
 ### DeepSeek
 
-| 模型 | 说明 | 工具调用 | 思考模式 |
-| :----- | :----- | :--------: | :--------: |
-| DeepSeek V4 Flash | 快速响应，支持工具调用 | ✅ | ✅ |
-| DeepSeek V4 Pro | 深度思考，更强推理能力 | ✅ | ✅ |
+| 模型 | 上下文 | 输出 | 工具调用 | 图片输入 | 思考模式 |
+| :----- | :------: | :----: | :--------: | :------: | :--------: |
+| DeepSeek V4 Flash | 640K | 384K | ✅ | ✅ | ✅ |
+| DeepSeek V4 Pro | 640K | 384K | ✅ | ✅ | ✅ |
 
 ### 智谱 AI (BigModel)
 
-| 模型 | 上下文 | 输出 | 工具调用 | 思考模式 |
-| :----- | :------: | :----: | :--------: | :--------: |
-| GLM-5.2 | 1M | 128K | ✅ | ✅ |
-| GLM-5.1 | 200K | 128K | ✅ | ✅ |
-| GLM-5-Turbo | 200K | 128K | ✅ | ✅ |
-| GLM-5 | 200K | 128K | ✅ | ✅ |
-| GLM-4.7-Flash | 128K | 16K | ✅ | ❌ |
+| 模型 | 上下文 | 输出 | 工具调用 | 图片输入 | 思考模式 |
+| :----- | :------: | :----: | :--------: | :------: | :--------: |
+| GLM-5.2 | 1M | 128K | ✅ | ❌ | ✅ |
+| GLM-5.1 | 200K | 128K | ✅ | ❌ | ✅ |
+| GLM-5-Turbo | 200K | 128K | ✅ | ❌ | ✅ |
+| GLM-5 | 200K | 128K | ✅ | ❌ | ✅ |
+| GLM-4.7-Flash | 128K | 16K | ✅ | ❌ | ❌ |
+
+> **提示：** 图片输入标记为 ❌ 的模型仍可通过视觉代理功能处理图片
+> （见快速开始第 4 步）。
 
 ### 令牌套餐覆盖范围
 
@@ -120,7 +138,6 @@
 | :--- | :--- | :----- |
 | `<provider>.enabled` | 启用该 provider | `true` |
 | `<provider>.baseUrl` | API 基础地址（如 `deepseek.baseUrl`） | 各 provider 不同 |
-| `<provider>.modelIdOverrides` | 将内部模型 ID 映射为自定义 API 模型名 | `{}` |
 
 ### 全局设置
 
@@ -128,12 +145,26 @@
 | :--- | :--- | :----- |
 | `routingStrategy` | 路由策略：`failover` 或 `latency` | `"failover"` |
 | `failoverModels` | 主模型→备用模型 ID 映射 | `{}` |
-| `maxImageSize` | 图片输入最大字节数 | `5242880` |
+| `modelIdOverrides` | 将内部模型 ID 映射为自定义 API 模型名 | `{}` |
+| `maxImageSize` | 图片输入最大字节数（0 = 禁用） | `20971520` (20MB) |
 | `timeoutMs` | API 请求超时（毫秒） | `60000` |
 | `maxRetries` | 最大重试次数 | `1` |
 | `debugMode` | 日志级别：`minimal / metadata / verbose` | `minimal` |
 
-> **注意：** 移除了 `maxTokens` 配置。每个模型自动使用其自身最大输出上限（`maxOutputTokens`）作为 API 的 `max_tokens` 参数，无需手动设置。详见上方"支持的模型"表格中的"输出"列。
+### 视觉代理设置
+
+| 配置 | 说明 | 默认值 |
+| :--- | :--- | :----- |
+| `visionModel` | 视觉模型 ID（留空自动检测） | `""` |
+| `visionPrompt` | 视觉代理图片描述提示词 | `"Describe all image..."` |
+| `visionProxy.apiUrl` | 视觉代理 API 端点 URL（OpenAI 兼容） | `""` |
+| `visionProxy.apiModelId` | 视觉代理 API 模型 ID | `""` |
+| `visionProxy.timeoutMs` | 视觉代理请求超时（毫秒） | `60000` |
+| `visionProxy.maxTokens` | 视觉代理响应最大 token 数 | `1024` |
+
+> **注意：** 移除了 `maxTokens` 配置。每个模型自动使用其自身最大输出上限
+> （`maxOutputTokens`）作为 API 的 `max_tokens` 参数，无需手动设置。
+> 详见上方"支持的模型"表格中的"输出"列。
 
 ## 命令
 
@@ -148,6 +179,8 @@
 | `Copilot Models: Show Latency Stats` | 查看 Provider 延迟统计 |
 | `Copilot Models: Set Token Plan` | 配置预付费令牌套餐 |
 | `Copilot Models: Clear Token Plan` | 删除已配置的令牌套餐 |
+| `Copilot Models: Set Vision Model` | 配置视觉代理用于图片描述 |
+| `Copilot Models: Clear Vision Model` | 清除视觉代理配置 |
 
 ## 调试
 

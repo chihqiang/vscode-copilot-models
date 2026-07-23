@@ -432,6 +432,64 @@ function getMaxImageSize(): number {
 // ── Image Resolution ────────────────────────────────────────
 
 /**
+ * Pre-computed message parts for a conversation (avoids redundant separation)
+ */
+interface ResolvedMessage {
+  message: vscode.LanguageModelChatRequestMessage;
+  parts: MessageParts;
+}
+
+/**
+ * Separate message parts into image and text parts (single pass)
+ */
+function separateMessageParts(
+  message: vscode.LanguageModelChatRequestMessage,
+  maxImageSize: number,
+): MessageParts {
+  const imageParts: vscode.LanguageModelDataPart[] = [];
+  const textParts: vscode.LanguageModelTextPart[] = [];
+
+  const content = message.content as
+    | readonly vscode.LanguageModelInputPart[]
+    | undefined;
+
+  if (!content) {
+    return { imageParts, textParts };
+  }
+
+  for (const part of content) {
+    if (part instanceof vscode.LanguageModelDataPart) {
+      if (part.mimeType.startsWith("image/")) {
+        if (part.data.length <= maxImageSize) {
+          imageParts.push(part);
+        } else {
+          logger.vision.warn(
+            `Image too large: ${part.data.length} bytes (max: ${maxImageSize})`,
+          );
+        }
+      }
+    } else if (part instanceof vscode.LanguageModelTextPart) {
+      textParts.push(part);
+    }
+  }
+
+  return { imageParts, textParts };
+}
+
+/**
+ * Pre-separate all message parts in a single pass, reading maxImageSize once.
+ */
+function resolveAllMessageParts(
+  messages: readonly vscode.LanguageModelChatRequestMessage[],
+): ResolvedMessage[] {
+  const maxImageSize = getMaxImageSize();
+  return messages.map((message) => ({
+    message,
+    parts: separateMessageParts(message, maxImageSize),
+  }));
+}
+
+/**
  * Resolve image messages in a conversation
  * Converts image parts to text descriptions using the vision proxy
  */
@@ -441,13 +499,24 @@ export async function resolveImageMessages(
   visionService: VisionService,
 ): Promise<VisionResolutionResult> {
   const stats = createVisionResolutionStats();
-  collectInputImageStats(messages, stats);
+
+  // Pre-separate all message parts once (reads config only once)
+  const resolved = resolveAllMessageParts(messages);
+
+  // Collect input stats from pre-computed parts
+  for (const entry of resolved) {
+    if (entry.parts.imageParts.length === 0) {
+      continue;
+    }
+    stats.inputImageMessages += 1;
+    stats.inputImageParts += entry.parts.imageParts.length;
+  }
 
   if (stats.inputImageParts === 0) {
     return { messages, stats };
   }
 
-  const currentImageMessageIndex = findCurrentImageMessageIndex(messages);
+  const currentImageMessageIndex = findCurrentImageMessageIndexFromResolved(resolved);
   if (currentImageMessageIndex === undefined) {
     return { messages, stats };
   }
@@ -468,8 +537,8 @@ export async function resolveImageMessages(
   let visionProxySource: VisionProxySource | undefined;
   let initialResponseNotice: string | undefined;
 
-  for (const [index, message] of messages.entries()) {
-    const parts = separateMessageParts(message);
+  for (const [index, entry] of resolved.entries()) {
+    const { message, parts } = entry;
 
     if (parts.imageParts.length === 0) {
       result.push(message);
@@ -546,69 +615,21 @@ function createVisionResolutionStats(): VisionResolutionStats {
 }
 
 /**
- * Separate message parts into image and text parts (single pass)
+ * Find the index of the current (latest) user message containing images,
+ * using pre-computed resolved parts to avoid redundant separation.
  */
-function separateMessageParts(
-  message: vscode.LanguageModelChatRequestMessage,
-): MessageParts {
-  const imageParts: vscode.LanguageModelDataPart[] = [];
-  const textParts: vscode.LanguageModelTextPart[] = [];
-
-  const content = message.content as
-    | readonly vscode.LanguageModelInputPart[]
-    | undefined;
-
-  if (!content) {
-    return { imageParts, textParts };
-  }
-
-  for (const part of content) {
-    if (part instanceof vscode.LanguageModelDataPart) {
-      if (part.mimeType.startsWith("image/")) {
-        const maxImageSize = getMaxImageSize();
-        if (part.data.length <= maxImageSize) {
-          imageParts.push(part);
-        } else {
-          logger.vision.warn(
-            `Image too large: ${part.data.length} bytes (max: ${maxImageSize})`,
-          );
-        }
-      }
-    } else if (part instanceof vscode.LanguageModelTextPart) {
-      textParts.push(part);
-    }
-  }
-
-  return { imageParts, textParts };
-}
-
-function collectInputImageStats(
-  messages: readonly vscode.LanguageModelChatRequestMessage[],
-  stats: VisionResolutionStats,
-): void {
-  for (const message of messages) {
-    const parts = separateMessageParts(message);
-    if (parts.imageParts.length === 0) {
-      continue;
-    }
-    stats.inputImageMessages += 1;
-    stats.inputImageParts += parts.imageParts.length;
-  }
-}
-
-function findCurrentImageMessageIndex(
-  messages: readonly vscode.LanguageModelChatRequestMessage[],
+function findCurrentImageMessageIndexFromResolved(
+  resolved: ResolvedMessage[],
 ): number | undefined {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index];
-    if (message.role === vscode.LanguageModelChatMessageRole.Assistant) {
+  for (let index = resolved.length - 1; index >= 0; index--) {
+    const entry = resolved[index];
+    if (entry.message.role === vscode.LanguageModelChatMessageRole.Assistant) {
       return undefined;
     }
-    if (message.role !== vscode.LanguageModelChatMessageRole.User) {
+    if (entry.message.role !== vscode.LanguageModelChatMessageRole.User) {
       continue;
     }
-    const parts = separateMessageParts(message);
-    if (parts.imageParts.length > 0) {
+    if (entry.parts.imageParts.length > 0) {
       return index;
     }
   }

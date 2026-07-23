@@ -30,25 +30,44 @@ function safeAsync(name: string, fn: () => Promise<void>): () => Promise<void> {
   };
 }
 
+/**
+ * Register a command and add its disposable to context.subscriptions
+ * so it is properly cleaned up on extension deactivation.
+ */
+function registerCommand(
+  context: vscode.ExtensionContext,
+  command: string,
+  callback: (...args: unknown[]) => unknown,
+): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      command,
+      callback as (...args: unknown[]) => void,
+    ),
+  );
+}
+
 export function registerAllCommands(
-  _context: vscode.ExtensionContext,
+  context: vscode.ExtensionContext,
   modelRouter: ModelRouter,
 ): void {
   // ── API Key ───────────────────────────────────────
 
-  vscode.commands.registerCommand(
+  registerCommand(
+    context,
     "copilot-models.setApiKey",
     safeAsync("setApiKey", openSetApiKeyWizard),
   );
 
-  vscode.commands.registerCommand(
+  registerCommand(
+    context,
     "copilot-models.clearApiKey",
     safeAsync("clearApiKey", openClearApiKeyWizard),
   );
 
   // ── Settings & Logging ────────────────────────────
 
-  vscode.commands.registerCommand("copilot-models.openSettings", () => {
+  registerCommand(context, "copilot-models.openSettings", () => {
     logger.core.info("openSettings command invoked");
     vscode.commands.executeCommand(
       "workbench.action.openSettings",
@@ -56,19 +75,20 @@ export function registerAllCommands(
     );
   });
 
-  vscode.commands.registerCommand("copilot-models.showLog", () => {
+  registerCommand(context, "copilot-models.showLog", () => {
     logger.core.info("showLog command invoked");
     logger.show();
   });
 
-  vscode.commands.registerCommand("copilot-models.clearLog", () => {
+  registerCommand(context, "copilot-models.clearLog", () => {
     logger.core.info("clearLog command invoked");
     logger.clear();
   });
 
   // ── Models ────────────────────────────────────────
 
-  vscode.commands.registerCommand(
+  registerCommand(
+    context,
     "copilot-models.refreshModels",
     safeAsync("refreshModels", async () => {
       logger.core.info("refreshModels command invoked");
@@ -79,19 +99,21 @@ export function registerAllCommands(
 
   // ── Token Plan ────────────────────────────────────
 
-  vscode.commands.registerCommand(
+  registerCommand(
+    context,
     "copilot-models.setTokenPlan",
     safeAsync("setTokenPlan", openSetTokenPlanWizard),
   );
 
-  vscode.commands.registerCommand(
+  registerCommand(
+    context,
     "copilot-models.clearTokenPlan",
     safeAsync("clearTokenPlan", openClearTokenPlanWizard),
   );
 
   // ── Latency Stats ─────────────────────────────────
 
-  vscode.commands.registerCommand("copilot-models.showLatencyStats", () => {
+  registerCommand(context, "copilot-models.showLatencyStats", () => {
     const stats = modelRouter.latencyTracker.getAllStats();
     if (stats.size === 0) {
       vscode.window.showInformationMessage("No latency data available");
@@ -109,12 +131,14 @@ export function registerAllCommands(
 
   // ── Vision Model ─────────────────────────────────
 
-  vscode.commands.registerCommand(
+  registerCommand(
+    context,
     "copilot-models.setVisionModel",
     safeAsync("setVisionModel", openSetVisionModelWizard),
   );
 
-  vscode.commands.registerCommand(
+  registerCommand(
+    context,
     "copilot-models.clearVisionModel",
     safeAsync("clearVisionModel", openClearVisionModelWizard),
   );
