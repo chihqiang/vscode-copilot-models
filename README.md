@@ -12,6 +12,8 @@ One-click switching and native panel compatibility.
 - **Model Routing**: Automatic failover and latency-based routing
 - **Tool Calling**: Full Copilot Chat tool calling support
 - **Thinking Mode**: Model reasoning/thinking mode support
+- **Vision Proxy**: Image description proxy for non-vision models
+  via VS Code LM or custom API
 - **Circuit Breaker**: Automatic failure protection with retry
 - **Secure Authentication**: API keys stored in VS Code SecretStorage
 - **Log Debugging**: 4-level logging with hot-reload
@@ -67,7 +69,23 @@ For other providers, choose "Custom URL" and enter the plan API endpoint.
 
 Run `Copilot Models: Clear Token Plan` to remove a configured plan.
 
-### 4. Start Using
+### 4. (Optional) Configure Vision Model
+
+If you want to use image attachments with models that don't natively support
+image input (e.g., GLM-5 series, Qwen3.7 Max), configure a vision proxy to
+automatically convert images to text descriptions:
+
+1. Press `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`), run
+   `Copilot Models: Set Vision Model`
+2. Select a vision-capable model, or choose "Custom API Endpoint"
+3. For custom API endpoint, enter the URL and model ID
+
+The vision proxy describes images before sending them to the chat model.
+For custom API endpoints, an OpenAI-compatible `/chat/completions` endpoint is required.
+
+Run `Copilot Models: Clear Vision Model` to remove the configuration.
+
+### 5. Start Using
 
 1. Open GitHub Copilot Chat panel
 2. Click on the model selector
@@ -78,31 +96,34 @@ Run `Copilot Models: Clear Token Plan` to remove a configured plan.
 
 ### Qwen (Alibaba Cloud)
 
-| Model | Context | Output | Tool Calling | Thinking Mode |
-| :----- | :------: | :----: | :--------: | :--------: |
-| Qwen3.7 Max | 1M | 64K | ✅ | ✅ |
-| Qwen3.7 Plus | 1M | 64K | ✅ | ✅ |
-| Qwen3.6 Flash | 1M | 64K | ✅ | ✅ |
-| Qwen3.6 Plus | 128K | 64K | ✅ | ✅ |
-| Qwen3 Max | 128K | 64K | ✅ | ✅ |
-| Qwen3.5 Flash | 128K | 64K | ✅ | ✅ |
+| Model | Context | Output | Tool Calling | Image Input | Thinking Mode |
+| :----- | :------: | :----: | :--------: | :---------: | :--------: |
+| Qwen3.7 Max | 1M | 64K | ✅ | ❌ | ✅ |
+| Qwen3.7 Plus | 1M | 64K | ✅ | ✅ | ✅ |
+| Qwen3.6 Flash | 1M | 64K | ✅ | ✅ | ✅ |
+| Qwen3.6 Plus | 128K | 64K | ✅ | ✅ | ✅ |
+| Qwen3 Max | 128K | 64K | ✅ | ✅ | ✅ |
+| Qwen3.5 Flash | 128K | 64K | ✅ | ✅ | ✅ |
 
 ### DeepSeek
 
-| Model | Description | Tool Calling | Thinking Mode |
-| :----- | :----- | :--------: | :--------: |
-| DeepSeek V4 Flash | Fast response, supports tool calling | ✅ | ✅ |
-| DeepSeek V4 Pro | Deep thinking, stronger reasoning | ✅ | ✅ |
+| Model | Context | Output | Tool Calling | Image Input | Thinking Mode |
+| :----- | :------: | :----: | :--------: | :---------: | :--------: |
+| DeepSeek V4 Flash | 640K | 384K | ✅ | ✅ | ✅ |
+| DeepSeek V4 Pro | 640K | 384K | ✅ | ✅ | ✅ |
 
 ### Zhipu AI (BigModel)
 
-| Model | Context | Output | Tool Calling | Thinking Mode |
-| :----- | :------: | :----: | :--------: | :--------: |
-| GLM-5.2 | 1M | 128K | ✅ | ✅ |
-| GLM-5.1 | 200K | 128K | ✅ | ✅ |
-| GLM-5-Turbo | 200K | 128K | ✅ | ✅ |
-| GLM-5 | 200K | 128K | ✅ | ✅ |
-| GLM-4.7-Flash | 128K | 16K | ✅ | ❌ |
+| Model | Context | Output | Tool Calling | Image Input | Thinking Mode |
+| :----- | :------: | :----: | :--------: | :---------: | :--------: |
+| GLM-5.2 | 1M | 128K | ✅ | ❌ | ✅ |
+| GLM-5.1 | 200K | 128K | ✅ | ❌ | ✅ |
+| GLM-5-Turbo | 200K | 128K | ✅ | ❌ | ✅ |
+| GLM-5 | 200K | 128K | ✅ | ❌ | ✅ |
+| GLM-4.7-Flash | 128K | 16K | ✅ | ❌ | ❌ |
+
+> **Tip:** Models marked with ❌ for Image Input can still handle images
+> through the Vision Proxy feature (see Quick Start step 4).
 
 ### Token Plan Coverage
 
@@ -134,7 +155,6 @@ Available in VS Code settings (search `copilot-models`):
 | :----- | :---------- | :------ |
 | `<provider>.enabled` | Enable this provider | `true` |
 | `<provider>.baseUrl` | API base URL (e.g. `deepseek.baseUrl`) | per provider |
-| `<provider>.modelIdOverrides` | Map model IDs to custom API names | `{}` |
 
 ### Global Settings
 
@@ -142,12 +162,27 @@ Available in VS Code settings (search `copilot-models`):
 | :----- | :---------- | :------ |
 | `routingStrategy` | `"failover"` or `"latency"` routing | `"failover"` |
 | `failoverModels` | Primary model → fallback model ID map | `{}` |
-| `maxImageSize` | Max image input size in bytes | `5242880` |
+| `modelIdOverrides` | Map model IDs to custom API names | `{}` |
+| `maxImageSize` | Max image size in bytes (0 = disabled) | `20971520` (20MB) |
 | `timeoutMs` | Request timeout in milliseconds | `60000` |
 | `maxRetries` | Maximum retry attempts | `1` |
 | `debugMode` | Log level: `minimal / metadata / verbose` | `minimal` |
 
-> **Note:** The `maxTokens` config has been removed. Each model now automatically uses its own `maxOutputTokens` as the API's `max_tokens` parameter — no manual configuration needed. See the "Output" column in the Supported Models tables above.
+### Vision Proxy Settings
+
+| Config | Description | Default |
+| :----- | :---------- | :------ |
+| `visionModel` | Vision model ID (empty for auto-detect) | `""` |
+| `visionPrompt` | Prompt for vision proxy description | `"Describe all..."` |
+| `visionProxy.apiUrl` | Vision proxy API URL (OpenAI-compatible) | `""` |
+| `visionProxy.apiModelId` | Model ID for vision proxy API endpoint | `""` |
+| `visionProxy.timeoutMs` | Vision proxy timeout in milliseconds | `60000` |
+| `visionProxy.maxTokens` | Max tokens for vision proxy response | `1024` |
+
+> **Note:** The `maxTokens` config has been removed. Each model now
+> automatically uses its own `maxOutputTokens` as the API's `max_tokens`
+> parameter — no manual configuration needed. See the "Output" column in
+> the Supported Models tables above.
 
 ## Commands
 
@@ -162,6 +197,8 @@ Available in VS Code settings (search `copilot-models`):
 | `Copilot Models: Show Latency Stats` | Show provider latency statistics |
 | `Copilot Models: Set Token Plan` | Configure prepaid token plan |
 | `Copilot Models: Clear Token Plan` | Remove configured token plan |
+| `Copilot Models: Set Vision Model` | Configure vision image proxy |
+| `Copilot Models: Clear Vision Model` | Clear vision proxy configuration |
 
 ## Debugging
 

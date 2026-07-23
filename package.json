@@ -2,7 +2,7 @@
   "name": "vscode-copilot-models",
   "displayName": "Copilot Models",
   "description": "Unlock third-party large model extensions for GitHub Copilot. Support DeepSeek and more LLMs.",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "publisher": "chihqiang",
   "icon": "resources/icon.png",
   "repository": {
@@ -110,6 +110,16 @@
         "command": "copilot-models.showLatencyStats",
         "title": "Show Latency Stats",
         "description": "Show model routing latency statistics"
+      },
+      {
+        "command": "copilot-models.setVisionModel",
+        "title": "Set Vision Model",
+        "description": "Configure vision proxy model for image description"
+      },
+      {
+        "command": "copilot-models.clearVisionModel",
+        "title": "Clear Vision Model",
+        "description": "Clear vision proxy model configuration"
       }
     ],
     "configuration": {
@@ -199,6 +209,38 @@
           "type": "string",
           "default": "https://dashscope.aliyuncs.com/compatible-mode/v1",
           "description": "Qwen API base URL"
+        },
+        "copilot-models.visionModel": {
+          "type": "string",
+          "default": "",
+          "description": "Vision model ID for image description proxy (leave empty for auto-detect)"
+        },
+        "copilot-models.visionPrompt": {
+          "type": "string",
+          "default": "Describe all image attachments in this message.",
+          "description": "Prompt used for vision proxy image description"
+        },
+        "copilot-models.visionProxy.apiUrl": {
+          "type": "string",
+          "default": "",
+          "description": "API endpoint URL for vision proxy (OpenAI-compatible)"
+        },
+        "copilot-models.visionProxy.apiModelId": {
+          "type": "string",
+          "default": "",
+          "description": "Model ID for vision proxy API endpoint"
+        },
+        "copilot-models.visionProxy.timeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 5000,
+          "description": "Vision proxy API request timeout in milliseconds (default: 60000)"
+        },
+        "copilot-models.visionProxy.maxTokens": {
+          "type": "number",
+          "default": 1024,
+          "minimum": 256,
+          "description": "Maximum tokens for vision proxy response (default: 1024)"
         }
       }
     }
@@ -217,7 +259,6 @@
     "package": "run-s compile package:vsix"
   },
   "devDependencies": {
-    "@types/glob": "^9.0.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/vscode": "^1.120.0",
@@ -225,7 +266,6 @@
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.1",
     "eslint": "^9.39.3",
-    "glob": "^13.0.6",
     "markdownlint-cli": "^0.48.0",
     "mocha": "^11.7.5",
     "npm-run-all2": "^8.0.4",

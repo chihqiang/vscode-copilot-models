@@ -12,3 +12,4 @@ export * from "./chat-provider";
 export * from "./tokenizer";
 export * from "./model-router";
 export * from "./token-plan";
+export * from "./vision";

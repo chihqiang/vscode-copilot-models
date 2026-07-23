@@ -452,7 +452,7 @@ class ApiClientImpl implements IApiClient {
 
         const url = `${baseUrl}${apiPath}`;
         logger.api.debug(
-          `[${providerName}] POST ${url}  (apiKey=${apiKey ? apiKey.substring(0, 4) + "..." : "none"})`,
+          `[${providerName}] POST ${url}  (apiKey=${apiKey ? "configured" : "missing"})`,
         );
 
         const response = await fetchStream(

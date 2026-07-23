@@ -241,22 +241,29 @@ export class ModelRouter implements IChatProvider {
     options: vscode.PrepareLanguageModelChatModelOptions,
     token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelChatInformation[]> {
-    const allInfos: vscode.LanguageModelChatInformation[] = [];
+    const entries = Array.from(this.providers.entries());
 
-    for (const [providerId, provider] of this.providers) {
-      try {
-        const result = await provider.provideLanguageModelChatInformation(
-          options,
-          token,
-        );
-        if (result) {
-          allInfos.push(...result);
+    const results = await Promise.allSettled(
+      entries.map(async ([providerId, provider]) => {
+        try {
+          return await provider.provideLanguageModelChatInformation(
+            options,
+            token,
+          );
+        } catch (error) {
+          logger.router.error(
+            `Error getting model info from "${providerId}"`,
+            error,
+          );
+          return null;
         }
-      } catch (error) {
-        logger.router.error(
-          `Error getting model info from "${providerId}"`,
-          error,
-        );
+      }),
+    );
+
+    const allInfos: vscode.LanguageModelChatInformation[] = [];
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value) {
+        allInfos.push(...result.value);
       }
     }
 
@@ -421,6 +428,17 @@ export class ModelRouter implements IChatProvider {
     this.providerModels.clear();
     this.latencyTracker.clear();
     this.onDidChangeEmitter.dispose();
+  }
+
+  /**
+   * Invalidate cached routing configuration so changes take effect immediately.
+   * Called when copilot-models configuration changes.
+   */
+  invalidateConfigCache(): void {
+    this.failoverModelsCache = null;
+    this.failoverModelsCacheTime = 0;
+    this.routingStrategyCache = null;
+    this.routingStrategyCacheTime = 0;
   }
 
   // ── Routing Strategy & Config ────────────────────

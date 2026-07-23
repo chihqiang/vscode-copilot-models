@@ -2,6 +2,16 @@
  * Log sanitization utilities - redact sensitive data from log output
  */
 
+/** Patterns that match sensitive key names (compiled once) */
+const SENSITIVE_PATTERNS: RegExp[] = [
+  /api[_\-]?key/i,
+  /authorization/i,
+  /bearer/i,
+  /password/i,
+  /token/i,
+  /secret/i,
+];
+
 export function sanitizeForLog(obj: unknown): unknown {
   if (typeof obj !== "object" || obj === null) {
     return obj;
@@ -25,13 +35,5 @@ export function sanitizeForLog(obj: unknown): unknown {
 }
 
 export function isSensitiveKey(key: string): boolean {
-  const sensitivePatterns: RegExp[] = [
-    /api[_\-]?key/i,
-    /authorization/i,
-    /bearer/i,
-    /password/i,
-    /token/i,
-    /secret/i,
-  ];
-  return sensitivePatterns.some((pattern) => pattern.test(key));
+  return SENSITIVE_PATTERNS.some((pattern) => pattern.test(key));
 }
