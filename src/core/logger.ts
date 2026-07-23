@@ -31,7 +31,8 @@ export type LogCategory =
   | "stream"
   | "config"
   | "router"
-  | "plan";
+  | "plan"
+  | "vision";
 
 export interface CategoryLogger {
   info: (...args: unknown[]) => void;
@@ -66,6 +67,7 @@ const CATEGORY_NAMES: Record<LogCategory, string> = {
   config: "Config",
   router: "Router",
   plan: "Plan",
+  vision: "Vision",
 };
 
 const ALL_CATEGORIES: LogCategory[] = [
@@ -79,6 +81,7 @@ const ALL_CATEGORIES: LogCategory[] = [
   "config",
   "router",
   "plan",
+  "vision",
 ];
 
 // ── Logger Class ───────────────────────────────
@@ -155,6 +158,9 @@ export class Logger implements vscode.Disposable {
   }
   get plan(): CategoryLogger {
     return this.getCategory("plan");
+  }
+  get vision(): CategoryLogger {
+    return this.getCategory("vision");
   }
 
   // ── Top-level log methods (default to "core") ────

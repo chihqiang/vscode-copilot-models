@@ -12,6 +12,10 @@ import {
   openSetTokenPlanWizard,
   openClearTokenPlanWizard,
 } from "../wizard/set-token-plan";
+import {
+  openSetVisionModelWizard,
+  openClearVisionModelWizard,
+} from "../wizard/set-vision-model";
 
 /** Wrap an async command handler with error handling */
 function safeAsync(name: string, fn: () => Promise<void>): () => Promise<void> {
@@ -102,4 +106,16 @@ export function registerAllCommands(
       { modal: true },
     );
   });
+
+  // ── Vision Model ─────────────────────────────────
+
+  vscode.commands.registerCommand(
+    "copilot-models.setVisionModel",
+    safeAsync("setVisionModel", openSetVisionModelWizard),
+  );
+
+  vscode.commands.registerCommand(
+    "copilot-models.clearVisionModel",
+    safeAsync("clearVisionModel", openClearVisionModelWizard),
+  );
 }

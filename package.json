@@ -110,6 +110,16 @@
         "command": "copilot-models.showLatencyStats",
         "title": "Show Latency Stats",
         "description": "Show model routing latency statistics"
+      },
+      {
+        "command": "copilot-models.setVisionModel",
+        "title": "Set Vision Model",
+        "description": "Configure vision proxy model for image description"
+      },
+      {
+        "command": "copilot-models.clearVisionModel",
+        "title": "Clear Vision Model",
+        "description": "Clear vision proxy model configuration"
       }
     ],
     "configuration": {
@@ -199,6 +209,26 @@
           "type": "string",
           "default": "https://dashscope.aliyuncs.com/compatible-mode/v1",
           "description": "Qwen API base URL"
+        },
+        "copilot-models.visionModel": {
+          "type": "string",
+          "default": "",
+          "description": "Vision model ID for image description proxy (leave empty for auto-detect)"
+        },
+        "copilot-models.visionPrompt": {
+          "type": "string",
+          "default": "Describe all image attachments in this message.",
+          "description": "Prompt used for vision proxy image description"
+        },
+        "copilot-models.visionProxy.apiUrl": {
+          "type": "string",
+          "default": "",
+          "description": "API endpoint URL for vision proxy (OpenAI-compatible)"
+        },
+        "copilot-models.visionProxy.apiModelId": {
+          "type": "string",
+          "default": "",
+          "description": "Model ID for vision proxy API endpoint"
         }
       }
     }
