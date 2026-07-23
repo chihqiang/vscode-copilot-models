@@ -66,9 +66,21 @@ export async function openClearVisionModelWizard(): Promise<void> {
   }
 
   const config = vscode.workspace.getConfiguration("copilot-models");
-  await config.update("visionModel", undefined, vscode.ConfigurationTarget.Global);
-  await config.update("visionProxy.apiUrl", undefined, vscode.ConfigurationTarget.Global);
-  await config.update("visionProxy.apiModelId", undefined, vscode.ConfigurationTarget.Global);
+  await config.update(
+    "visionModel",
+    undefined,
+    vscode.ConfigurationTarget.Global,
+  );
+  await config.update(
+    "visionProxy.apiUrl",
+    undefined,
+    vscode.ConfigurationTarget.Global,
+  );
+  await config.update(
+    "visionProxy.apiModelId",
+    undefined,
+    vscode.ConfigurationTarget.Global,
+  );
 
   logger.auth.info("Vision model configuration cleared");
   vscode.window.showInformationMessage("Vision model configuration cleared");
@@ -76,7 +88,11 @@ export async function openClearVisionModelWizard(): Promise<void> {
 
 async function configureVisionModel(modelId: string): Promise<void> {
   const config = vscode.workspace.getConfiguration("copilot-models");
-  await config.update("visionModel", modelId, vscode.ConfigurationTarget.Global);
+  await config.update(
+    "visionModel",
+    modelId,
+    vscode.ConfigurationTarget.Global,
+  );
 
   logger.auth.info(`Vision model configured: ${modelId}`);
   vscode.window.showInformationMessage(`Vision model configured: ${modelId}`);
@@ -121,10 +137,24 @@ async function configureApiEndpoint(): Promise<void> {
   }
 
   const config = vscode.workspace.getConfiguration("copilot-models");
-  await config.update("visionModel", "api:endpoint", vscode.ConfigurationTarget.Global);
-  await config.update("visionProxy.apiUrl", apiUrl, vscode.ConfigurationTarget.Global);
-  await config.update("visionProxy.apiModelId", apiModelId, vscode.ConfigurationTarget.Global);
+  await config.update(
+    "visionModel",
+    "api:endpoint",
+    vscode.ConfigurationTarget.Global,
+  );
+  await config.update(
+    "visionProxy.apiUrl",
+    apiUrl,
+    vscode.ConfigurationTarget.Global,
+  );
+  await config.update(
+    "visionProxy.apiModelId",
+    apiModelId,
+    vscode.ConfigurationTarget.Global,
+  );
 
   logger.auth.info(`Vision API endpoint configured: ${apiUrl} (${apiModelId})`);
-  vscode.window.showInformationMessage(`Vision API endpoint configured: ${apiModelId}`);
+  vscode.window.showInformationMessage(
+    `Vision API endpoint configured: ${apiModelId}`,
+  );
 }

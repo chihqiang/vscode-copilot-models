@@ -779,7 +779,7 @@ export abstract class BaseChatProvider
     let content = shouldLogDebug ? "" : undefined;
     let thinking = shouldLogDebug ? "" : undefined;
     let toolCalls = shouldLogDebug
-      ? [] as { name: string; args: string }[]
+      ? ([] as { name: string; args: string }[])
       : undefined;
     let finalUsage: {
       prompt_tokens: number;
@@ -909,7 +909,9 @@ export abstract class BaseChatProvider
       // Report vision proxy notice if available
       if (visionResolution.initialResponseNotice) {
         progress.report(
-          new vscode.LanguageModelTextPart(visionResolution.initialResponseNotice),
+          new vscode.LanguageModelTextPart(
+            visionResolution.initialResponseNotice,
+          ),
         );
       }
 

@@ -18,8 +18,7 @@ export const IMAGE_DESCRIPTION_PREFIX = "[Image: ";
 export const IMAGE_DESCRIPTION_SUFFIX = "]";
 
 /** Text when image description is unavailable */
-export const IMAGE_DESCRIPTION_UNAVAILABLE =
-  "[Image: description unavailable]";
+export const IMAGE_DESCRIPTION_UNAVAILABLE = "[Image: description unavailable]";
 
 /** Default vision prompt */
 export const DEFAULT_VISION_PROMPT = `Describe all image attachments in this message.
@@ -32,8 +31,7 @@ If there are multiple images:
 Return one concise factual description suitable for inserting into a text-only chat prompt. Include visible text, objects, UI elements, people, and relevant context. Do not invent details.`;
 
 /** SecretStorage key for vision proxy API key */
-export const VISION_PROXY_API_KEY_SECRET =
-  "copilot-models.visionProxy.apiKey";
+export const VISION_PROXY_API_KEY_SECRET = "copilot-models.visionProxy.apiKey";
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -244,10 +242,7 @@ export class ApiEndpointVisionDescriber implements VisionDescriber {
         messages: [
           {
             role: "user",
-            content: [
-              { type: "text", text: request.prompt },
-              ...imageContents,
-            ],
+            content: [{ type: "text", text: request.prompt }, ...imageContents],
           },
         ],
         max_tokens: this.config.maxTokens ?? 1024,
@@ -394,7 +389,9 @@ export class VisionService {
 /**
  * Get available vision language models
  */
-export async function getVisionLanguageModelOptions(): Promise<VisionLanguageModelOption[]> {
+export async function getVisionLanguageModelOptions(): Promise<
+  VisionLanguageModelOption[]
+> {
   try {
     const models = await vscode.lm.selectChatModels();
     return models.map((m) => ({
@@ -516,7 +513,8 @@ export async function resolveImageMessages(
     return { messages, stats };
   }
 
-  const currentImageMessageIndex = findCurrentImageMessageIndexFromResolved(resolved);
+  const currentImageMessageIndex =
+    findCurrentImageMessageIndexFromResolved(resolved);
   if (currentImageMessageIndex === undefined) {
     return { messages, stats };
   }
@@ -640,7 +638,9 @@ function concatenateTextParts(parts: vscode.LanguageModelTextPart[]): string {
   return parts.map((p) => p.value).join("");
 }
 
-function toVisionImagePart(part: vscode.LanguageModelDataPart): VisionImagePart {
+function toVisionImagePart(
+  part: vscode.LanguageModelDataPart,
+): VisionImagePart {
   return {
     mimeType: part.mimeType,
     data: part.data,

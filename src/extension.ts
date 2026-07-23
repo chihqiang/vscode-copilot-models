@@ -82,10 +82,7 @@ class CopilotModelsExtension {
           }
 
           this.handleProviderConfigChange(e, context).catch((error) => {
-            logger.core.error(
-              "Failed to handle configuration change:",
-              error,
-            );
+            logger.core.error("Failed to handle configuration change:", error);
           });
         }),
       );
