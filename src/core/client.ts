@@ -315,110 +315,24 @@ class ApiClientImpl implements IApiClient {
         `[${providerName}] model="${request.model}" messages=${messages.length} extra=[${Object.keys(extraFields).join(",")}] stream=true`,
       );
 
-      const stream = await circuitBreaker.call(providerName, async () => {
-        return await this.sendWithRetry(requestBody, controller.signal);
+      // The circuit breaker now also guards the streaming consumption phase,
+      // so mid-stream failures count toward opening the circuit. Retrying is
+      // deliberately NOT performed here — a partially streamed response must
+      // not be replayed; connect-time retries are handled by sendWithRetry.
+      let streamCompleted = false;
+      await circuitBreaker.call(providerName, async () => {
+        const stream = await this.sendWithRetry(requestBody, controller.signal);
+        streamCompleted = await this.consumeStream(
+          stream,
+          callbacks,
+          cancellationToken,
+          providerName,
+        );
       });
 
-      const pendingToolCalls = new Map<
-        number,
-        {
-          id: string;
-          type: "function";
-          function: { name: string; arguments: string };
-        }
-      >();
-
-      logger.api.debug(`[${providerName}] Streaming started`);
-
-      for await (const chunk of stream) {
-        if (cancellationToken?.isCancellationRequested) {
-          logger.api.debug(
-            `[${providerName}] Cancellation requested, stopping stream`,
-          );
-          return;
-        }
-
-        const choice = chunk.choices?.[0];
-        if (!choice) {
-          continue;
-        }
-
-        const delta = choice.delta;
-
-        if (
-          "reasoning_content" in delta &&
-          typeof delta.reasoning_content === "string" &&
-          delta.reasoning_content
-        ) {
-          callbacks.onThinking(delta.reasoning_content);
-        }
-
-        if (delta.content) {
-          callbacks.onContent(delta.content);
-        }
-
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            let pending = pendingToolCalls.get(tc.index);
-            if (!pending && tc.id) {
-              pending = {
-                id: tc.id,
-                type: "function",
-                function: { name: "", arguments: "" },
-              };
-              pendingToolCalls.set(tc.index, pending);
-            }
-            if (pending) {
-              if (tc.function?.name) {
-                pending.function.name += tc.function.name;
-              }
-              if (tc.function?.arguments) {
-                pending.function.arguments += tc.function.arguments;
-              }
-            }
-          }
-        }
-
-        if (choice.finish_reason) {
-          logger.api.debug(
-            `[${providerName}] finish_reason="${choice.finish_reason}"`,
-          );
-          if (choice.finish_reason === "length") {
-            logger.api.warn(
-              `[${providerName}] Response truncated due to max_tokens limit (finish_reason="length")`,
-            );
-          }
-        }
-
-        if (
-          choice.finish_reason === "tool_calls" ||
-          choice.finish_reason === "stop"
-        ) {
-          for (const tc of pendingToolCalls.values()) {
-            if (tc.function.name) {
-              callbacks.onToolCall({
-                id: tc.id,
-                type: tc.type,
-                function: {
-                  name: tc.function.name,
-                  arguments: tc.function.arguments,
-                },
-              });
-            }
-          }
-          pendingToolCalls.clear();
-        }
-
-        if (chunk.usage && callbacks.onUsage) {
-          callbacks.onUsage({
-            prompt_tokens: chunk.usage.prompt_tokens,
-            completion_tokens: chunk.usage.completion_tokens,
-            total_tokens: chunk.usage.total_tokens,
-          });
-        }
+      if (streamCompleted) {
+        callbacks.onDone();
       }
-
-      callbacks.onDone();
     } catch (error) {
       if (cancellationToken?.isCancellationRequested) {
         callbacks.onError(new CancelledError(providerName));
@@ -431,6 +345,118 @@ class ApiClientImpl implements IApiClient {
     } finally {
       cancelListener?.dispose();
     }
+  }
+
+  /**
+   * Consume a streaming response chunk by chunk, dispatching to callbacks.
+   * Returns false if the stream was stopped early due to cancellation.
+   */
+  private async consumeStream(
+    stream: Stream<ChatCompletionChunk>,
+    callbacks: StreamCallbacks,
+    cancellationToken: CancellationToken | undefined,
+    providerName: string,
+  ): Promise<boolean> {
+    const pendingToolCalls = new Map<
+      number,
+      {
+        id: string;
+        type: "function";
+        function: { name: string; arguments: string };
+      }
+    >();
+
+    logger.api.debug(`[${providerName}] Streaming started`);
+
+    for await (const chunk of stream) {
+      if (cancellationToken?.isCancellationRequested) {
+        logger.api.debug(
+          `[${providerName}] Cancellation requested, stopping stream`,
+        );
+        return false;
+      }
+
+      const choice = chunk.choices?.[0];
+      if (!choice) {
+        continue;
+      }
+
+      const delta = choice.delta;
+
+      if (
+        "reasoning_content" in delta &&
+        typeof delta.reasoning_content === "string" &&
+        delta.reasoning_content
+      ) {
+        callbacks.onThinking(delta.reasoning_content);
+      }
+
+      if (delta.content) {
+        callbacks.onContent(delta.content);
+      }
+
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          let pending = pendingToolCalls.get(tc.index);
+          if (!pending && tc.id) {
+            pending = {
+              id: tc.id,
+              type: "function",
+              function: { name: "", arguments: "" },
+            };
+            pendingToolCalls.set(tc.index, pending);
+          }
+          if (pending) {
+            if (tc.function?.name) {
+              pending.function.name += tc.function.name;
+            }
+            if (tc.function?.arguments) {
+              pending.function.arguments += tc.function.arguments;
+            }
+          }
+        }
+      }
+
+      if (choice.finish_reason) {
+        logger.api.debug(
+          `[${providerName}] finish_reason="${choice.finish_reason}"`,
+        );
+        if (choice.finish_reason === "length") {
+          logger.api.warn(
+            `[${providerName}] Response truncated due to max_tokens limit (finish_reason="length")`,
+          );
+        }
+      }
+
+      if (
+        choice.finish_reason === "tool_calls" ||
+        choice.finish_reason === "stop"
+      ) {
+        for (const tc of pendingToolCalls.values()) {
+          if (tc.function.name) {
+            callbacks.onToolCall({
+              id: tc.id,
+              type: tc.type,
+              function: {
+                name: tc.function.name,
+                arguments: tc.function.arguments,
+              },
+            });
+          }
+        }
+        pendingToolCalls.clear();
+      }
+
+      if (chunk.usage && callbacks.onUsage) {
+        callbacks.onUsage({
+          prompt_tokens: chunk.usage.prompt_tokens,
+          completion_tokens: chunk.usage.completion_tokens,
+          total_tokens: chunk.usage.total_tokens,
+        });
+      }
+    }
+
+    return true;
   }
 
   private async sendWithRetry(
@@ -447,7 +473,9 @@ class ApiClientImpl implements IApiClient {
           logger.api.warn(
             `[${providerName}] Retry ${attempt}/${maxRetries} after ${backoff}ms`,
           );
-          await delay(backoff);
+          // Pass the signal so a user cancellation aborts the backoff
+          // immediately instead of waiting for the full delay.
+          await delay(backoff, signal);
         }
 
         const url = `${baseUrl}${apiPath}`;

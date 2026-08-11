@@ -5,7 +5,6 @@
 import { logger } from "./logger";
 import { LineDecoder } from "./line-decoder";
 import { encodeUTF8 } from "./bytes";
-import { findDoubleNewlineIndex } from "./line-decoder";
 
 /** Streaming chat completion response chunk */
 export interface ChatCompletionChunk {
@@ -162,10 +161,83 @@ export async function* _iterSSEMessages(
   }
 }
 
+/**
+ * Split the raw byte stream into SSE event chunks (each ending with a blank
+ * line: \n\n, \r\r, or \r\n\r\n).
+ *
+ * Uses a segmented buffer with a persistent scan cursor so every buffered
+ * byte is examined at most once (amortized O(1) per byte), avoiding the
+ * O(n²) full-buffer copies of a naive concat-and-rescan approach. Emitted
+ * bytes are dropped periodically to bound memory usage.
+ */
+const COMPACT_THRESHOLD = 64 * 1024;
+const MAX_SEGMENTS = 32;
+
 async function* iterSSEChunks(
   iterator: AsyncIterableIterator<Uint8Array>,
 ): AsyncGenerator<Uint8Array> {
-  let buffer = new Uint8Array(0);
+  const segments: Uint8Array[] = [];
+  let totalLength = 0;
+  let start = 0; // global index of the first un-emitted byte
+
+  // Persistent scan cursor. It only rewinds during compaction, so each
+  // buffered byte is inspected at most once.
+  let segIdx = 0;
+  let byteIdx = 0;
+  let g = 0; // global index of the next byte to scan
+  let prev3 = -1;
+  let prev2 = -1;
+  let prev1 = -1;
+
+  /** Read the next byte at the scan cursor, or -1 when exhausted. */
+  const scanNext = (): number => {
+    while (segIdx < segments.length) {
+      const seg = segments[segIdx];
+      if (byteIdx < seg.length) {
+        return seg[byteIdx++];
+      }
+      segIdx++;
+      byteIdx = 0;
+    }
+    return -1;
+  };
+
+  /** Copy bytes [from, to) out of the segment list. */
+  const extract = (from: number, to: number): Uint8Array => {
+    const out = new Uint8Array(to - from);
+    let outPos = 0;
+    let skip = from;
+    for (const seg of segments) {
+      if (skip >= seg.length) {
+        skip -= seg.length;
+        continue;
+      }
+      const take = Math.min(seg.length - skip, out.length - outPos);
+      out.set(seg.subarray(skip, skip + take), outPos);
+      outPos += take;
+      if (outPos === out.length) {
+        break;
+      }
+      skip = 0;
+    }
+    return out;
+  };
+
+  /** Drop the first `count` bytes to bound memory usage. */
+  const dropBytes = (count: number): void => {
+    let remaining = count;
+    while (remaining > 0 && segments.length > 0) {
+      const seg = segments[0];
+      if (seg.length <= remaining) {
+        remaining -= seg.length;
+        segments.shift();
+      } else {
+        segments[0] = seg.subarray(remaining);
+        remaining = 0;
+      }
+    }
+    totalLength -= count - remaining;
+  };
 
   for await (const chunk of iterator) {
     if (chunk === null || chunk === undefined) {
@@ -183,20 +255,53 @@ async function* iterSSEChunks(
       continue;
     }
 
-    const newBuffer = new Uint8Array(buffer.length + binaryChunk.length);
-    newBuffer.set(buffer);
-    newBuffer.set(binaryChunk, buffer.length);
-    buffer = newBuffer;
+    // Periodically drop already-emitted bytes and rewind the scan cursor.
+    if (
+      start > 0 &&
+      (start > COMPACT_THRESHOLD || segments.length > MAX_SEGMENTS)
+    ) {
+      dropBytes(start);
+      start = 0;
+      segIdx = 0;
+      byteIdx = 0;
+      g = 0;
+      prev1 = -1;
+      prev2 = -1;
+      prev3 = -1;
+    }
 
-    let patternIndex;
-    while ((patternIndex = findDoubleNewlineIndex(buffer)) !== -1) {
-      yield buffer.slice(0, patternIndex);
-      buffer = buffer.subarray(patternIndex);
+    segments.push(binaryChunk);
+    totalLength += binaryChunk.length;
+
+    // Scan newly available bytes for the first complete event boundary.
+    while (true) {
+      const b = scanNext();
+      if (b === -1) {
+        break;
+      }
+      // b is at global index g. Detect a blank-line boundary:
+      //   \n\n         (prev1 = \n)
+      //   \r\r         (prev1 = \r)
+      //   \r\n\r\n     (prev3 = \r, prev2 = \n, prev1 = \r)
+      if (
+        (prev1 === 0x0a && b === 0x0a) ||
+        (prev1 === 0x0d && b === 0x0d) ||
+        (prev3 === 0x0d && prev2 === 0x0a && prev1 === 0x0d && b === 0x0a)
+      ) {
+        const end = g + 1;
+        yield extract(start, end);
+        start = end;
+      }
+      prev3 = prev2;
+      prev2 = prev1;
+      prev1 = b;
+      g++;
     }
   }
 
-  if (buffer.length > 0) {
-    yield buffer;
+  // Flush any trailing un-emitted bytes.
+  if (start < totalLength) {
+    yield extract(start, totalLength);
   }
 }
 

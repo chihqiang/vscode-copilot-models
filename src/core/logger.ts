@@ -14,7 +14,7 @@
  */
 
 import vscode from "vscode";
-import { isDevelopmentEnvironment } from "./runtime";
+import { isDevelopmentEnvironment, isTestEnvironment } from "./runtime";
 import { CONFIG_SECTION } from "./models";
 
 // ── Types ────────────────────────────────────────────
@@ -93,6 +93,8 @@ export class Logger implements vscode.Disposable {
   private showCategory = true;
   private currentLogLevel: LogLevel = "info";
   private developmentMode = false;
+  private testMode = false;
+  private disposed = false;
   private readonly categoryLoggers = new Map<string, CategoryLogger>();
 
   private constructor() {
@@ -110,6 +112,9 @@ export class Logger implements vscode.Disposable {
       context.extensionMode === vscode.ExtensionMode.Development ||
       isDevelopmentEnvironment() ||
       context.extensionMode === vscode.ExtensionMode.Test;
+    sys.testMode =
+      context.extensionMode === vscode.ExtensionMode.Test ||
+      isTestEnvironment();
     sys.currentLogLevel = sys.developmentMode ? "debug" : "info";
     sys.applyLogLevelFromConfig();
     return sys;
@@ -213,16 +218,17 @@ export class Logger implements vscode.Disposable {
   }
 
   show(): void {
-    this.getChannel().show();
+    this.getChannel()?.show();
   }
   hide(): void {
-    this.getChannel().hide();
+    this.getChannel()?.hide();
   }
   clear(): void {
-    this.getChannel().clear();
+    this.getChannel()?.clear();
   }
 
   dispose(): void {
+    this.disposed = true;
     this.channel?.dispose();
     this.channel = undefined;
   }
@@ -248,7 +254,10 @@ export class Logger implements vscode.Disposable {
     };
   }
 
-  private getChannel(): vscode.OutputChannel {
+  private getChannel(): vscode.OutputChannel | undefined {
+    if (this.disposed || this.testMode) {
+      return undefined;
+    }
     if (!this.channel) {
       this.channel = vscode.window.createOutputChannel("Copilot Models");
     }
@@ -256,12 +265,27 @@ export class Logger implements vscode.Disposable {
   }
 
   private write(level: LogLevel, category: string, args: unknown[]): void {
-    if (!this.shouldLog(level)) {
+    if (this.disposed || !this.shouldLog(level)) {
       return;
     }
 
     const text = this.formatMessage(level, category, args);
-    this.getChannel().appendLine(text);
+
+    // In test mode, avoid creating an OutputChannel: its async init can
+    // complete after the extension host's DisposableStore is disposed,
+    // producing "Trying to add a disposable..." warnings. Log to console.
+    if (this.testMode) {
+      if (level === "error") {
+        console.error(text);
+      } else if (level === "warn") {
+        console.warn(text);
+      } else {
+        console.log(text);
+      }
+      return;
+    }
+
+    this.getChannel()?.appendLine(text);
 
     if (this.developmentMode && level === "debug") {
       console.log(text);

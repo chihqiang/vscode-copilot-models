@@ -1,6 +1,20 @@
 /** VS Code configuration section prefix */
 export const CONFIG_SECTION = "copilot-models";
 
+import vscode from "vscode";
+
+/** Default maximum image upload size in bytes (20MB) */
+const DEFAULT_MAX_IMAGE_SIZE = 20 * 1024 * 1024;
+
+/**
+ * Get the configured maximum image upload size in bytes.
+ * Shared by the chat provider and the vision proxy so they stay in sync.
+ */
+export function getMaxImageSizeConfig(): number {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  return config.get<number>("maxImageSize") ?? DEFAULT_MAX_IMAGE_SIZE;
+}
+
 /**
  * Model capabilities definition
  */

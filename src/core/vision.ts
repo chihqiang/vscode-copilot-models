@@ -7,7 +7,7 @@
 
 import vscode from "vscode";
 import { logger } from "./logger";
-import { CONFIG_SECTION } from "./models";
+import { CONFIG_SECTION, getMaxImageSizeConfig } from "./models";
 
 // ── Constants ───────────────────────────────────────────────
 
@@ -418,14 +418,6 @@ export function getVisionPrompt(): string {
   return config.get<string>("visionPrompt") || DEFAULT_VISION_PROMPT;
 }
 
-/**
- * Get the configured max image size
- */
-function getMaxImageSize(): number {
-  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-  return config.get<number>("maxImageSize") ?? 20 * 1024 * 1024;
-}
-
 // ── Image Resolution ────────────────────────────────────────
 
 /**
@@ -479,7 +471,7 @@ function separateMessageParts(
 function resolveAllMessageParts(
   messages: readonly vscode.LanguageModelChatRequestMessage[],
 ): ResolvedMessage[] {
-  const maxImageSize = getMaxImageSize();
+  const maxImageSize = getMaxImageSizeConfig();
   return messages.map((message) => ({
     message,
     parts: separateMessageParts(message, maxImageSize),

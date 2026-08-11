@@ -14,7 +14,11 @@ import {
   IApiClient,
   StreamCallbacks,
 } from "./client";
-import { CONFIG_SECTION, ModelDefinition } from "./models";
+import {
+  CONFIG_SECTION,
+  getMaxImageSizeConfig,
+  ModelDefinition,
+} from "./models";
 import { IModelProvider } from "./model-provider";
 import { Tokenizer } from "./tokenizer";
 import { TokenPlan, type PlanOverride } from "./token-plan";
@@ -105,6 +109,9 @@ export abstract class BaseChatProvider
   protected isActive = true;
   private disposables: vscode.Disposable[] = [];
   private clientCache = new Map<string, IApiClient>();
+
+  /** Cached API key presence, invalidated on secret change */
+  private hasApiKeyCache: boolean | undefined;
 
   readonly onDidChangeLanguageModelChatInformation =
     this.onDidChangeLanguageModelChatInformationEmitter.event;
@@ -234,6 +241,7 @@ export abstract class BaseChatProvider
       logger.auth.debug(
         `[${this.providerId}] Secret affects this provider, refreshing...`,
       );
+      this.hasApiKeyCache = undefined;
       this.onDidChangeLanguageModelChatInformationEmitter.fire();
     }
     if (this.isActive && e.key.startsWith("copilot-models.tokenPlan.")) {
@@ -265,7 +273,10 @@ export abstract class BaseChatProvider
       return [];
     }
 
-    const hasApiKey = await this.modelProvider.hasApiKey();
+    if (this.hasApiKeyCache === undefined) {
+      this.hasApiKeyCache = await this.modelProvider.hasApiKey();
+    }
+    const hasApiKey = this.hasApiKeyCache;
     const planManager = TokenPlan.getInstance();
     const planModelIds = planManager.getPlanModelIds();
     const models = this.modelProvider.getModels();
@@ -536,7 +547,7 @@ export abstract class BaseChatProvider
     );
     this.logMessageDetails(messages);
 
-    const maxImageSize = this.getMaxImageSize();
+    const maxImageSize = getMaxImageSizeConfig();
     const result: ApiMessage[] = [];
 
     for (const message of messages) {
@@ -601,15 +612,28 @@ export abstract class BaseChatProvider
             textBuffer += val;
           }
         } else if (part instanceof vscode.LanguageModelToolResultPart) {
-          let toolContent = "";
+          const textParts: string[] = [];
+          let binaryParts = 0;
           for (const item of part.content) {
             if (item instanceof vscode.LanguageModelTextPart) {
-              toolContent += item.value;
+              textParts.push(item.value);
+            } else if (item instanceof vscode.LanguageModelDataPart) {
+              binaryParts++;
             }
+          }
+          const toolText = textParts.join("");
+          let toolContent = toolText;
+          if (!toolContent) {
+            // Never serialize binary data parts into the request — that
+            // would bloat the payload with a huge JSON byte map.
+            toolContent =
+              binaryParts > 0
+                ? `[Tool result contains ${binaryParts} binary data part(s), omitted]`
+                : JSON.stringify(part.content);
           }
           toolResults.push({
             callId: part.callId,
-            content: toolContent || JSON.stringify(part.content),
+            content: toolContent,
           });
         }
       }
@@ -974,14 +998,6 @@ export abstract class BaseChatProvider
    */
   private estimateTokenCount(text: string): number {
     return Tokenizer.getInstance().countTokens(text);
-  }
-
-  /**
-   * Extract text content from message
-   */
-  private getMaxImageSize(): number {
-    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    return config.get<number>("maxImageSize") ?? 20 * 1024 * 1024;
   }
 
   private isImageMime(mimeType: string): boolean {
