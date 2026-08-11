@@ -15,7 +15,8 @@ One-click switching and native panel compatibility.
 - **Vision Proxy**: Image description proxy for non-vision models
   via VS Code LM or custom API
 - **Circuit Breaker**: Automatic failure protection with retry
-- **Secure Authentication**: API keys stored in VS Code SecretStorage
+- **Secure Authentication**: API keys stored in VS Code SecretStorage;
+  sensitive values (keys, tokens, URLs) are automatically redacted from logs
 - **Log Debugging**: 4-level logging with hot-reload
 - **Lightweight**: OpenAI SDK replaced with native SSE client code
 - **Token Plan**: Unified prepaid billing for Qwen, DeepSeek, and
@@ -210,6 +211,12 @@ If you encounter issues, check the logs:
 4. Set to `minimal` (default) for warnings and errors only
 
 Log level changes take effect immediately without reloading the extension.
+
+Each request's logs carry a structured prefix
+(`req=<id> provider=<id> model=<id>`), so you can grep for a single `req=<id>`
+to trace one request across routing, provider, and network layers.
+API keys, tokens, and URL query strings are automatically redacted from the
+logs — secrets never appear in the output panel.
 
 ## License
 

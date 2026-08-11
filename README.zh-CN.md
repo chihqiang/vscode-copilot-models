@@ -10,7 +10,7 @@
 - **思考模式**: 支持模型的思考/推理模式
 - **视觉代理**: 通过 VS Code 内置模型或自定义 API 为不支持图片输入的模型提供图像描述代理
 - **熔断保护**: 自动失败保护与重试机制
-- **安全认证**: API 密钥安全存储在 VS Code SecretStorage
+- **安全认证**: API 密钥安全存储在 VS Code SecretStorage；日志中的敏感值（密钥、令牌、URL）会自动脱敏
 - **日志调试**: 4 级日志系统，支持热重载
 - **轻量**: 移除 OpenAI SDK，原生 SSE 客户端实现
 - **令牌套餐**: 统一预付费计费，通过单个端点同时覆盖通义千问、DeepSeek、GLM 的令牌套餐
@@ -192,6 +192,10 @@
 4. 设为 `minimal`（默认）仅显示警告和错误
 
 日志级别修改后立即生效，无需重载扩展。
+
+每条请求的日志都带结构化前缀（`req=<id> provider=<id> model=<id>`），
+只需搜索单个 `req=<id>` 即可串联该请求在路由、Provider、网络层的完整链路。
+API 密钥、令牌和 URL 查询字符串都会自动脱敏——密钥绝不会出现在日志面板中。
 
 [marketplace]: https://marketplace.visualstudio.com/items?itemName=chihqiang.vscode-copilot-models
 
