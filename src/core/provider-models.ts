@@ -7,7 +7,7 @@ import {
 import { logger } from "./logger";
 import { BaseChatProvider, type ThinkingEffort } from "./chat-provider";
 import { BaseModelProvider } from "./model-provider";
-import { createApiClient, type ApiRequest, type ClientOptions } from "./client";
+import { createApiClient, type ApiRequest } from "./client";
 import { createSingletonStore } from "./singleton";
 import type { IChatProvider } from "./chat-provider";
 import type { IModelProvider } from "./model-provider";
@@ -56,7 +56,6 @@ export function createProviderFactory(
 export class ProviderModels {
   private static store = createSingletonStore<ProviderModels>();
 
-  private readonly context: vscode.ExtensionContext;
   private readonly definitions: ProviderDefinition[];
 
   private factories = new Map<string, IProviderFactory>();
@@ -64,19 +63,12 @@ export class ProviderModels {
   private models = new Map<string, ModelDefinition[]>();
   private modelIdToProviderId = new Map<string, string>();
 
-  private constructor(
-    context: vscode.ExtensionContext,
-    definitions: ProviderDefinition[],
-  ) {
-    this.context = context;
+  private constructor(definitions: ProviderDefinition[]) {
     this.definitions = definitions;
   }
 
-  static init(
-    context: vscode.ExtensionContext,
-    definitions: ProviderDefinition[],
-  ): ProviderModels {
-    const instance = new ProviderModels(context, definitions);
+  static init(definitions: ProviderDefinition[]): ProviderModels {
+    const instance = new ProviderModels(definitions);
     ProviderModels.store.set(instance);
     return instance;
   }
@@ -246,7 +238,6 @@ export class ProviderModels {
   // ── Private ──────────────────────────────────────
 
   private createFactory(def: ProviderDefinition): IProviderFactory {
-    const context = this.context;
     const thinkingFormat = def.thinkingFormat ?? "reasoning_effort";
     const supportsThinking = def.supportsThinking ?? false;
 

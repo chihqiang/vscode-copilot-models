@@ -6,6 +6,7 @@
 
 import vscode from "vscode";
 import { logger } from "./logger";
+import { sanitizeUrl } from "./sanitize";
 import { createSingletonStore } from "./singleton";
 
 // ── Types ────────────────────────────────────────────
@@ -245,9 +246,8 @@ export class TokenPlan {
       return undefined;
     }
 
-    const planModel = matchingPlan.models.find((m) => m.id === modelId);
     logger.plan.debug(
-      `  → using plan "${matchingPlan.planName}" url=${matchingPlan.baseUrl}`,
+      `  → using plan "${matchingPlan.planName}" url=${sanitizeUrl(matchingPlan.baseUrl)}`,
     );
     return {
       planId: matchingPlan.planId,

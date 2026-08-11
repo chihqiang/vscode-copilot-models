@@ -10,6 +10,7 @@ import { logger } from "./logger";
 import { isImageMime, toDataUrl } from "./bytes";
 import { CONFIG_SECTION } from "./models";
 import { getConfig, getMaxImageSize } from "./settings";
+import { sanitizeUrl } from "./sanitize";
 
 // ── Constants ───────────────────────────────────────────────
 
@@ -251,7 +252,7 @@ export class ApiEndpointVisionDescriber implements VisionDescriber {
       };
 
       logger.vision.debug(
-        `Sending vision request to ${this.config.url}, model: ${this.config.modelId}, timeout: ${timeoutMs}ms`,
+        `Sending vision request to ${sanitizeUrl(this.config.url)}, model: ${this.config.modelId}, timeout: ${timeoutMs}ms`,
       );
 
       const response = await fetch(`${this.config.url}/chat/completions`, {

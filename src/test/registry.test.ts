@@ -68,7 +68,7 @@ suite("Registry Provider Test Suite", () => {
   });
 
   test("resetInstance clears singleton state", () => {
-    ProviderModels.init({} as any, []);
+    ProviderModels.init([]);
     const instance1 = ProviderModels.getInstance();
     const provider = createMockProvider("test-provider", testModels);
     instance1.registerProvider(provider);
@@ -77,7 +77,7 @@ suite("Registry Provider Test Suite", () => {
     ProviderModels.resetInstance();
     assert.strictEqual(ProviderModels.isInitialized(), false);
 
-    ProviderModels.init({} as any, []);
+    ProviderModels.init([]);
     const instance2 = ProviderModels.getInstance();
     assert.notStrictEqual(instance1, instance2);
     assert.strictEqual(instance2.hasProviders(), false);

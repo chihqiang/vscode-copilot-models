@@ -23,6 +23,7 @@ import {
 } from "./client";
 import { CONFIG_SECTION, ModelDefinition } from "./models";
 import { getMaxImageSize } from "./settings";
+import { sanitizeUrl } from "./sanitize";
 import { IModelProvider } from "./model-provider";
 import { Tokenizer } from "./tokenizer";
 import { TokenPlan, type PlanOverride } from "./token-plan";
@@ -745,7 +746,7 @@ export abstract class BaseChatProvider
   ): Promise<void> {
     const planBaseUrl = planOverride?.baseUrl;
     logger.chat.info(
-      `[${this.providerId}] Sending stream request, model: ${request.model}${planOverride ? ` (via token plan, baseUrl=${planBaseUrl})` : ""}`,
+      `[${this.providerId}] Sending stream request, model: ${request.model}${planOverride ? ` (via token plan, baseUrl=${sanitizeUrl(planBaseUrl ?? "")})` : ""}`,
     );
 
     const apiKey =

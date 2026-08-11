@@ -23,7 +23,7 @@ import {
   isRetryableError,
   CancelledError,
 } from "./errors";
-import { sanitizeForLog } from "./sanitize";
+import { sanitizeForLog, sanitizeUrl } from "./sanitize";
 import {
   toChatCompletionMessageParam,
   toChatCompletionTool,
@@ -215,7 +215,7 @@ async function handleResponseError(
   }
 
   logger.api.debug(
-    `[${providerName}] Response status=${response.status} body=${errorBody.substring(0, 200)}`,
+    `[${providerName}] Response status=${response.status} body=${sanitizeUrl(errorBody.substring(0, 200))}`,
   );
 
   const parsedError = parsed.error as Record<string, unknown> | undefined;
@@ -479,7 +479,7 @@ class ApiClientImpl implements IApiClient {
 
         const url = `${baseUrl}${apiPath}`;
         logger.api.debug(
-          `[${providerName}] POST ${url}  (apiKey=${apiKey ? "configured" : "missing"})`,
+          `[${providerName}] POST ${sanitizeUrl(url)}  (apiKey=${apiKey ? "configured" : "missing"})`,
         );
 
         const response = await fetchStream(

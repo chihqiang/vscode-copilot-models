@@ -14,6 +14,7 @@ import {
   getProviderBaseUrl,
   getTimeoutMs,
 } from "./settings";
+import { sanitizeUrl } from "./sanitize";
 import { logger } from "./logger";
 import { ClientOptions, IApiClient } from "./client";
 
@@ -216,7 +217,9 @@ export class BaseModelProvider implements IModelProvider {
 
   createClient(apiKey: string, options?: ClientOptions): IApiClient {
     const baseUrl = options?.baseUrl ?? this.getBaseUrl();
-    logger.provider.debug(`[${this.id}] Creating client, baseUrl: ${baseUrl}`);
+    logger.provider.debug(
+      `[${this.id}] Creating client, baseUrl: ${sanitizeUrl(baseUrl)}`,
+    );
 
     const timeoutMs = options?.timeoutMs ?? getTimeoutMs();
     const maxRetries = options?.maxRetries ?? getMaxRetries();
@@ -226,7 +229,7 @@ export class BaseModelProvider implements IModelProvider {
 
   getBaseUrl(): string {
     const baseUrl = getProviderBaseUrl(this.id, this._defaultBaseUrl);
-    logger.provider.debug(`[${this.id}] getBaseUrl: ${baseUrl}`);
+    logger.provider.debug(`[${this.id}] getBaseUrl: ${sanitizeUrl(baseUrl)}`);
     return baseUrl;
   }
 

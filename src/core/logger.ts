@@ -20,6 +20,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import vscode from "vscode";
 import { isDevelopmentEnvironment, isTestEnvironment } from "./runtime";
 import { getDebugMode } from "./settings";
+import { redactSensitiveValues } from "./sanitize";
 import { createSingletonStore } from "./singleton";
 
 // ── Types ────────────────────────────────────────────
@@ -249,10 +250,6 @@ export class Logger implements vscode.Disposable {
     }
   }
 
-  createProviderLogger(providerId: string): CategoryLogger {
-    return this.createCategoryLogger(providerId as LogCategory);
-  }
-
   show(): void {
     this.getChannel()?.show();
   }
@@ -365,7 +362,9 @@ export class Logger implements vscode.Disposable {
       })
       .join(" ");
 
-    return `${prefix}${text}`;
+    // Final safety net: redact any sensitive values (API keys, tokens,
+    // Bearer headers, key=value pairs) that slipped into the message.
+    return `${prefix}${redactSensitiveValues(text)}`;
   }
 }
 
