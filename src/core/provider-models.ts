@@ -1,5 +1,9 @@
 import vscode from "vscode";
-import { CONFIG_SECTION, type ModelDefinition } from "./models";
+import {
+  CONFIG_SECTION,
+  type ModelDefinition,
+  type ProviderDefinition,
+} from "./models";
 import { logger } from "./logger";
 import { BaseChatProvider, type ThinkingEffort } from "./chat-provider";
 import { BaseModelProvider } from "./model-provider";
@@ -44,19 +48,6 @@ export function createProviderFactory(
     },
     createChatProvider,
   };
-}
-
-// ── Types ────────────────────────────────────────────
-
-export interface ProviderDefinition {
-  id: string;
-  name: string;
-  defaultBaseUrl: string;
-  apiKeyPrompt: string;
-  apiKeyPlaceholder: string;
-  supportsThinking?: boolean;
-  thinkingFormat?: "reasoning_effort" | "thinking_type";
-  models: ModelDefinition[];
 }
 
 // ── ProviderModels Class ────────────────────────────
@@ -268,7 +259,18 @@ export class ProviderModels {
       providerName: def.name,
       configSection: CONFIG_SECTION,
       createChatProvider: (ctx: vscode.ExtensionContext) => {
-        const modelProvider = new GenericModelProvider(ctx, def);
+        const modelProvider = new BaseModelProvider(
+          ctx,
+          def,
+          (baseUrl, apiKey, options) =>
+            createApiClient({
+              baseUrl,
+              apiKey,
+              providerName: def.name,
+              timeoutMs: options?.timeoutMs ?? 60_000,
+              maxRetries: options?.maxRetries ?? 1,
+            }),
+        );
         ProviderModels.getInstance().registerProvider(modelProvider);
         return new GenericChatProvider(
           ctx,
@@ -281,33 +283,7 @@ export class ProviderModels {
   }
 }
 
-// ── Generic Provider Classes ─────────────────────────
-
-class GenericModelProvider extends BaseModelProvider {
-  constructor(context: vscode.ExtensionContext, def: ProviderDefinition) {
-    super(context, {
-      providerId: def.id,
-      providerName: def.name,
-      configSection: CONFIG_SECTION,
-      defaultBaseUrl: def.defaultBaseUrl,
-      models: def.models,
-      apiKeyPrompt: def.apiKeyPrompt,
-      apiKeyPlaceholder: def.apiKeyPlaceholder,
-      createClient: (
-        baseUrl: string,
-        apiKey: string,
-        options?: ClientOptions,
-      ) =>
-        createApiClient({
-          baseUrl,
-          apiKey,
-          providerName: def.name,
-          timeoutMs: options?.timeoutMs ?? 60_000,
-          maxRetries: options?.maxRetries ?? 1,
-        }),
-    });
-  }
-}
+// ── Generic Chat Provider ──────────────────────────
 
 class GenericChatProvider extends BaseChatProvider {
   private readonly thinkingFormat: "reasoning_effort" | "thinking_type";
@@ -315,7 +291,7 @@ class GenericChatProvider extends BaseChatProvider {
 
   constructor(
     context: vscode.ExtensionContext,
-    modelProvider: GenericModelProvider,
+    modelProvider: IModelProvider,
     thinkingFormat: "reasoning_effort" | "thinking_type",
     supportsThinking: boolean,
   ) {

@@ -16,6 +16,7 @@
 import vscode from "vscode";
 import { isDevelopmentEnvironment, isTestEnvironment } from "./runtime";
 import { CONFIG_SECTION } from "./models";
+import { getDebugMode } from "./settings";
 
 // ── Types ────────────────────────────────────────────
 
@@ -203,8 +204,7 @@ export class Logger implements vscode.Disposable {
       return;
     }
     try {
-      const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      const debugMode = config.get<string>("debugMode");
+      const debugMode = getDebugMode();
       if (debugMode && DEBUG_MODE_MAP[debugMode]) {
         this.currentLogLevel = DEBUG_MODE_MAP[debugMode];
       }

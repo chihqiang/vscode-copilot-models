@@ -7,7 +7,9 @@
 
 import vscode from "vscode";
 import { logger } from "./logger";
-import { CONFIG_SECTION, getMaxImageSizeConfig } from "./models";
+import { isImageMime, toDataUrl } from "./bytes";
+import { CONFIG_SECTION } from "./models";
+import { getConfig, getMaxImageSize } from "./settings";
 
 // ── Constants ───────────────────────────────────────────────
 
@@ -126,7 +128,7 @@ export class VSCodeLMVisionDescriber implements VisionDescriber {
   private readonly visionPrompt: string;
 
   constructor() {
-    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    const config = getConfig();
     this.visionModelId = config.get<string>("visionModel");
     this.visionPrompt =
       config.get<string>("visionPrompt") || DEFAULT_VISION_PROMPT;
@@ -233,7 +235,7 @@ export class ApiEndpointVisionDescriber implements VisionDescriber {
       const imageContents = request.images.map((img) => ({
         type: "image_url",
         image_url: {
-          url: `data:${img.mimeType};base64,${Buffer.from(img.data).toString("base64")}`,
+          url: toDataUrl(img.data, img.mimeType),
         },
       }));
 
@@ -336,7 +338,7 @@ export class VisionService {
       return this.describer;
     }
 
-    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    const config = getConfig();
     const visionModelId = config.get<string>("visionModel");
 
     if (visionModelId) {
@@ -414,7 +416,7 @@ export async function getVisionLanguageModelOptions(): Promise<
  * Get the configured vision prompt
  */
 export function getVisionPrompt(): string {
-  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  const config = getConfig();
   return config.get<string>("visionPrompt") || DEFAULT_VISION_PROMPT;
 }
 
@@ -448,7 +450,7 @@ function separateMessageParts(
 
   for (const part of content) {
     if (part instanceof vscode.LanguageModelDataPart) {
-      if (part.mimeType.startsWith("image/")) {
+      if (isImageMime(part.mimeType)) {
         if (part.data.length <= maxImageSize) {
           imageParts.push(part);
         } else {
@@ -471,7 +473,7 @@ function separateMessageParts(
 function resolveAllMessageParts(
   messages: readonly vscode.LanguageModelChatRequestMessage[],
 ): ResolvedMessage[] {
-  const maxImageSize = getMaxImageSizeConfig();
+  const maxImageSize = getMaxImageSize();
   return messages.map((message) => ({
     message,
     parts: separateMessageParts(message, maxImageSize),

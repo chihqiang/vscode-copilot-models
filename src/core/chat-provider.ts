@@ -4,6 +4,7 @@
 
 import vscode from "vscode";
 import { logger } from "./logger";
+import { isImageMime, toDataUrl } from "./bytes";
 import { ApiError, CancelledError, TimeoutError } from "./errors";
 import {
   ApiMessage,
@@ -14,11 +15,8 @@ import {
   IApiClient,
   StreamCallbacks,
 } from "./client";
-import {
-  CONFIG_SECTION,
-  getMaxImageSizeConfig,
-  ModelDefinition,
-} from "./models";
+import { CONFIG_SECTION, ModelDefinition } from "./models";
+import { getMaxImageSize } from "./settings";
 import { IModelProvider } from "./model-provider";
 import { Tokenizer } from "./tokenizer";
 import { TokenPlan, type PlanOverride } from "./token-plan";
@@ -547,7 +545,7 @@ export abstract class BaseChatProvider
     );
     this.logMessageDetails(messages);
 
-    const maxImageSize = getMaxImageSizeConfig();
+    const maxImageSize = getMaxImageSize();
     const result: ApiMessage[] = [];
 
     for (const message of messages) {
@@ -569,7 +567,7 @@ export abstract class BaseChatProvider
         } else if (part instanceof vscode.LanguageModelThinkingPart) {
           thinkingText += part.value;
         } else if (part instanceof vscode.LanguageModelDataPart) {
-          if (!this.isImageMime(part.mimeType)) {
+          if (!isImageMime(part.mimeType)) {
             continue;
           }
 
@@ -590,7 +588,7 @@ export abstract class BaseChatProvider
 
           contentParts.push({
             type: "image_url",
-            image_url: { url: this.imageToDataUrl(part.data, part.mimeType) },
+            image_url: { url: toDataUrl(part.data, part.mimeType) },
           });
         } else if (part instanceof vscode.LanguageModelToolCallPart) {
           toolCalls.push({
@@ -998,19 +996,6 @@ export abstract class BaseChatProvider
    */
   private estimateTokenCount(text: string): number {
     return Tokenizer.getInstance().countTokens(text);
-  }
-
-  private isImageMime(mimeType: string): boolean {
-    return mimeType.startsWith("image/");
-  }
-
-  private imageToDataUrl(data: Uint8Array, mimeType: string): string {
-    const base64 = this.uint8ArrayToBase64(data);
-    return `data:${mimeType};base64,${base64}`;
-  }
-
-  private uint8ArrayToBase64(bytes: Uint8Array): string {
-    return Buffer.from(bytes).toString("base64");
   }
 
   private extractTextFromMessage(

@@ -3,7 +3,17 @@
  */
 
 import vscode from "vscode";
-import { CONFIG_SECTION, type ModelDefinition } from "./models";
+import {
+  CONFIG_SECTION,
+  type ModelDefinition,
+  type ProviderDefinition,
+} from "./models";
+import {
+  getMaxRetries,
+  getModelIdOverrides,
+  getProviderBaseUrl,
+  getTimeoutMs,
+} from "./settings";
 import { logger } from "./logger";
 import { ClientOptions, IApiClient } from "./client";
 
@@ -132,73 +142,47 @@ export interface IModelProvider {
 }
 
 /**
- * ModelProvider configuration
+ * API client factory signature
  */
-export interface ModelProviderConfig {
-  /** Provider ID */
-  readonly providerId: string;
-  /** Provider display name */
-  readonly providerName: string;
-  /** Configuration section name */
-  readonly configSection: string;
-  /** Default base URL */
-  readonly defaultBaseUrl: string;
-  /** Model list */
-  readonly models: ModelDefinition[];
-  /** API key prompt text */
-  readonly apiKeyPrompt?: string;
-  /** API key placeholder */
-  readonly apiKeyPlaceholder?: string;
-  /** Create API client factory function */
-  createClient(
-    baseUrl: string,
-    apiKey: string,
-    options?: ClientOptions,
-  ): IApiClient;
-}
+export type CreateClientFn = (
+  baseUrl: string,
+  apiKey: string,
+  options?: ClientOptions,
+) => IApiClient;
 
 /**
  * Base ModelProvider implementation
- * Generic model provider encapsulating common provider logic
+ * Generic model provider built directly from a ProviderDefinition
  */
 export class BaseModelProvider implements IModelProvider {
   readonly config: ProviderConfig;
   readonly id: string;
-  private readonly _context: vscode.ExtensionContext;
   private readonly _models: ModelDefinition[];
   private readonly _defaultBaseUrl: string;
-  private readonly _configSection: string;
   private readonly _apiKeyPrompt: string;
   private readonly _apiKeyPlaceholder: string;
-  private readonly _createClient: (
-    baseUrl: string,
-    apiKey: string,
-    options?: ClientOptions,
-  ) => IApiClient;
+  private readonly _createClient: CreateClientFn;
 
   private readonly _authManager: BaseAuthManager;
 
-  constructor(context: vscode.ExtensionContext, config: ModelProviderConfig) {
-    this._context = context;
-    this.id = config.providerId;
-    this._models = config.models;
-    this._defaultBaseUrl = config.defaultBaseUrl;
-    this._configSection = config.configSection;
-    this._apiKeyPrompt =
-      config.apiKeyPrompt ?? `Enter your ${config.providerName} API Key`;
-    this._apiKeyPlaceholder = config.apiKeyPlaceholder ?? "your-api-key-here";
-    this._createClient = config.createClient;
-    this._authManager = new BaseAuthManager(
-      context,
-      config.configSection,
-      config.providerId,
-    );
+  constructor(
+    context: vscode.ExtensionContext,
+    def: ProviderDefinition,
+    createClient: CreateClientFn,
+  ) {
+    this.id = def.id;
+    this._models = def.models;
+    this._defaultBaseUrl = def.defaultBaseUrl;
+    this._apiKeyPrompt = def.apiKeyPrompt ?? `Enter your ${def.name} API Key`;
+    this._apiKeyPlaceholder = def.apiKeyPlaceholder ?? "your-api-key-here";
+    this._createClient = createClient;
+    this._authManager = new BaseAuthManager(context, CONFIG_SECTION, def.id);
 
     this.config = {
-      vendorId: config.providerId,
-      vendorName: config.providerName,
-      baseUrl: config.defaultBaseUrl,
-      apiKeySecretKey: `${config.configSection}.${config.providerId}.apiKey`,
+      vendorId: def.id,
+      vendorName: def.name,
+      baseUrl: def.defaultBaseUrl,
+      apiKeySecretKey: `${CONFIG_SECTION}.${def.id}.apiKey`,
     };
 
     logger.provider.debug(`[${this.id}] BaseModelProvider created`);
@@ -234,26 +218,20 @@ export class BaseModelProvider implements IModelProvider {
     const baseUrl = options?.baseUrl ?? this.getBaseUrl();
     logger.provider.debug(`[${this.id}] Creating client, baseUrl: ${baseUrl}`);
 
-    const config = vscode.workspace.getConfiguration(this._configSection);
-    const timeoutMs =
-      options?.timeoutMs ?? config.get<number>("timeoutMs") ?? 60_000;
-    const maxRetries =
-      options?.maxRetries ?? config.get<number>("maxRetries") ?? 1;
+    const timeoutMs = options?.timeoutMs ?? getTimeoutMs();
+    const maxRetries = options?.maxRetries ?? getMaxRetries();
 
     return this._createClient(baseUrl, apiKey, { timeoutMs, maxRetries });
   }
 
   getBaseUrl(): string {
-    const config = vscode.workspace.getConfiguration(this._configSection);
-    const baseUrl =
-      config.get<string>(`${this.id}.baseUrl`) || this._defaultBaseUrl;
+    const baseUrl = getProviderBaseUrl(this.id, this._defaultBaseUrl);
     logger.provider.debug(`[${this.id}] getBaseUrl: ${baseUrl}`);
     return baseUrl;
   }
 
   getApiModelId(vscodeModelId: string): string {
-    const config = vscode.workspace.getConfiguration(this._configSection);
-    const overrides = config.get<Record<string, string>>("modelIdOverrides");
+    const overrides = getModelIdOverrides();
     const modelId = overrides?.[vscodeModelId]?.trim() || vscodeModelId;
     if (overrides?.[vscodeModelId]) {
       logger.provider.debug(

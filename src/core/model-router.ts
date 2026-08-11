@@ -18,10 +18,11 @@ import {
   ServiceUnavailableError,
   TimeoutError,
 } from "./errors";
-import { CONFIG_SECTION } from "./models";
-
-/** Routing strategy */
-export type RoutingStrategy = "failover" | "latency";
+import { type RoutingStrategy } from "./models";
+import {
+  getFailoverModels as getConfiguredFailoverModels,
+  getRoutingStrategy as getConfiguredRoutingStrategy,
+} from "./settings";
 
 /** Single request latency record */
 export interface LatencyRecord {
@@ -184,7 +185,6 @@ export class ModelRouter implements IChatProvider {
   private static readonly MODEL_INFO_TIMEOUT_MS = 5_000;
 
   private providers = new Map<string, IChatProvider>();
-  private modelToPrimaryProvider = new Map<string, string>();
   private providerModels = new Map<string, string[]>();
   private providerEventDisposables = new Map<string, vscode.Disposable>();
   readonly latencyTracker = new LatencyTracker();
@@ -207,12 +207,6 @@ export class ModelRouter implements IChatProvider {
     this.providers.set(providerId, provider);
     this.providerModels.set(providerId, models);
 
-    for (const modelId of models) {
-      if (!this.modelToPrimaryProvider.has(modelId)) {
-        this.modelToPrimaryProvider.set(modelId, providerId);
-      }
-    }
-
     if (provider.onDidChangeLanguageModelChatInformation) {
       const disposable = provider.onDidChangeLanguageModelChatInformation(
         () => {
@@ -230,11 +224,6 @@ export class ModelRouter implements IChatProvider {
     this.providerModels.delete(providerId);
     this.providerEventDisposables.get(providerId)?.dispose();
     this.providerEventDisposables.delete(providerId);
-    for (const [modelId, pid] of this.modelToPrimaryProvider) {
-      if (pid === providerId) {
-        this.modelToPrimaryProvider.delete(modelId);
-      }
-    }
     provider?.dispose();
   }
 
@@ -252,15 +241,17 @@ export class ModelRouter implements IChatProvider {
   private findProviderForModel(
     modelId: string,
   ): { provider: IChatProvider; providerId: string } | undefined {
-    const providerId = this.modelToPrimaryProvider.get(modelId);
-    if (!providerId) {
+    // Reuse the registry's model → provider index instead of duplicating it.
+    const modelProvider =
+      ProviderModels.getInstance().findProviderByModelId(modelId);
+    if (!modelProvider) {
       return undefined;
     }
-    const provider = this.providers.get(providerId);
+    const provider = this.providers.get(modelProvider.id);
     if (!provider) {
       return undefined;
     }
-    return { provider, providerId };
+    return { provider, providerId: modelProvider.id };
   }
 
   /** Find fallback provider for failover */
@@ -518,7 +509,6 @@ export class ModelRouter implements IChatProvider {
       provider.dispose();
     }
     this.providers.clear();
-    this.modelToPrimaryProvider.clear();
     this.providerModels.clear();
     this.latencyTracker.clear();
     this.onDidChangeEmitter.dispose();
@@ -545,11 +535,7 @@ export class ModelRouter implements IChatProvider {
       return this.failoverModelsCache;
     }
     try {
-      const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      this.failoverModelsCache = config.get<Record<string, string>>(
-        "failoverModels",
-        {},
-      );
+      this.failoverModelsCache = getConfiguredFailoverModels();
       this.failoverModelsCacheTime = Date.now();
       return this.failoverModelsCache;
     } catch {
@@ -566,11 +552,7 @@ export class ModelRouter implements IChatProvider {
       return this.routingStrategyCache;
     }
     try {
-      const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      this.routingStrategyCache = config.get<RoutingStrategy>(
-        "routingStrategy",
-        "failover",
-      );
+      this.routingStrategyCache = getConfiguredRoutingStrategy();
       this.routingStrategyCacheTime = Date.now();
       return this.routingStrategyCache;
     } catch {
