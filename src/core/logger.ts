@@ -19,8 +19,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import vscode from "vscode";
 import { isDevelopmentEnvironment, isTestEnvironment } from "./runtime";
-import { CONFIG_SECTION } from "./models";
 import { getDebugMode } from "./settings";
+import { createSingletonStore } from "./singleton";
 
 // ── Types ────────────────────────────────────────────
 
@@ -127,7 +127,9 @@ const ALL_CATEGORIES: LogCategory[] = [
 // ── Logger Class ───────────────────────────────
 
 export class Logger implements vscode.Disposable {
-  private static instance: Logger | undefined;
+  private static store = createSingletonStore<Logger>({
+    lazyCreate: () => new Logger(),
+  });
 
   private channel: vscode.OutputChannel | undefined;
   private showCategory = true;
@@ -144,10 +146,7 @@ export class Logger implements vscode.Disposable {
   }
 
   static init(context: vscode.ExtensionContext): Logger {
-    if (!Logger.instance) {
-      Logger.instance = new Logger();
-    }
-    const sys = Logger.instance;
+    const sys = Logger.getInstance();
     sys.developmentMode =
       context.extensionMode === vscode.ExtensionMode.Development ||
       isDevelopmentEnvironment() ||
@@ -161,15 +160,13 @@ export class Logger implements vscode.Disposable {
   }
 
   static getInstance(): Logger {
-    if (!Logger.instance) {
-      Logger.instance = new Logger();
-    }
-    return Logger.instance;
+    return Logger.store.get();
   }
 
   static resetInstance(): void {
-    Logger.instance?.dispose();
-    Logger.instance = undefined;
+    const inst = Logger.store.getOptional();
+    inst?.dispose();
+    Logger.store.reset();
   }
 
   // ── Category accessors ───────────────────────────

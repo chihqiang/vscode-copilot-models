@@ -8,6 +8,7 @@ import { logger } from "./logger";
 import { BaseChatProvider, type ThinkingEffort } from "./chat-provider";
 import { BaseModelProvider } from "./model-provider";
 import { createApiClient, type ApiRequest, type ClientOptions } from "./client";
+import { createSingletonStore } from "./singleton";
 import type { IChatProvider } from "./chat-provider";
 import type { IModelProvider } from "./model-provider";
 
@@ -53,7 +54,7 @@ export function createProviderFactory(
 // ── ProviderModels Class ────────────────────────────
 
 export class ProviderModels {
-  private static instance: ProviderModels | undefined;
+  private static store = createSingletonStore<ProviderModels>();
 
   private readonly context: vscode.ExtensionContext;
   private readonly definitions: ProviderDefinition[];
@@ -75,28 +76,23 @@ export class ProviderModels {
     context: vscode.ExtensionContext,
     definitions: ProviderDefinition[],
   ): ProviderModels {
-    ProviderModels.instance = new ProviderModels(context, definitions);
-    return ProviderModels.instance;
+    const instance = new ProviderModels(context, definitions);
+    ProviderModels.store.set(instance);
+    return instance;
   }
 
   static getInstance(): ProviderModels {
-    if (!ProviderModels.instance) {
-      throw new Error(
-        "ProviderModels not initialized. Call ProviderModels.init(context) first.",
-      );
-    }
-    return ProviderModels.instance;
+    return ProviderModels.store.get();
   }
 
   static resetInstance(): void {
-    if (ProviderModels.instance) {
-      ProviderModels.instance.clear();
-      ProviderModels.instance = undefined;
-    }
+    const inst = ProviderModels.store.getOptional();
+    inst?.clear();
+    ProviderModels.store.reset();
   }
 
   static isInitialized(): boolean {
-    return ProviderModels.instance !== undefined;
+    return ProviderModels.store.getOptional() !== undefined;
   }
 
   // ── Definitions ──────────────────────────────────

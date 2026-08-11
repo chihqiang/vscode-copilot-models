@@ -9,23 +9,25 @@
 
 import vscode from "vscode";
 import { get_encoding, Tiktoken } from "@dqbd/tiktoken";
+import { createSingletonStore } from "./singleton";
 
 export class Tokenizer implements vscode.Disposable {
-  private static instance: Tokenizer | undefined;
+  private static store = createSingletonStore<Tokenizer>({
+    lazyCreate: () => new Tokenizer(),
+  });
+
   private encoder: Tiktoken | null = null;
 
   private constructor() {}
 
   static getInstance(): Tokenizer {
-    if (!Tokenizer.instance) {
-      Tokenizer.instance = new Tokenizer();
-    }
-    return Tokenizer.instance;
+    return Tokenizer.store.get();
   }
 
   static resetInstance(): void {
-    Tokenizer.instance?.dispose();
-    Tokenizer.instance = undefined;
+    const inst = Tokenizer.store.getOptional();
+    inst?.dispose();
+    Tokenizer.store.reset();
   }
 
   /** Count tokens in text (accurate, falls back on failure) */

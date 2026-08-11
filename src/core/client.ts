@@ -18,7 +18,6 @@ import { logger } from "./logger";
 import { CircuitBreaker } from "./circuit-breaker";
 import { calculateDelay, delay } from "./retry";
 import {
-  type ApiError,
   createApiError,
   classifyError,
   isRetryableError,

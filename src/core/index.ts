@@ -5,6 +5,7 @@
 export * from "./logger";
 export * from "./models";
 export * from "./settings";
+export * from "./singleton";
 export * from "./errors";
 export * from "./client";
 export * from "./model-provider";
