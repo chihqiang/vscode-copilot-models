@@ -3,7 +3,13 @@
  */
 
 import vscode from "vscode";
-import { logger } from "./logger";
+import {
+  generateRequestId,
+  getLogContext,
+  logger,
+  withLogContext,
+  type LogContext,
+} from "./logger";
 import { isImageMime, toDataUrl } from "./bytes";
 import { ApiError, CancelledError, TimeoutError } from "./errors";
 import {
@@ -910,6 +916,33 @@ export abstract class BaseChatProvider
    * Provide chat response
    */
   async provideLanguageModelChatResponse(
+    modelInfo: vscode.LanguageModelChatInformation,
+    messages: readonly vscode.LanguageModelChatRequestMessage[],
+    options: vscode.ProvideLanguageModelChatResponseOptions,
+    progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+    token: vscode.CancellationToken,
+  ): Promise<void> {
+    // Inherit the requestId set by the router (or generate one) so all logs
+    // for this request — routing, provider, client, stream — share a single
+    // req=<id> tag for fast troubleshooting.
+    const existing = getLogContext();
+    const ctx: LogContext = {
+      requestId: existing?.requestId ?? generateRequestId(),
+      providerId: this.providerId,
+      modelId: modelInfo.id,
+    };
+    return withLogContext(ctx, () =>
+      this.doProvideLanguageModelChatResponse(
+        modelInfo,
+        messages,
+        options,
+        progress,
+        token,
+      ),
+    );
+  }
+
+  private async doProvideLanguageModelChatResponse(
     modelInfo: vscode.LanguageModelChatInformation,
     messages: readonly vscode.LanguageModelChatRequestMessage[],
     options: vscode.ProvideLanguageModelChatResponseOptions,

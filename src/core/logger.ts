@@ -6,13 +6,17 @@
  * - 10 categories: core / registry / provider / auth / api / chat / stream / config / router / plan
  * - Hot-reload: follows copilot-models.debugMode config changes
  * - In development mode, debug level also outputs to console.log
+ * - Per-request context (requestId / providerId / modelId) propagated via
+ *   AsyncLocalStorage, so every log line of one request carries a common
+ *   `req=<id>` tag for fast cross-module traceability.
  *
  * Usage:
- *   import { logger } from "./core/logger";   // backward-compatible proxy
+ *   import { logger, withLogContext, generateRequestId } from "./core/logger";
  *   logger.core.info("message");
  *   logger.api.debug("debug info");
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import vscode from "vscode";
 import { isDevelopmentEnvironment, isTestEnvironment } from "./runtime";
 import { CONFIG_SECTION } from "./models";
@@ -40,6 +44,41 @@ export interface CategoryLogger {
   warn: (...args: unknown[]) => void;
   error: (...args: unknown[]) => void;
   debug: (...args: unknown[]) => void;
+}
+
+/**
+ * Structured context attached to a single request, propagated through async
+ * call chains so every log line of one request shares the same tags.
+ */
+export interface LogContext {
+  /** Request correlation ID (stable across router/provider/client logs) */
+  requestId?: string;
+  /** Provider handling the request */
+  providerId?: string;
+  /** Model being invoked */
+  modelId?: string;
+}
+
+// ── Request context (AsyncLocalStorage) ───────────────
+
+const asyncLocalStorage = new AsyncLocalStorage<LogContext>();
+
+/**
+ * Run a block with request context attached. Every log emitted inside `fn`
+ * (including async descendants) will carry the context tags.
+ */
+export function withLogContext<T>(ctx: LogContext, fn: () => T): T {
+  return asyncLocalStorage.run(ctx, fn);
+}
+
+/** Read the current request context (undefined outside a request) */
+export function getLogContext(): LogContext | undefined {
+  return asyncLocalStorage.getStore();
+}
+
+/** Generate a short request correlation ID (6 hex chars) */
+export function generateRequestId(): string {
+  return Math.random().toString(16).slice(2, 8);
 }
 
 // ── Constants ────────────────────────────────────────
@@ -302,7 +341,14 @@ export class Logger implements vscode.Disposable {
     const categoryText = this.showCategory
       ? `[${CATEGORY_NAMES[category as LogCategory] ?? category}] `
       : "";
-    const prefix = `[${ts}] [${levelStr}] ${categoryText}`;
+
+    // Structured per-request context, e.g.
+    //   req=a1b2c3 provider=deepseek model=deepseek-v4-flash
+    const ctx = getLogContext();
+    const ctxText = ctx
+      ? `req=${ctx.requestId ?? "-"} provider=${ctx.providerId ?? "-"} model=${ctx.modelId ?? "-"} `
+      : "";
+    const prefix = `[${ts}] [${levelStr}] ${categoryText}${ctxText}`;
 
     const text = args
       .map((a) => {
@@ -313,7 +359,9 @@ export class Logger implements vscode.Disposable {
           return a.stack ?? a.message;
         }
         try {
-          return JSON.stringify(a, null, 2);
+          // Single-line compact JSON keeps one log entry per line for easy
+          // grepping.
+          return JSON.stringify(a);
         } catch {
           return String(a);
         }

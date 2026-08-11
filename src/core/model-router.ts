@@ -11,7 +11,13 @@
 import vscode from "vscode";
 import { IChatProvider } from "./chat-provider";
 import { ProviderModels } from "./provider-models";
-import { logger } from "./logger";
+import {
+  generateRequestId,
+  getLogContext,
+  logger,
+  withLogContext,
+  type LogContext,
+} from "./logger";
 import {
   NetworkError,
   RateLimitError,
@@ -346,6 +352,31 @@ export class ModelRouter implements IChatProvider {
   }
 
   async provideLanguageModelChatResponse(
+    modelInfo: vscode.LanguageModelChatInformation,
+    messages: readonly vscode.LanguageModelChatRequestMessage[],
+    options: vscode.ProvideLanguageModelChatResponseOptions,
+    progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+    token: vscode.CancellationToken,
+  ): Promise<void> {
+    // Attach a request context so every log line for this request (routing,
+    // provider, client, failover) shares the same req=<id> tag.
+    const existing = getLogContext();
+    const ctx: LogContext = {
+      requestId: existing?.requestId ?? generateRequestId(),
+      modelId: modelInfo.id,
+    };
+    return withLogContext(ctx, () =>
+      this.doProvideLanguageModelChatResponse(
+        modelInfo,
+        messages,
+        options,
+        progress,
+        token,
+      ),
+    );
+  }
+
+  private async doProvideLanguageModelChatResponse(
     modelInfo: vscode.LanguageModelChatInformation,
     messages: readonly vscode.LanguageModelChatRequestMessage[],
     options: vscode.ProvideLanguageModelChatResponseOptions,
