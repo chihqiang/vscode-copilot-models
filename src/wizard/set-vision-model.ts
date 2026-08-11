@@ -4,6 +4,7 @@
 
 import vscode from "vscode";
 import { logger, getVisionLanguageModelOptions } from "../core";
+import { confirmAction } from "./utils";
 
 /**
  * Set Vision Model wizard:
@@ -54,14 +55,11 @@ export async function openSetVisionModelWizard(): Promise<void> {
  * 1. Confirm and clear vision proxy configuration
  */
 export async function openClearVisionModelWizard(): Promise<void> {
-  const confirm = await vscode.window.showWarningMessage(
+  const confirmed = await confirmAction(
     "Clear vision model configuration?",
-    { modal: true },
     "Clear",
-    "Cancel",
   );
-
-  if (confirm !== "Clear") {
+  if (!confirmed) {
     return;
   }
 

@@ -11,17 +11,24 @@
 import vscode from "vscode";
 import { IChatProvider } from "./chat-provider";
 import { ProviderModels } from "./provider-models";
-import { logger } from "./logger";
+import {
+  generateRequestId,
+  getLogContext,
+  logger,
+  withLogContext,
+  type LogContext,
+} from "./logger";
 import {
   NetworkError,
   RateLimitError,
   ServiceUnavailableError,
   TimeoutError,
 } from "./errors";
-import { CONFIG_SECTION } from "./models";
-
-/** Routing strategy */
-export type RoutingStrategy = "failover" | "latency";
+import { type RoutingStrategy } from "./models";
+import {
+  getFailoverModels as getConfiguredFailoverModels,
+  getRoutingStrategy as getConfiguredRoutingStrategy,
+} from "./settings";
 
 /** Single request latency record */
 export interface LatencyRecord {
@@ -44,11 +51,28 @@ export interface LatencyStats {
 const SLIDING_WINDOW_SIZE = 50;
 
 /**
+ * Incrementally maintained latency aggregates for a provider's successful
+ * requests, kept in sync with the sliding window of all records.
+ */
+interface ProviderLatencyAggregates {
+  sum: number;
+  min: number;
+  max: number;
+  count: number;
+  lastRecorded: number;
+  durations: number[];
+}
+
+/**
  * Latency Tracker
- * Maintains sliding window latency records per provider for latency-aware routing
+ * Maintains sliding window latency records per provider for latency-aware routing.
+ *
+ * Successful-request aggregates are updated incrementally so getStats() is O(1)
+ * instead of re-filtering/reducing the whole window on every routing decision.
  */
 export class LatencyTracker {
-  private records: Map<string, LatencyRecord[]> = new Map();
+  private records = new Map<string, LatencyRecord[]>();
+  private aggregates = new Map<string, ProviderLatencyAggregates>();
 
   /** Record latency data for a request */
   record(entry: LatencyRecord): void {
@@ -58,31 +82,33 @@ export class LatencyTracker {
       this.records.set(entry.providerId, list);
     }
     list.push(entry);
+    let evicted: LatencyRecord | undefined;
     if (list.length > SLIDING_WINDOW_SIZE) {
-      list.shift();
+      evicted = list.shift();
+    }
+
+    if (entry.success) {
+      this.addToAggregates(entry);
+    }
+
+    // If a successful record fell out of the window, subtract it.
+    if (evicted?.success) {
+      this.removeFromAggregates(evicted);
     }
   }
 
   /** Get latency stats for a provider (successful requests only) */
   getStats(providerId: string): LatencyStats | undefined {
-    const list = this.records.get(providerId);
-    if (!list || list.length === 0) {
+    const agg = this.aggregates.get(providerId);
+    if (!agg || agg.count === 0) {
       return undefined;
     }
-
-    const successful = list.filter((r) => r.success);
-    if (successful.length === 0) {
-      return undefined;
-    }
-
-    const durations = successful.map((r) => r.duration);
-    const sum = durations.reduce((a, b) => a + b, 0);
     return {
-      averageMs: sum / durations.length,
-      minMs: Math.min(...durations),
-      maxMs: Math.max(...durations),
-      count: successful.length,
-      lastRecorded: successful[successful.length - 1].timestamp,
+      averageMs: agg.sum / agg.count,
+      minMs: agg.min,
+      maxMs: agg.max,
+      count: agg.count,
+      lastRecorded: agg.lastRecorded,
     };
   }
 
@@ -101,14 +127,70 @@ export class LatencyTracker {
   /** Clear all records */
   clear(): void {
     this.records.clear();
+    this.aggregates.clear();
+  }
+
+  private addToAggregates(entry: LatencyRecord): void {
+    let agg = this.aggregates.get(entry.providerId);
+    if (!agg) {
+      agg = {
+        sum: 0,
+        min: Infinity,
+        max: -Infinity,
+        count: 0,
+        lastRecorded: 0,
+        durations: [],
+      };
+      this.aggregates.set(entry.providerId, agg);
+    }
+    agg.durations.push(entry.duration);
+    agg.sum += entry.duration;
+    if (entry.duration < agg.min) {
+      agg.min = entry.duration;
+    }
+    if (entry.duration > agg.max) {
+      agg.max = entry.duration;
+    }
+    agg.count++;
+    agg.lastRecorded = entry.timestamp;
+  }
+
+  private removeFromAggregates(entry: LatencyRecord): void {
+    const agg = this.aggregates.get(entry.providerId);
+    if (!agg || agg.count === 0) {
+      return;
+    }
+    const idx = agg.durations.indexOf(entry.duration);
+    if (idx === -1) {
+      return;
+    }
+    agg.durations.splice(idx, 1);
+    agg.sum -= entry.duration;
+    agg.count--;
+
+    // Recompute extremes only when the evicted value was one of them.
+    if (entry.duration === agg.min || entry.duration === agg.max) {
+      let newMin = Infinity;
+      let newMax = -Infinity;
+      for (const d of agg.durations) {
+        if (d < newMin) {
+          newMin = d;
+        }
+        if (d > newMax) {
+          newMax = d;
+        }
+      }
+      agg.min = agg.durations.length > 0 ? newMin : Infinity;
+      agg.max = agg.durations.length > 0 ? newMax : -Infinity;
+    }
   }
 }
 
 export class ModelRouter implements IChatProvider {
   private static readonly FAILOVER_CACHE_TTL = 30_000;
+  private static readonly MODEL_INFO_TIMEOUT_MS = 5_000;
 
   private providers = new Map<string, IChatProvider>();
-  private modelToPrimaryProvider = new Map<string, string>();
   private providerModels = new Map<string, string[]>();
   private providerEventDisposables = new Map<string, vscode.Disposable>();
   readonly latencyTracker = new LatencyTracker();
@@ -131,12 +213,6 @@ export class ModelRouter implements IChatProvider {
     this.providers.set(providerId, provider);
     this.providerModels.set(providerId, models);
 
-    for (const modelId of models) {
-      if (!this.modelToPrimaryProvider.has(modelId)) {
-        this.modelToPrimaryProvider.set(modelId, providerId);
-      }
-    }
-
     if (provider.onDidChangeLanguageModelChatInformation) {
       const disposable = provider.onDidChangeLanguageModelChatInformation(
         () => {
@@ -154,11 +230,6 @@ export class ModelRouter implements IChatProvider {
     this.providerModels.delete(providerId);
     this.providerEventDisposables.get(providerId)?.dispose();
     this.providerEventDisposables.delete(providerId);
-    for (const [modelId, pid] of this.modelToPrimaryProvider) {
-      if (pid === providerId) {
-        this.modelToPrimaryProvider.delete(modelId);
-      }
-    }
     provider?.dispose();
   }
 
@@ -176,22 +247,26 @@ export class ModelRouter implements IChatProvider {
   private findProviderForModel(
     modelId: string,
   ): { provider: IChatProvider; providerId: string } | undefined {
-    const providerId = this.modelToPrimaryProvider.get(modelId);
-    if (!providerId) {
+    // Reuse the registry's model → provider index instead of duplicating it.
+    const modelProvider =
+      ProviderModels.getInstance().findProviderByModelId(modelId);
+    if (!modelProvider) {
       return undefined;
     }
-    const provider = this.providers.get(providerId);
+    const provider = this.providers.get(modelProvider.id);
     if (!provider) {
       return undefined;
     }
-    return { provider, providerId };
+    return { provider, providerId: modelProvider.id };
   }
 
   /** Find fallback provider for failover */
   private findFallbackProvider(
     failedModelId: string,
     triedProviderIds: Set<string>,
-  ): { provider: IChatProvider; providerId: string } | undefined {
+  ):
+    | { provider: IChatProvider; providerId: string; fallbackModelId: string }
+    | undefined {
     const failoverModels = this.getFailoverModels();
     const fallbackModelId = failoverModels[failedModelId];
     if (!fallbackModelId) {
@@ -212,7 +287,11 @@ export class ModelRouter implements IChatProvider {
       return undefined;
     }
 
-    return { provider, providerId: fallbackModelProvider.id };
+    return {
+      provider,
+      providerId: fallbackModelProvider.id,
+      fallbackModelId,
+    };
   }
 
   /**
@@ -246,9 +325,11 @@ export class ModelRouter implements IChatProvider {
     const results = await Promise.allSettled(
       entries.map(async ([providerId, provider]) => {
         try {
-          return await provider.provideLanguageModelChatInformation(
-            options,
-            token,
+          // Guard against a slow provider stalling the aggregated model list.
+          return await this.withTimeout(
+            provider.provideLanguageModelChatInformation(options, token),
+            ModelRouter.MODEL_INFO_TIMEOUT_MS,
+            providerId,
           );
         } catch (error) {
           logger.router.error(
@@ -271,6 +352,31 @@ export class ModelRouter implements IChatProvider {
   }
 
   async provideLanguageModelChatResponse(
+    modelInfo: vscode.LanguageModelChatInformation,
+    messages: readonly vscode.LanguageModelChatRequestMessage[],
+    options: vscode.ProvideLanguageModelChatResponseOptions,
+    progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+    token: vscode.CancellationToken,
+  ): Promise<void> {
+    // Attach a request context so every log line for this request (routing,
+    // provider, client, failover) shares the same req=<id> tag.
+    const existing = getLogContext();
+    const ctx: LogContext = {
+      requestId: existing?.requestId ?? generateRequestId(),
+      modelId: modelInfo.id,
+    };
+    return withLogContext(ctx, () =>
+      this.doProvideLanguageModelChatResponse(
+        modelInfo,
+        messages,
+        options,
+        progress,
+        token,
+      ),
+    );
+  }
+
+  private async doProvideLanguageModelChatResponse(
     modelInfo: vscode.LanguageModelChatInformation,
     messages: readonly vscode.LanguageModelChatRequestMessage[],
     options: vscode.ProvideLanguageModelChatResponseOptions,
@@ -342,18 +448,28 @@ export class ModelRouter implements IChatProvider {
             break;
           }
 
-          const { provider: fallbackProvider, providerId: fallbackPid } =
-            fallback;
+          const {
+            provider: fallbackProvider,
+            providerId: fallbackPid,
+            fallbackModelId,
+          } = fallback;
           triedProviders.add(fallbackPid);
 
           logger.router.warn(
-            `Failover to "${fallbackPid}" for model "${modelId}" after error: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+            `Failover to "${fallbackPid}" for model "${modelId}" -> "${fallbackModelId}" after error: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
           );
+
+          // Re-target the request at the fallback model so the fallback
+          // provider resolves the correct model definition and API model ID.
+          const fallbackModelInfo: vscode.LanguageModelChatInformation = {
+            ...modelInfo,
+            id: fallbackModelId,
+          };
 
           const fallbackStart = Date.now();
           try {
             await fallbackProvider.provideLanguageModelChatResponse(
-              modelInfo,
+              fallbackModelInfo,
               messages,
               options,
               progress,
@@ -361,7 +477,7 @@ export class ModelRouter implements IChatProvider {
             );
             this.latencyTracker.record({
               providerId: fallbackPid,
-              modelId,
+              modelId: fallbackModelId,
               duration: Date.now() - fallbackStart,
               success: true,
               timestamp: Date.now(),
@@ -370,7 +486,7 @@ export class ModelRouter implements IChatProvider {
           } catch (fallbackError) {
             this.latencyTracker.record({
               providerId: fallbackPid,
-              modelId,
+              modelId: fallbackModelId,
               duration: Date.now() - fallbackStart,
               success: false,
               timestamp: Date.now(),
@@ -424,7 +540,6 @@ export class ModelRouter implements IChatProvider {
       provider.dispose();
     }
     this.providers.clear();
-    this.modelToPrimaryProvider.clear();
     this.providerModels.clear();
     this.latencyTracker.clear();
     this.onDidChangeEmitter.dispose();
@@ -451,11 +566,7 @@ export class ModelRouter implements IChatProvider {
       return this.failoverModelsCache;
     }
     try {
-      const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      this.failoverModelsCache = config.get<Record<string, string>>(
-        "failoverModels",
-        {},
-      );
+      this.failoverModelsCache = getConfiguredFailoverModels();
       this.failoverModelsCacheTime = Date.now();
       return this.failoverModelsCache;
     } catch {
@@ -472,15 +583,35 @@ export class ModelRouter implements IChatProvider {
       return this.routingStrategyCache;
     }
     try {
-      const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      this.routingStrategyCache = config.get<RoutingStrategy>(
-        "routingStrategy",
-        "failover",
-      );
+      this.routingStrategyCache = getConfiguredRoutingStrategy();
       this.routingStrategyCacheTime = Date.now();
       return this.routingStrategyCache;
     } catch {
       return "failover";
+    }
+  }
+
+  /**
+   * Race a promise against a timeout so a slow provider cannot stall the
+   * aggregated model list forever.
+   */
+  private async withTimeout<T>(
+    promise: PromiseLike<T> | T | undefined,
+    timeoutMs: number,
+    providerId: string,
+  ): Promise<T | undefined> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new TimeoutError(providerId, timeoutMs));
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([Promise.resolve(promise), timeout]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
     }
   }
 

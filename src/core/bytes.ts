@@ -1,5 +1,6 @@
 /**
- * Byte utilities for UTF-8 encoding/decoding and buffer concatenation
+ * Byte utilities for UTF-8 encoding/decoding, buffer concatenation, and
+ * image data handling
  */
 
 const textEncoder = new TextEncoder();
@@ -28,4 +29,17 @@ export function concatBytes(buffers: Uint8Array[]): Uint8Array {
     index += buffer.length;
   }
   return output;
+}
+
+/** Check whether a MIME type denotes an image */
+export function isImageMime(mimeType: string): boolean {
+  return mimeType.startsWith("image/");
+}
+
+/**
+ * Encode bytes as a base64 data URL for the given MIME type.
+ * Used for image attachments sent to OpenAI-compatible APIs.
+ */
+export function toDataUrl(data: Uint8Array, mimeType: string): string {
+  return `data:${mimeType};base64,${Buffer.from(data).toString("base64")}`;
 }

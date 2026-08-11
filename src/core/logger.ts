@@ -6,16 +6,22 @@
  * - 10 categories: core / registry / provider / auth / api / chat / stream / config / router / plan
  * - Hot-reload: follows copilot-models.debugMode config changes
  * - In development mode, debug level also outputs to console.log
+ * - Per-request context (requestId / providerId / modelId) propagated via
+ *   AsyncLocalStorage, so every log line of one request carries a common
+ *   `req=<id>` tag for fast cross-module traceability.
  *
  * Usage:
- *   import { logger } from "./core/logger";   // backward-compatible proxy
+ *   import { logger, withLogContext, generateRequestId } from "./core/logger";
  *   logger.core.info("message");
  *   logger.api.debug("debug info");
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import vscode from "vscode";
-import { isDevelopmentEnvironment } from "./runtime";
-import { CONFIG_SECTION } from "./models";
+import { isDevelopmentEnvironment, isTestEnvironment } from "./runtime";
+import { getDebugMode } from "./settings";
+import { redactSensitiveValues } from "./sanitize";
+import { createSingletonStore } from "./singleton";
 
 // ── Types ────────────────────────────────────────────
 
@@ -39,6 +45,41 @@ export interface CategoryLogger {
   warn: (...args: unknown[]) => void;
   error: (...args: unknown[]) => void;
   debug: (...args: unknown[]) => void;
+}
+
+/**
+ * Structured context attached to a single request, propagated through async
+ * call chains so every log line of one request shares the same tags.
+ */
+export interface LogContext {
+  /** Request correlation ID (stable across router/provider/client logs) */
+  requestId?: string;
+  /** Provider handling the request */
+  providerId?: string;
+  /** Model being invoked */
+  modelId?: string;
+}
+
+// ── Request context (AsyncLocalStorage) ───────────────
+
+const asyncLocalStorage = new AsyncLocalStorage<LogContext>();
+
+/**
+ * Run a block with request context attached. Every log emitted inside `fn`
+ * (including async descendants) will carry the context tags.
+ */
+export function withLogContext<T>(ctx: LogContext, fn: () => T): T {
+  return asyncLocalStorage.run(ctx, fn);
+}
+
+/** Read the current request context (undefined outside a request) */
+export function getLogContext(): LogContext | undefined {
+  return asyncLocalStorage.getStore();
+}
+
+/** Generate a short request correlation ID (6 hex chars) */
+export function generateRequestId(): string {
+  return Math.random().toString(16).slice(2, 8);
 }
 
 // ── Constants ────────────────────────────────────────
@@ -87,12 +128,16 @@ const ALL_CATEGORIES: LogCategory[] = [
 // ── Logger Class ───────────────────────────────
 
 export class Logger implements vscode.Disposable {
-  private static instance: Logger | undefined;
+  private static store = createSingletonStore<Logger>({
+    lazyCreate: () => new Logger(),
+  });
 
   private channel: vscode.OutputChannel | undefined;
   private showCategory = true;
   private currentLogLevel: LogLevel = "info";
   private developmentMode = false;
+  private testMode = false;
+  private disposed = false;
   private readonly categoryLoggers = new Map<string, CategoryLogger>();
 
   private constructor() {
@@ -102,29 +147,27 @@ export class Logger implements vscode.Disposable {
   }
 
   static init(context: vscode.ExtensionContext): Logger {
-    if (!Logger.instance) {
-      Logger.instance = new Logger();
-    }
-    const sys = Logger.instance;
+    const sys = Logger.getInstance();
     sys.developmentMode =
       context.extensionMode === vscode.ExtensionMode.Development ||
       isDevelopmentEnvironment() ||
       context.extensionMode === vscode.ExtensionMode.Test;
+    sys.testMode =
+      context.extensionMode === vscode.ExtensionMode.Test ||
+      isTestEnvironment();
     sys.currentLogLevel = sys.developmentMode ? "debug" : "info";
     sys.applyLogLevelFromConfig();
     return sys;
   }
 
   static getInstance(): Logger {
-    if (!Logger.instance) {
-      Logger.instance = new Logger();
-    }
-    return Logger.instance;
+    return Logger.store.get();
   }
 
   static resetInstance(): void {
-    Logger.instance?.dispose();
-    Logger.instance = undefined;
+    const inst = Logger.store.getOptional();
+    inst?.dispose();
+    Logger.store.reset();
   }
 
   // ── Category accessors ───────────────────────────
@@ -198,8 +241,7 @@ export class Logger implements vscode.Disposable {
       return;
     }
     try {
-      const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      const debugMode = config.get<string>("debugMode");
+      const debugMode = getDebugMode();
       if (debugMode && DEBUG_MODE_MAP[debugMode]) {
         this.currentLogLevel = DEBUG_MODE_MAP[debugMode];
       }
@@ -208,21 +250,18 @@ export class Logger implements vscode.Disposable {
     }
   }
 
-  createProviderLogger(providerId: string): CategoryLogger {
-    return this.createCategoryLogger(providerId as LogCategory);
-  }
-
   show(): void {
-    this.getChannel().show();
+    this.getChannel()?.show();
   }
   hide(): void {
-    this.getChannel().hide();
+    this.getChannel()?.hide();
   }
   clear(): void {
-    this.getChannel().clear();
+    this.getChannel()?.clear();
   }
 
   dispose(): void {
+    this.disposed = true;
     this.channel?.dispose();
     this.channel = undefined;
   }
@@ -248,7 +287,10 @@ export class Logger implements vscode.Disposable {
     };
   }
 
-  private getChannel(): vscode.OutputChannel {
+  private getChannel(): vscode.OutputChannel | undefined {
+    if (this.disposed || this.testMode) {
+      return undefined;
+    }
     if (!this.channel) {
       this.channel = vscode.window.createOutputChannel("Copilot Models");
     }
@@ -256,12 +298,27 @@ export class Logger implements vscode.Disposable {
   }
 
   private write(level: LogLevel, category: string, args: unknown[]): void {
-    if (!this.shouldLog(level)) {
+    if (this.disposed || !this.shouldLog(level)) {
       return;
     }
 
     const text = this.formatMessage(level, category, args);
-    this.getChannel().appendLine(text);
+
+    // In test mode, avoid creating an OutputChannel: its async init can
+    // complete after the extension host's DisposableStore is disposed,
+    // producing "Trying to add a disposable..." warnings. Log to console.
+    if (this.testMode) {
+      if (level === "error") {
+        console.error(text);
+      } else if (level === "warn") {
+        console.warn(text);
+      } else {
+        console.log(text);
+      }
+      return;
+    }
+
+    this.getChannel()?.appendLine(text);
 
     if (this.developmentMode && level === "debug") {
       console.log(text);
@@ -278,7 +335,14 @@ export class Logger implements vscode.Disposable {
     const categoryText = this.showCategory
       ? `[${CATEGORY_NAMES[category as LogCategory] ?? category}] `
       : "";
-    const prefix = `[${ts}] [${levelStr}] ${categoryText}`;
+
+    // Structured per-request context, e.g.
+    //   req=a1b2c3 provider=deepseek model=deepseek-v4-flash
+    const ctx = getLogContext();
+    const ctxText = ctx
+      ? `req=${ctx.requestId ?? "-"} provider=${ctx.providerId ?? "-"} model=${ctx.modelId ?? "-"} `
+      : "";
+    const prefix = `[${ts}] [${levelStr}] ${categoryText}${ctxText}`;
 
     const text = args
       .map((a) => {
@@ -289,14 +353,18 @@ export class Logger implements vscode.Disposable {
           return a.stack ?? a.message;
         }
         try {
-          return JSON.stringify(a, null, 2);
+          // Single-line compact JSON keeps one log entry per line for easy
+          // grepping.
+          return JSON.stringify(a);
         } catch {
           return String(a);
         }
       })
       .join(" ");
 
-    return `${prefix}${text}`;
+    // Final safety net: redact any sensitive values (API keys, tokens,
+    // Bearer headers, key=value pairs) that slipped into the message.
+    return `${prefix}${redactSensitiveValues(text)}`;
   }
 }
 

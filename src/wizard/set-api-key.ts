@@ -4,6 +4,7 @@
 
 import vscode from "vscode";
 import { logger, ProviderModels } from "../core";
+import { pickSingle, confirmAction } from "./utils";
 
 /**
  * Set API Key wizard:
@@ -19,28 +20,22 @@ export async function openSetApiKeyWizard(): Promise<void> {
     return;
   }
 
-  let providerId: string;
-
-  if (factories.length === 1) {
-    providerId = factories[0].providerId;
-  } else {
-    const selected = await vscode.window.showQuickPick(
-      factories.map((f) => ({
-        label: f.providerName,
-        description: f.providerId,
-        providerId: f.providerId,
-      })),
-      {
-        title: "Set API Key",
-        placeHolder: "Select a provider to configure API key",
-        ignoreFocusOut: true,
-      },
-    );
-    if (!selected) {
-      return;
-    }
-    providerId = selected.providerId;
+  const picked = await pickSingle(
+    factories,
+    (f) => ({
+      label: f.providerName,
+      description: f.providerId,
+      item: f,
+    }),
+    {
+      title: "Set API Key",
+      placeHolder: "Select a provider to configure API key",
+    },
+  );
+  if (!picked) {
+    return;
   }
+  const providerId = picked.providerId;
 
   const modelProvider = pm.getProvider(providerId);
   if (!modelProvider) {
@@ -93,39 +88,29 @@ export async function openClearApiKeyWizard(): Promise<void> {
     return;
   }
 
-  let targetProviderId: string;
-  let targetProviderName: string;
-
-  if (providersWithKeys.length === 1) {
-    targetProviderId = providersWithKeys[0].providerId;
-    targetProviderName = providersWithKeys[0].providerName;
-  } else {
-    const selected = await vscode.window.showQuickPick(
-      providersWithKeys.map((p) => ({
-        label: p.providerName,
-        description: p.providerId,
-        providerId: p.providerId,
-      })),
-      {
-        title: "Clear API Key",
-        placeHolder: "Select a provider to clear API key",
-        ignoreFocusOut: true,
-      },
-    );
-    if (!selected) {
-      return;
-    }
-    targetProviderId = selected.providerId;
-    targetProviderName = selected.label;
-  }
-
-  const confirm = await vscode.window.showWarningMessage(
-    `Clear ${targetProviderName} API key?`,
-    { modal: true },
-    "Clear",
-    "Cancel",
+  const picked = await pickSingle(
+    providersWithKeys,
+    (p) => ({
+      label: p.providerName,
+      description: p.providerId,
+      item: p,
+    }),
+    {
+      title: "Clear API Key",
+      placeHolder: "Select a provider to clear API key",
+    },
   );
-  if (confirm !== "Clear") {
+  if (!picked) {
+    return;
+  }
+  const targetProviderId = picked.providerId;
+  const targetProviderName = picked.providerName;
+
+  const confirmed = await confirmAction(
+    `Clear ${targetProviderName} API key?`,
+    "Clear",
+  );
+  if (!confirmed) {
     return;
   }
 

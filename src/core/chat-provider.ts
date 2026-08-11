@@ -3,7 +3,14 @@
  */
 
 import vscode from "vscode";
-import { logger } from "./logger";
+import {
+  generateRequestId,
+  getLogContext,
+  logger,
+  withLogContext,
+  type LogContext,
+} from "./logger";
+import { isImageMime, toDataUrl } from "./bytes";
 import { ApiError, CancelledError, TimeoutError } from "./errors";
 import {
   ApiMessage,
@@ -15,6 +22,8 @@ import {
   StreamCallbacks,
 } from "./client";
 import { CONFIG_SECTION, ModelDefinition } from "./models";
+import { getMaxImageSize } from "./settings";
+import { sanitizeUrl } from "./sanitize";
 import { IModelProvider } from "./model-provider";
 import { Tokenizer } from "./tokenizer";
 import { TokenPlan, type PlanOverride } from "./token-plan";
@@ -105,6 +114,9 @@ export abstract class BaseChatProvider
   protected isActive = true;
   private disposables: vscode.Disposable[] = [];
   private clientCache = new Map<string, IApiClient>();
+
+  /** Cached API key presence, invalidated on secret change */
+  private hasApiKeyCache: boolean | undefined;
 
   readonly onDidChangeLanguageModelChatInformation =
     this.onDidChangeLanguageModelChatInformationEmitter.event;
@@ -234,6 +246,7 @@ export abstract class BaseChatProvider
       logger.auth.debug(
         `[${this.providerId}] Secret affects this provider, refreshing...`,
       );
+      this.hasApiKeyCache = undefined;
       this.onDidChangeLanguageModelChatInformationEmitter.fire();
     }
     if (this.isActive && e.key.startsWith("copilot-models.tokenPlan.")) {
@@ -265,7 +278,10 @@ export abstract class BaseChatProvider
       return [];
     }
 
-    const hasApiKey = await this.modelProvider.hasApiKey();
+    if (this.hasApiKeyCache === undefined) {
+      this.hasApiKeyCache = await this.modelProvider.hasApiKey();
+    }
+    const hasApiKey = this.hasApiKeyCache;
     const planManager = TokenPlan.getInstance();
     const planModelIds = planManager.getPlanModelIds();
     const models = this.modelProvider.getModels();
@@ -536,7 +552,7 @@ export abstract class BaseChatProvider
     );
     this.logMessageDetails(messages);
 
-    const maxImageSize = this.getMaxImageSize();
+    const maxImageSize = getMaxImageSize();
     const result: ApiMessage[] = [];
 
     for (const message of messages) {
@@ -558,7 +574,7 @@ export abstract class BaseChatProvider
         } else if (part instanceof vscode.LanguageModelThinkingPart) {
           thinkingText += part.value;
         } else if (part instanceof vscode.LanguageModelDataPart) {
-          if (!this.isImageMime(part.mimeType)) {
+          if (!isImageMime(part.mimeType)) {
             continue;
           }
 
@@ -579,7 +595,7 @@ export abstract class BaseChatProvider
 
           contentParts.push({
             type: "image_url",
-            image_url: { url: this.imageToDataUrl(part.data, part.mimeType) },
+            image_url: { url: toDataUrl(part.data, part.mimeType) },
           });
         } else if (part instanceof vscode.LanguageModelToolCallPart) {
           toolCalls.push({
@@ -601,15 +617,28 @@ export abstract class BaseChatProvider
             textBuffer += val;
           }
         } else if (part instanceof vscode.LanguageModelToolResultPart) {
-          let toolContent = "";
+          const textParts: string[] = [];
+          let binaryParts = 0;
           for (const item of part.content) {
             if (item instanceof vscode.LanguageModelTextPart) {
-              toolContent += item.value;
+              textParts.push(item.value);
+            } else if (item instanceof vscode.LanguageModelDataPart) {
+              binaryParts++;
             }
+          }
+          const toolText = textParts.join("");
+          let toolContent = toolText;
+          if (!toolContent) {
+            // Never serialize binary data parts into the request — that
+            // would bloat the payload with a huge JSON byte map.
+            toolContent =
+              binaryParts > 0
+                ? `[Tool result contains ${binaryParts} binary data part(s), omitted]`
+                : JSON.stringify(part.content);
           }
           toolResults.push({
             callId: part.callId,
-            content: toolContent || JSON.stringify(part.content),
+            content: toolContent,
           });
         }
       }
@@ -717,7 +746,7 @@ export abstract class BaseChatProvider
   ): Promise<void> {
     const planBaseUrl = planOverride?.baseUrl;
     logger.chat.info(
-      `[${this.providerId}] Sending stream request, model: ${request.model}${planOverride ? ` (via token plan, baseUrl=${planBaseUrl})` : ""}`,
+      `[${this.providerId}] Sending stream request, model: ${request.model}${planOverride ? ` (via token plan, baseUrl=${sanitizeUrl(planBaseUrl ?? "")})` : ""}`,
     );
 
     const apiKey =
@@ -894,6 +923,33 @@ export abstract class BaseChatProvider
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     token: vscode.CancellationToken,
   ): Promise<void> {
+    // Inherit the requestId set by the router (or generate one) so all logs
+    // for this request — routing, provider, client, stream — share a single
+    // req=<id> tag for fast troubleshooting.
+    const existing = getLogContext();
+    const ctx: LogContext = {
+      requestId: existing?.requestId ?? generateRequestId(),
+      providerId: this.providerId,
+      modelId: modelInfo.id,
+    };
+    return withLogContext(ctx, () =>
+      this.doProvideLanguageModelChatResponse(
+        modelInfo,
+        messages,
+        options,
+        progress,
+        token,
+      ),
+    );
+  }
+
+  private async doProvideLanguageModelChatResponse(
+    modelInfo: vscode.LanguageModelChatInformation,
+    messages: readonly vscode.LanguageModelChatRequestMessage[],
+    options: vscode.ProvideLanguageModelChatResponseOptions,
+    progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+    token: vscode.CancellationToken,
+  ): Promise<void> {
     const startTime = Date.now();
     logger.chat.info(
       `[${this.providerId}] provideLanguageModelChatResponse called, model: ${modelInfo.id}`,
@@ -974,27 +1030,6 @@ export abstract class BaseChatProvider
    */
   private estimateTokenCount(text: string): number {
     return Tokenizer.getInstance().countTokens(text);
-  }
-
-  /**
-   * Extract text content from message
-   */
-  private getMaxImageSize(): number {
-    const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    return config.get<number>("maxImageSize") ?? 20 * 1024 * 1024;
-  }
-
-  private isImageMime(mimeType: string): boolean {
-    return mimeType.startsWith("image/");
-  }
-
-  private imageToDataUrl(data: Uint8Array, mimeType: string): string {
-    const base64 = this.uint8ArrayToBase64(data);
-    return `data:${mimeType};base64,${base64}`;
-  }
-
-  private uint8ArrayToBase64(bytes: Uint8Array): string {
-    return Buffer.from(bytes).toString("base64");
   }
 
   private extractTextFromMessage(

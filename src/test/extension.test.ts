@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
+import { logger } from "../core/logger";
 
 suite("Extension Test Suite", () => {
   vscode.window.showInformationMessage("Start all tests.");
@@ -51,10 +52,13 @@ suite("Extension Test Suite", () => {
       "modelIdOverrides should default to empty object",
     );
 
+    // The global `maxTokens` setting was removed — each model now uses its
+    // own `maxOutputTokens`. Assert a still-existing token-related setting
+    // instead.
     assert.strictEqual(
-      config.get<number>("maxTokens"),
-      0,
-      "maxTokens should default to 0",
+      config.get<number>("visionProxy.maxTokens"),
+      1024,
+      "visionProxy.maxTokens should default to 1024",
     );
   });
 
@@ -83,18 +87,16 @@ suite("Extension Test Suite", () => {
   });
 
   test("Logger should be functional", async () => {
-    // Test that logging doesn't throw errors
-    const channel = vscode.window.createOutputChannel("Test Channel");
-    assert.ok(channel, "Output channel should be created");
-
-    channel.appendLine("Test log message");
-    channel.append("Test log message without newline");
-
-    // Clear the channel
-    channel.clear();
-    assert.ok(true, "Logger channel operations should work");
-
-    // Dispose the channel
-    channel.dispose();
+    // Test the extension's own logger. In test mode it writes to the
+    // console instead of creating an OutputChannel — creating one here (as
+    // the old test did via vscode.window.createOutputChannel) caused
+    // "Trying to add a disposable to a DisposableStore that has already
+    // been disposed of" warnings: the channel's async init completes after
+    // the extension host tears down its DisposableStore.
+    assert.doesNotThrow(() => {
+      logger.core.info("Test log message");
+      logger.core.warn("Test warning message");
+      logger.core.error("Test error message");
+    });
   });
 });

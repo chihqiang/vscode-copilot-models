@@ -6,6 +6,8 @@
 
 import vscode from "vscode";
 import { logger } from "./logger";
+import { sanitizeUrl } from "./sanitize";
+import { createSingletonStore } from "./singleton";
 
 // ── Types ────────────────────────────────────────────
 
@@ -56,7 +58,8 @@ const MAX_CONSUMPTION_RECORDS = 1000;
 // ── TokenPlan Class ──────────────────────────────────
 
 export class TokenPlan {
-  private static instance: TokenPlan | undefined;
+  private static store = createSingletonStore<TokenPlan>();
+
   private readonly context: vscode.ExtensionContext;
   private readonly presets: ProviderPreset[];
 
@@ -73,22 +76,18 @@ export class TokenPlan {
     context: vscode.ExtensionContext,
     presets: ProviderPreset[],
   ): TokenPlan {
-    TokenPlan.instance = new TokenPlan(context, presets);
-    return TokenPlan.instance;
+    const instance = new TokenPlan(context, presets);
+    TokenPlan.store.set(instance);
+    return instance;
   }
 
   static getInstance(): TokenPlan {
-    if (!TokenPlan.instance) {
-      throw new Error(
-        "TokenPlan not initialized. Call TokenPlan.init(context) first.",
-      );
-    }
-    return TokenPlan.instance;
+    return TokenPlan.store.get();
   }
 
   /** 重置实例（仅测试用） */
   static resetInstance(): void {
-    TokenPlan.instance = undefined;
+    TokenPlan.store.reset();
   }
 
   // ── 服务商预设 ───────────────────────────────────
@@ -247,9 +246,8 @@ export class TokenPlan {
       return undefined;
     }
 
-    const planModel = matchingPlan.models.find((m) => m.id === modelId);
     logger.plan.debug(
-      `  → using plan "${matchingPlan.planName}" url=${matchingPlan.baseUrl}`,
+      `  → using plan "${matchingPlan.planName}" url=${sanitizeUrl(matchingPlan.baseUrl)}`,
     );
     return {
       planId: matchingPlan.planId,

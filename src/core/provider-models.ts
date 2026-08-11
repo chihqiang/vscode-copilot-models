@@ -1,9 +1,14 @@
 import vscode from "vscode";
-import { CONFIG_SECTION, type ModelDefinition } from "./models";
+import {
+  CONFIG_SECTION,
+  type ModelDefinition,
+  type ProviderDefinition,
+} from "./models";
 import { logger } from "./logger";
 import { BaseChatProvider, type ThinkingEffort } from "./chat-provider";
 import { BaseModelProvider } from "./model-provider";
-import { createApiClient, type ApiRequest, type ClientOptions } from "./client";
+import { createApiClient, type ApiRequest } from "./client";
+import { createSingletonStore } from "./singleton";
 import type { IChatProvider } from "./chat-provider";
 import type { IModelProvider } from "./model-provider";
 
@@ -46,25 +51,11 @@ export function createProviderFactory(
   };
 }
 
-// ── Types ────────────────────────────────────────────
-
-export interface ProviderDefinition {
-  id: string;
-  name: string;
-  defaultBaseUrl: string;
-  apiKeyPrompt: string;
-  apiKeyPlaceholder: string;
-  supportsThinking?: boolean;
-  thinkingFormat?: "reasoning_effort" | "thinking_type";
-  models: ModelDefinition[];
-}
-
 // ── ProviderModels Class ────────────────────────────
 
 export class ProviderModels {
-  private static instance: ProviderModels | undefined;
+  private static store = createSingletonStore<ProviderModels>();
 
-  private readonly context: vscode.ExtensionContext;
   private readonly definitions: ProviderDefinition[];
 
   private factories = new Map<string, IProviderFactory>();
@@ -72,40 +63,28 @@ export class ProviderModels {
   private models = new Map<string, ModelDefinition[]>();
   private modelIdToProviderId = new Map<string, string>();
 
-  private constructor(
-    context: vscode.ExtensionContext,
-    definitions: ProviderDefinition[],
-  ) {
-    this.context = context;
+  private constructor(definitions: ProviderDefinition[]) {
     this.definitions = definitions;
   }
 
-  static init(
-    context: vscode.ExtensionContext,
-    definitions: ProviderDefinition[],
-  ): ProviderModels {
-    ProviderModels.instance = new ProviderModels(context, definitions);
-    return ProviderModels.instance;
+  static init(definitions: ProviderDefinition[]): ProviderModels {
+    const instance = new ProviderModels(definitions);
+    ProviderModels.store.set(instance);
+    return instance;
   }
 
   static getInstance(): ProviderModels {
-    if (!ProviderModels.instance) {
-      throw new Error(
-        "ProviderModels not initialized. Call ProviderModels.init(context) first.",
-      );
-    }
-    return ProviderModels.instance;
+    return ProviderModels.store.get();
   }
 
   static resetInstance(): void {
-    if (ProviderModels.instance) {
-      ProviderModels.instance.clear();
-      ProviderModels.instance = undefined;
-    }
+    const inst = ProviderModels.store.getOptional();
+    inst?.clear();
+    ProviderModels.store.reset();
   }
 
   static isInitialized(): boolean {
-    return ProviderModels.instance !== undefined;
+    return ProviderModels.store.getOptional() !== undefined;
   }
 
   // ── Definitions ──────────────────────────────────
@@ -259,7 +238,6 @@ export class ProviderModels {
   // ── Private ──────────────────────────────────────
 
   private createFactory(def: ProviderDefinition): IProviderFactory {
-    const context = this.context;
     const thinkingFormat = def.thinkingFormat ?? "reasoning_effort";
     const supportsThinking = def.supportsThinking ?? false;
 
@@ -268,7 +246,18 @@ export class ProviderModels {
       providerName: def.name,
       configSection: CONFIG_SECTION,
       createChatProvider: (ctx: vscode.ExtensionContext) => {
-        const modelProvider = new GenericModelProvider(ctx, def);
+        const modelProvider = new BaseModelProvider(
+          ctx,
+          def,
+          (baseUrl, apiKey, options) =>
+            createApiClient({
+              baseUrl,
+              apiKey,
+              providerName: def.name,
+              timeoutMs: options?.timeoutMs ?? 60_000,
+              maxRetries: options?.maxRetries ?? 1,
+            }),
+        );
         ProviderModels.getInstance().registerProvider(modelProvider);
         return new GenericChatProvider(
           ctx,
@@ -281,33 +270,7 @@ export class ProviderModels {
   }
 }
 
-// ── Generic Provider Classes ─────────────────────────
-
-class GenericModelProvider extends BaseModelProvider {
-  constructor(context: vscode.ExtensionContext, def: ProviderDefinition) {
-    super(context, {
-      providerId: def.id,
-      providerName: def.name,
-      configSection: CONFIG_SECTION,
-      defaultBaseUrl: def.defaultBaseUrl,
-      models: def.models,
-      apiKeyPrompt: def.apiKeyPrompt,
-      apiKeyPlaceholder: def.apiKeyPlaceholder,
-      createClient: (
-        baseUrl: string,
-        apiKey: string,
-        options?: ClientOptions,
-      ) =>
-        createApiClient({
-          baseUrl,
-          apiKey,
-          providerName: def.name,
-          timeoutMs: options?.timeoutMs ?? 60_000,
-          maxRetries: options?.maxRetries ?? 1,
-        }),
-    });
-  }
-}
+// ── Generic Chat Provider ──────────────────────────
 
 class GenericChatProvider extends BaseChatProvider {
   private readonly thinkingFormat: "reasoning_effort" | "thinking_type";
@@ -315,7 +278,7 @@ class GenericChatProvider extends BaseChatProvider {
 
   constructor(
     context: vscode.ExtensionContext,
-    modelProvider: GenericModelProvider,
+    modelProvider: IModelProvider,
     thinkingFormat: "reasoning_effort" | "thinking_type",
     supportsThinking: boolean,
   ) {

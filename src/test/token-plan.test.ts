@@ -1,10 +1,5 @@
 import * as assert from "assert";
-import {
-  TokenPlan,
-  type TokenPlanConfig,
-  type TokenPlanModel,
-  type TokenPlanConsumption,
-} from "../core/token-plan";
+import { TokenPlan } from "../core/token-plan";
 import { builtInPresets } from "../plans";
 
 function createMockContext(): Record<string, unknown> {

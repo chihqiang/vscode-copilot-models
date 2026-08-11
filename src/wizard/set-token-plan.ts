@@ -11,6 +11,7 @@ import {
   type ProviderPreset,
 } from "../core/token-plan";
 import { ProviderModels } from "../core/provider-models";
+import { pickSingle, confirmAction } from "./utils";
 
 // ── Prompt helpers ───────────────────────────────────
 
@@ -280,37 +281,29 @@ export async function openClearTokenPlanWizard(): Promise<void> {
     return;
   }
 
-  let targetPlanId: string;
-
-  if (plans.length === 1) {
-    targetPlanId = plans[0].planId;
-  } else {
-    const pick = await vscode.window.showQuickPick(
-      plans.map((p) => ({
-        label: p.planName,
-        description: `${p.models.length} model(s)`,
-        detail: p.baseUrl,
-        planId: p.planId,
-      })),
-      {
-        title: "Clear Token Plan",
-        placeHolder: "Select plan to clear",
-        ignoreFocusOut: true,
-      },
-    );
-    if (!pick) {
-      return;
-    }
-    targetPlanId = pick.planId;
-  }
-
-  const confirm = await vscode.window.showWarningMessage(
-    "Are you sure you want to clear this token plan?",
-    { modal: true },
-    "Clear",
-    "Cancel",
+  const picked = await pickSingle(
+    plans,
+    (p) => ({
+      label: p.planName,
+      description: `${p.models.length} model(s)`,
+      detail: p.baseUrl,
+      item: p,
+    }),
+    {
+      title: "Clear Token Plan",
+      placeHolder: "Select plan to clear",
+    },
   );
-  if (confirm !== "Clear") {
+  if (!picked) {
+    return;
+  }
+  const targetPlanId = picked.planId;
+
+  const confirmed = await confirmAction(
+    "Are you sure you want to clear this token plan?",
+    "Clear",
+  );
+  if (!confirmed) {
     return;
   }
 

@@ -38,7 +38,7 @@ class CopilotModelsExtension {
         arch: process.arch,
       });
 
-      const providerModels = ProviderModels.init(context, builtInProviders);
+      const providerModels = ProviderModels.init(builtInProviders);
       providerModels.registerAll();
 
       const factories = ProviderModels.getInstance().getEnabledFactories();

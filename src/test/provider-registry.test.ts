@@ -27,7 +27,7 @@ suite("ProviderModels Factory Test Suite", () => {
   });
 
   test("getInstance returns same instance", () => {
-    ProviderModels.init({} as any, []);
+    ProviderModels.init([]);
     const instance1 = ProviderModels.getInstance();
     const instance2 = ProviderModels.getInstance();
     assert.strictEqual(
@@ -38,7 +38,7 @@ suite("ProviderModels Factory Test Suite", () => {
   });
 
   test("resetInstance clears singleton state", () => {
-    ProviderModels.init({} as any, []);
+    ProviderModels.init([]);
     const instance1 = ProviderModels.getInstance();
     instance1.registerFactory(
       createMockFactory("factory-reset", "Factory Reset"),
@@ -48,14 +48,14 @@ suite("ProviderModels Factory Test Suite", () => {
     ProviderModels.resetInstance();
     assert.strictEqual(ProviderModels.isInitialized(), false);
 
-    ProviderModels.init({} as any, []);
+    ProviderModels.init([]);
     const instance2 = ProviderModels.getInstance();
     assert.notStrictEqual(instance1, instance2);
     assert.strictEqual(instance2.factoryCount, 0);
   });
 
   test("register adds factory to registry", () => {
-    ProviderModels.init({} as any, []);
+    ProviderModels.init([]);
     const pm = ProviderModels.getInstance();
     const factory = createMockFactory("test-factory", "Test Factory");
 
@@ -66,7 +66,7 @@ suite("ProviderModels Factory Test Suite", () => {
   });
 
   test("register prevents duplicate registration", () => {
-    ProviderModels.init({} as any, []);
+    ProviderModels.init([]);
     const pm = ProviderModels.getInstance();
     const factory1 = createMockFactory("test-factory", "Test Factory 1");
     const factory2 = createMockFactory("test-factory", "Test Factory 2");

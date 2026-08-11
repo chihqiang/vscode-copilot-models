@@ -1,6 +1,9 @@
 /** VS Code configuration section prefix */
 export const CONFIG_SECTION = "copilot-models";
 
+/** Routing strategy */
+export type RoutingStrategy = "failover" | "latency";
+
 /**
  * Model capabilities definition
  */
@@ -35,4 +38,20 @@ export interface ModelDefinition {
   capabilities: ModelCapabilities;
   /** Whether thinking parameter is required */
   requiresThinkingParam?: boolean;
+}
+
+/**
+ * Provider definition — pure data describing a vendor's config and models.
+ * Lives in models.ts (data-only) so both provider-models.ts and
+ * model-provider.ts can consume it without circular imports.
+ */
+export interface ProviderDefinition {
+  id: string;
+  name: string;
+  defaultBaseUrl: string;
+  apiKeyPrompt: string;
+  apiKeyPlaceholder: string;
+  supportsThinking?: boolean;
+  thinkingFormat?: "reasoning_effort" | "thinking_type";
+  models: ModelDefinition[];
 }
