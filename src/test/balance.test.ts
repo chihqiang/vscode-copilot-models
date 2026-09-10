@@ -9,6 +9,7 @@
 import * as assert from "assert";
 import {
   balanceProviderIds,
+  collectProviderBalances,
   fetchProviderBalance,
   formatBalanceAmount,
   formatBalanceSection,
@@ -17,6 +18,7 @@ import {
   type ProviderBalanceResult,
 } from "../core/balance";
 import type { IModelProvider } from "../core/model-provider";
+import { ProviderModels } from "../core/provider-models";
 
 const PROVIDER = "deepseek";
 const FETCHED_AT = 1_700_000_000_000;
@@ -435,5 +437,146 @@ suite("formatBalanceSection Test Suite", () => {
 
     assert.ok(!lines.includes("Bearer"));
     assert.ok(!lines.includes("sk-"));
+  });
+});
+
+suite("fetchProviderBalance abort handling Test Suite", () => {
+  const originalFetch = globalThis.fetch;
+
+  teardown(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  test("forwards an already-aborted signal to the request", async () => {
+    // The previous implementation attached an "abort" listener to the caller's
+    // signal. A signal that was already aborted never fires that event, so the
+    // request went out anyway — the exact case of a caller that gave up before
+    // the lookup started.
+    const controller = new AbortController();
+    controller.abort();
+
+    let sawAborted: boolean | undefined;
+    await withFetch(
+      async (_url, init) => {
+        sawAborted = init?.signal?.aborted;
+        return jsonResponse(DEEPSEEK_PAYLOAD);
+      },
+      async () => {
+        await fetchProviderBalance(
+          createProvider({ apiKey: "sk-test" }),
+          controller.signal,
+        );
+      },
+    );
+
+    assert.strictEqual(
+      sawAborted,
+      true,
+      "an already-aborted signal must reach fetch",
+    );
+  });
+
+  test("passes a live signal that is not yet aborted", async () => {
+    const controller = new AbortController();
+
+    let sawAborted: boolean | undefined;
+    await withFetch(
+      async (_url, init) => {
+        sawAborted = init?.signal?.aborted;
+        return jsonResponse(DEEPSEEK_PAYLOAD);
+      },
+      async () => {
+        await fetchProviderBalance(
+          createProvider({ apiKey: "sk-test" }),
+          controller.signal,
+        );
+      },
+    );
+
+    assert.strictEqual(sawAborted, false);
+  });
+
+  test("still bounds the request when no caller signal is given", async () => {
+    // The timeout must survive the removal of the hand-rolled timer.
+    let sawSignal = false;
+    await withFetch(
+      async (_url, init) => {
+        sawSignal = init?.signal !== undefined && init.signal !== null;
+        return jsonResponse(DEEPSEEK_PAYLOAD);
+      },
+      async () => {
+        await fetchProviderBalance(createProvider({ apiKey: "sk-test" }));
+      },
+    );
+
+    assert.strictEqual(sawSignal, true, "the lookup must stay time-bounded");
+  });
+});
+
+suite("collectProviderBalances Test Suite", () => {
+  const originalFetch = globalThis.fetch;
+
+  teardown(() => {
+    globalThis.fetch = originalFetch;
+    if (ProviderModels.isInitialized()) {
+      ProviderModels.resetInstance();
+    }
+  });
+
+  test("returns nothing when the provider registry is not initialized", async () => {
+    ProviderModels.resetInstance();
+    assert.deepStrictEqual(await collectProviderBalances(), []);
+  });
+
+  test("queries each supported provider and keeps a stable order", async () => {
+    ProviderModels.init([]);
+    ProviderModels.getInstance().registerProvider(
+      createProvider({ id: "deepseek", apiKey: "sk-test" }),
+    );
+
+    const seenUrls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      seenUrls.push(String(url));
+      return jsonResponse(DEEPSEEK_PAYLOAD);
+    }) as unknown as typeof fetch;
+
+    const results = await collectProviderBalances();
+
+    assert.deepStrictEqual(seenUrls, ["https://api.deepseek.com/user/balance"]);
+    assert.deepStrictEqual(
+      results.map((r) => r.providerId),
+      balanceProviderIds(),
+      "the results must line up with the documented provider order",
+    );
+    assert.ok(results[0].balance, "the balance must be parsed");
+  });
+
+  test("skips providers without a balance API rather than reporting them", async () => {
+    ProviderModels.init([]);
+    const registry = ProviderModels.getInstance();
+    registry.registerProvider(
+      createProvider({ id: "deepseek", apiKey: "sk-test" }),
+    );
+    registry.registerProvider(
+      createProvider({ id: "qwen", apiKey: "sk-test" }),
+    );
+
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return jsonResponse(DEEPSEEK_PAYLOAD);
+    }) as unknown as typeof fetch;
+
+    const results = await collectProviderBalances();
+
+    assert.strictEqual(
+      calls,
+      1,
+      "only the provider with a documented balance API is queried",
+    );
+    assert.deepStrictEqual(
+      results.map((r) => r.providerId),
+      ["deepseek"],
+    );
   });
 });

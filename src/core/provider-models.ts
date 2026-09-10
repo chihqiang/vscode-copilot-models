@@ -60,7 +60,7 @@ export class ProviderModels {
 
   private factories = new Map<string, IProviderFactory>();
   private providers = new Map<string, IModelProvider>();
-  private models = new Map<string, ModelDefinition[]>();
+  private models = new Map<string, readonly ModelDefinition[]>();
   private modelIdToProviderId = new Map<string, string>();
 
   private constructor(definitions: ProviderDefinition[]) {

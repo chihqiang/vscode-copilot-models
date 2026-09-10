@@ -145,7 +145,6 @@ export class Logger implements vscode.Disposable {
   });
 
   private channel: vscode.OutputChannel | undefined;
-  private showCategory = true;
   private currentLogLevel: LogLevel = "info";
   private developmentMode = false;
   private testMode = false;
@@ -344,9 +343,7 @@ export class Logger implements vscode.Disposable {
   ): string {
     const ts = new Date().toISOString().slice(11, 23);
     const levelStr = level.toUpperCase().padEnd(5);
-    const categoryText = this.showCategory
-      ? `[${CATEGORY_NAMES[category as LogCategory] ?? category}] `
-      : "";
+    const categoryText = `[${CATEGORY_NAMES[category as LogCategory] ?? category}] `;
 
     // Structured per-request context, e.g.
     //   req=a1b2c3 provider=deepseek model=deepseek-flash
