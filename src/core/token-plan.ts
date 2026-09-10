@@ -187,26 +187,63 @@ export class TokenPlan {
 
   // ── 消费记录 ─────────────────────────────────────
 
+  /**
+   * In-memory view of the consumption log, loaded lazily from globalState.
+   * Kept so read-modify-write cycles do not re-materialize the whole array
+   * on every recorded response.
+   */
+  private consumptionCache: TokenPlanConsumption[] | undefined;
+
+  /**
+   * Serializes consumption writes.
+   *
+   * `recordConsumption` is a read-modify-write over globalState and can be
+   * invoked concurrently (several chat requests in flight at once). Without
+   * serialization every writer reads the same snapshot and the last write
+   * wins, so all but one record were silently dropped.
+   */
+  private consumptionWriteChain: Promise<void> = Promise.resolve();
+
+  private getConsumptionRecords(): TokenPlanConsumption[] {
+    if (!this.consumptionCache) {
+      this.consumptionCache = [
+        ...this.context.globalState.get<TokenPlanConsumption[]>(
+          CONSUMPTION_STORAGE_KEY,
+          [],
+        ),
+      ];
+    }
+    return this.consumptionCache;
+  }
+
   async recordConsumption(consumption: TokenPlanConsumption): Promise<void> {
-    const records = this.context.globalState.get<TokenPlanConsumption[]>(
-      CONSUMPTION_STORAGE_KEY,
-      [],
-    );
+    const records = this.getConsumptionRecords();
     records.push(consumption);
     if (records.length > MAX_CONSUMPTION_RECORDS) {
       records.splice(0, records.length - MAX_CONSUMPTION_RECORDS);
     }
-    await this.context.globalState.update(CONSUMPTION_STORAGE_KEY, records);
+
+    // Queue the write behind any in-flight one so no update is lost. The
+    // snapshot is taken when the write actually runs, so the final write
+    // always persists the complete log.
+    this.consumptionWriteChain = this.consumptionWriteChain
+      .catch(() => {
+        // A previous write failed; keep the chain alive so later records
+        // are still persisted.
+      })
+      .then(() =>
+        this.context.globalState.update(CONSUMPTION_STORAGE_KEY, [...records]),
+      );
+
+    await this.consumptionWriteChain;
     logger.plan.debug(
       `Recorded consumption: ${consumption.totalTokens} tokens for plan ${consumption.planId}`,
     );
   }
 
   getConsumptions(): TokenPlanConsumption[] {
-    return this.context.globalState.get<TokenPlanConsumption[]>(
-      CONSUMPTION_STORAGE_KEY,
-      [],
-    );
+    // Copy so callers cannot mutate the cached log.
+    return [...this.getConsumptionRecords()];
   }
 
   // ── 运行时查询（chat-provider 使用） ─────────────

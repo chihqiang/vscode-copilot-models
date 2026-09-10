@@ -167,6 +167,19 @@ export interface ApiClientConfig {
 // ── HTTP Utilities ─────────────────────────────────────
 
 /**
+ * Join a base URL and an API path without producing a double slash.
+ *
+ * A `baseUrl` entered with a trailing slash (e.g. `https://host/v1/`) used to
+ * be concatenated verbatim, yielding `https://host/v1//chat/completions` —
+ * an empty path segment that some gateways reject with a 404.
+ */
+export function joinApiUrl(baseUrl: string, apiPath: string): string {
+  const base = baseUrl.trim().replace(/\/+$/, "");
+  const path = apiPath.trim();
+  return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
+}
+
+/**
  * Send HTTP request and return streaming SSE response.
  *
  * The timeout here only covers connect + response headers — it is cleared as
@@ -397,7 +410,7 @@ class ApiClientImpl implements IApiClient {
           await delay(backoff, signal);
         }
 
-        const url = `${baseUrl}${apiPath}`;
+        const url = joinApiUrl(baseUrl, apiPath);
         logger.api.debug(
           `[${providerName}] POST ${sanitizeUrl(url)}  (apiKey=${apiKey ? "configured" : "missing"})`,
         );

@@ -96,6 +96,26 @@ export interface PreparedChatRequest {
 }
 
 /**
+ * Configuration keys that change how an API client is constructed.
+ *
+ * Clients are cached per provider (see `BaseChatProvider.clientCache`) and
+ * capture timeout/retry settings at construction time, so a change to any of
+ * these must invalidate the cache — otherwise editing `timeoutMs` or
+ * `maxRetries` has no effect until the window is reloaded.
+ */
+export function clientAffectingConfigKeys(
+  configSection: string,
+  providerId: string,
+): string[] {
+  return [
+    `${configSection}.${providerId}.baseUrl`,
+    `${configSection}.modelIdOverrides`,
+    `${configSection}.timeoutMs`,
+    `${configSection}.maxRetries`,
+  ];
+}
+
+/**
  * Base Chat Provider implementation
  */
 export abstract class BaseChatProvider
@@ -230,10 +250,8 @@ export abstract class BaseChatProvider
    * Check if configuration affects this provider (subclass can override)
    */
   protected affectsConfiguration(e: vscode.ConfigurationChangeEvent): boolean {
-    return (
-      e.affectsConfiguration(
-        `${this.configSection}.${this.providerId}.baseUrl`,
-      ) || e.affectsConfiguration(`${this.configSection}.modelIdOverrides`)
+    return clientAffectingConfigKeys(this.configSection, this.providerId).some(
+      (key) => e.affectsConfiguration(key),
     );
   }
 

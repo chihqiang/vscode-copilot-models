@@ -296,6 +296,49 @@ suite("TokenPlan Test Suite", () => {
       });
       assert.strictEqual(plan.getConsumptions().length, 2);
     });
+
+    test("concurrent recordConsumption calls do not lose records", async () => {
+      // Model a globalState whose writes take a turn of the event loop, which
+      // is what real disk-backed storage does. A read-modify-write without
+      // serialization loses every record but the last writer's.
+      const state = new Map<string, unknown>();
+      const slowCtx = {
+        globalState: {
+          get: (key: string, defaultValue?: unknown) =>
+            state.has(key) ? state.get(key) : defaultValue,
+          update: async (key: string, value: unknown) => {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            state.set(key, value);
+          },
+        },
+        secrets: {
+          store: async () => {},
+          get: async () => undefined,
+          delete: async () => {},
+        },
+      };
+      const concurrentPlan = TokenPlan.init(slowCtx as never, builtInPresets);
+
+      const COUNT = 10;
+      await Promise.all(
+        Array.from({ length: COUNT }, (_, i) =>
+          concurrentPlan.recordConsumption({
+            planId: "p1",
+            modelId: `m${i}`,
+            promptTokens: 1,
+            completionTokens: 1,
+            totalTokens: 2,
+            timestamp: i,
+          }),
+        ),
+      );
+
+      assert.strictEqual(
+        concurrentPlan.getConsumptions().length,
+        COUNT,
+        "every concurrent record must survive",
+      );
+    });
   });
 
   // ── resolvePlanOverride ──────────────────────────
