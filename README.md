@@ -80,10 +80,14 @@ automatically convert images to text descriptions:
 1. Press `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`), run
    `Copilot Models: Set Vision Model`
 2. Select a vision-capable model, or choose "Custom API Endpoint"
-3. For custom API endpoint, enter the URL and model ID
+3. For custom API endpoint, enter the URL, model ID, and API key
+   (leave the key empty for unauthenticated endpoints)
 
 The vision proxy describes images before sending them to the chat model.
-For custom API endpoints, an OpenAI-compatible `/chat/completions` endpoint is required.
+For custom API endpoints, an OpenAI-compatible endpoint is required — enter
+either the base URL (`https://host/v1`) or the full
+`/chat/completions` URL, both are accepted. The API key is stored in
+VS Code SecretStorage.
 
 > **Note:** The proxy only applies to models that cannot accept image input
 > natively. Models with image support receive the original images and are
@@ -173,7 +177,7 @@ Available in VS Code settings (search `copilot-models`):
 | `routingStrategy` | `"failover"` or `"latency"` routing | `"failover"` |
 | `failoverModels` | Primary model → fallback model ID map | `{}` |
 | `modelIdOverrides` | Map model IDs to custom API names | `{}` |
-| `maxImageSize` | Max image size in bytes (0 = disabled) | `20971520` (20MB) |
+| `maxImageSize` | Max image size in bytes (0 = no limit) | `20971520` (20MB) |
 | `timeoutMs` | Request timeout in milliseconds | `60000` |
 | `maxRetries` | Maximum retry attempts | `1` |
 | `debugMode` | Log level: `minimal / metadata / verbose` | `minimal` |

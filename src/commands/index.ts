@@ -134,12 +134,12 @@ export function registerAllCommands(
   registerCommand(
     context,
     "copilot-models.setVisionModel",
-    safeAsync("setVisionModel", openSetVisionModelWizard),
+    safeAsync("setVisionModel", () => openSetVisionModelWizard(context)),
   );
 
   registerCommand(
     context,
     "copilot-models.clearVisionModel",
-    safeAsync("clearVisionModel", openClearVisionModelWizard),
+    safeAsync("clearVisionModel", () => openClearVisionModelWizard(context)),
   );
 }

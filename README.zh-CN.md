@@ -62,10 +62,13 @@
 
 1. 按 `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`)，运行 `Copilot Models: Set Vision Model`
 2. 从列表中选择支持视觉的模型，或选择 "Custom API Endpoint"
-3. 如果选择自定义 API 端点，输入 URL 和模型 ID
+3. 如果选择自定义 API 端点，依次输入 URL、模型 ID 和 API 密钥
+   （无鉴权的端点密钥留空即可）
 
 视觉代理会在发送消息前先将图片描述为文字，再传递给聊天模型。
-自定义 API 端点需支持 OpenAI 兼容的 `/chat/completions` 接口。
+自定义 API 端点需支持 OpenAI 兼容接口——既可填基础地址
+（`https://host/v1`），也可填完整的 `/chat/completions` 地址，两者都支持。
+API 密钥保存在 VS Code SecretStorage 中。
 
 > **注意：** 视觉代理只对无法原生接收图片的模型生效。支持图片输入的模型
 > 会直接收到原始图片，不会经过代理。
@@ -152,7 +155,7 @@
 | `routingStrategy` | 路由策略：`failover` 或 `latency` | `"failover"` |
 | `failoverModels` | 主模型→备用模型 ID 映射 | `{}` |
 | `modelIdOverrides` | 将内部模型 ID 映射为自定义 API 模型名 | `{}` |
-| `maxImageSize` | 图片输入最大字节数（0 = 禁用） | `20971520` (20MB) |
+| `maxImageSize` | 图片输入最大字节数（0 = 不限制） | `20971520` (20MB) |
 | `timeoutMs` | API 请求超时（毫秒） | `60000` |
 | `maxRetries` | 最大重试次数 | `1` |
 | `debugMode` | 日志级别：`minimal / metadata / verbose` | `minimal` |

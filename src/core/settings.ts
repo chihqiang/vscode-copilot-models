@@ -28,9 +28,20 @@ export function getDebugMode(): string | undefined {
   return getConfig().get<string>("debugMode");
 }
 
-/** Maximum image upload size in bytes (default: 20MB, 0 = disabled) */
+/**
+ * Maximum image upload size in bytes (default: 20MB).
+ *
+ * `0` means the limit is disabled, so `Infinity` is returned and every image
+ * is accepted. Previously `0` was compared directly (`size > 0`), which
+ * silently rejected every image — the opposite of what "0 = disabled" implies.
+ * Callers only need a `>` / `<=` comparison, so a non-finite limit is fine.
+ */
 export function getMaxImageSize(): number {
-  return getConfig().get<number>("maxImageSize") ?? 20 * 1024 * 1024;
+  const configured = getConfig().get<number>("maxImageSize");
+  if (configured === undefined || configured === null) {
+    return 20 * 1024 * 1024;
+  }
+  return configured <= 0 ? Infinity : configured;
 }
 
 /** Override map: model ID → custom API model name */

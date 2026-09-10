@@ -161,7 +161,7 @@
           "default": 20971520,
           "minimum": 0,
           "maximum": 104857600,
-          "description": "Maximum image upload size in bytes (default: 20MB, 0 = disabled)"
+          "description": "Maximum image upload size in bytes (default: 20MB, 0 = no limit)"
         },
         "copilot-models.routingStrategy": {
           "type": "string",

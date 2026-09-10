@@ -9,7 +9,12 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import {
+  VISION_PROXY_API_KEY_SECRET,
+  clearVisionProxyApiKey,
+  hasVisionProxyApiKey,
   resolveImageMessages,
+  resolveVisionCompletionUrl,
+  storeVisionProxyApiKey,
   type VisionDescriber,
   type VisionService,
 } from "../core/vision";
@@ -136,5 +141,82 @@ suite("resolveImageMessages Test Suite", () => {
       "messages must be passed through by reference",
     );
     assert.strictEqual(result.stats.inputImageParts, 0);
+  });
+});
+
+suite("resolveVisionCompletionUrl Test Suite", () => {
+  test("appends the chat completions path to a base URL", () => {
+    assert.strictEqual(
+      resolveVisionCompletionUrl("https://api.example.com/v1"),
+      "https://api.example.com/v1/chat/completions",
+    );
+  });
+
+  test("does not duplicate the path when it is already present", () => {
+    assert.strictEqual(
+      resolveVisionCompletionUrl("https://api.example.com/v1/chat/completions"),
+      "https://api.example.com/v1/chat/completions",
+    );
+  });
+
+  test("normalizes trailing slashes and surrounding whitespace", () => {
+    assert.strictEqual(
+      resolveVisionCompletionUrl("  https://api.example.com/v1//  "),
+      "https://api.example.com/v1/chat/completions",
+    );
+    assert.strictEqual(
+      resolveVisionCompletionUrl(
+        "https://api.example.com/v1/chat/completions/",
+      ),
+      "https://api.example.com/v1/chat/completions",
+    );
+  });
+});
+
+suite("vision proxy API key storage Test Suite", () => {
+  /** Minimal in-memory SecretStorage stand-in. */
+  function createSecretStorage(): {
+    secrets: vscode.SecretStorage;
+    store: Map<string, string>;
+  } {
+    const store = new Map<string, string>();
+    const secrets = {
+      get: async (key: string) => store.get(key),
+      store: async (key: string, value: string) => {
+        store.set(key, value);
+      },
+      delete: async (key: string) => {
+        store.delete(key);
+      },
+      onDidChange: () => ({ dispose: () => {} }),
+    } as unknown as vscode.SecretStorage;
+    return { secrets, store };
+  }
+
+  test("round-trips a key through SecretStorage", async () => {
+    const { secrets, store } = createSecretStorage();
+
+    assert.strictEqual(await hasVisionProxyApiKey(secrets), false);
+
+    await storeVisionProxyApiKey(secrets, "  sk-test-key  ");
+
+    assert.strictEqual(
+      store.get(VISION_PROXY_API_KEY_SECRET),
+      "sk-test-key",
+      "the key must be trimmed before storing",
+    );
+    assert.strictEqual(await hasVisionProxyApiKey(secrets), true);
+  });
+
+  test("clears a stored key and tolerates a missing one", async () => {
+    const { secrets } = createSecretStorage();
+    await storeVisionProxyApiKey(secrets, "sk-test-key");
+
+    await clearVisionProxyApiKey(secrets);
+    assert.strictEqual(await hasVisionProxyApiKey(secrets), false);
+
+    // Clearing again must not throw.
+    await clearVisionProxyApiKey(secrets);
+    assert.strictEqual(await hasVisionProxyApiKey(secrets), false);
   });
 });

@@ -992,14 +992,24 @@ export abstract class BaseChatProvider
             total_tokens: number;
           }) => {
             const rate = prepared.planOverride!.consumptionRate ?? 1;
-            TokenPlan.getInstance().recordConsumption({
-              planId: prepared.planOverride!.planId,
-              modelId: modelInfo.id,
-              promptTokens: Math.round(usage.prompt_tokens * rate),
-              completionTokens: Math.round(usage.completion_tokens * rate),
-              totalTokens: Math.round(usage.total_tokens * rate),
-              timestamp: Date.now(),
-            });
+            // `recordConsumption` writes to globalState asynchronously. Not
+            // awaiting it is intentional (it must not block or fail the chat
+            // response), but the rejection still needs a handler.
+            TokenPlan.getInstance()
+              .recordConsumption({
+                planId: prepared.planOverride!.planId,
+                modelId: modelInfo.id,
+                promptTokens: Math.round(usage.prompt_tokens * rate),
+                completionTokens: Math.round(usage.completion_tokens * rate),
+                totalTokens: Math.round(usage.total_tokens * rate),
+                timestamp: Date.now(),
+              })
+              .catch((error: unknown) => {
+                logger.plan.error(
+                  `Failed to record token plan consumption for "${prepared.planOverride!.planId}":`,
+                  error,
+                );
+              });
           }
         : undefined;
       await this.sendStreamRequest(
