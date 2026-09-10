@@ -11,8 +11,7 @@
       "toolCalling": true,
       "imageInput": true,
       "thinking": true
-    },
-    "requiresThinkingParam": true
+    }
   },
   {
     "id": "qwen3.8-flash",
@@ -26,8 +25,7 @@
       "toolCalling": true,
       "imageInput": true,
       "thinking": true
-    },
-    "requiresThinkingParam": true
+    }
   },
   {
     "id": "qwen3.7-plus",
@@ -41,8 +39,7 @@
       "toolCalling": true,
       "imageInput": true,
       "thinking": true
-    },
-    "requiresThinkingParam": true
+    }
   },
   {
     "id": "qwen3.7-flash",
@@ -56,7 +53,6 @@
       "toolCalling": true,
       "imageInput": true,
       "thinking": true
-    },
-    "requiresThinkingParam": true
+    }
   }
 ]

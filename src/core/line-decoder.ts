@@ -101,28 +101,3 @@ function findNewlineIndex(
 
   return null;
 }
-
-export function findDoubleNewlineIndex(buffer: Uint8Array): number {
-  const newline = 0x0a;
-  const carriage = 0x0d;
-
-  for (let i = 0; i < buffer.length - 1; i++) {
-    if (buffer[i] === newline && buffer[i + 1] === newline) {
-      return i + 2;
-    }
-    if (buffer[i] === carriage && buffer[i + 1] === carriage) {
-      return i + 2;
-    }
-    if (
-      buffer[i] === carriage &&
-      buffer[i + 1] === newline &&
-      i + 3 < buffer.length &&
-      buffer[i + 2] === carriage &&
-      buffer[i + 3] === newline
-    ) {
-      return i + 4;
-    }
-  }
-
-  return -1;
-}

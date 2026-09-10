@@ -261,11 +261,6 @@ export class ModelRouter implements IChatProvider {
     provider?.dispose();
   }
 
-  /** Get all registered provider IDs */
-  getProviderIds(): string[] {
-    return Array.from(this.providers.keys());
-  }
-
   /** Check if a provider is registered */
   hasProvider(providerId: string): boolean {
     return this.providers.has(providerId);

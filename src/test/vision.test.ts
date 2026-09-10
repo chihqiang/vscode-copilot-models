@@ -8,15 +8,18 @@
 
 import * as assert from "assert";
 import * as vscode from "vscode";
+import { CONFIG_SECTION } from "../core/models";
 import {
+  VISION_API_ENDPOINT_ID,
   VISION_PROXY_API_KEY_SECRET,
+  VisionService,
   clearVisionProxyApiKey,
   hasVisionProxyApiKey,
   resolveImageMessages,
   resolveVisionCompletionUrl,
   storeVisionProxyApiKey,
+  visionAffectingConfigKeys,
   type VisionDescriber,
-  type VisionService,
 } from "../core/vision";
 
 interface Stub {
@@ -218,5 +221,148 @@ suite("vision proxy API key storage Test Suite", () => {
     // Clearing again must not throw.
     await clearVisionProxyApiKey(secrets);
     assert.strictEqual(await hasVisionProxyApiKey(secrets), false);
+  });
+});
+
+suite("resolveImageMessages without a describer Test Suite", () => {
+  test("passes images through and reports a notice", async () => {
+    // VisionService.get() returns undefined for an incomplete custom endpoint.
+    const service = {
+      get: async () => undefined,
+    } as unknown as VisionService;
+    const message = createImageMessage();
+
+    const result = await resolveImageMessages(
+      [message],
+      createToken(),
+      service,
+    );
+
+    assert.strictEqual(
+      result.messages[0],
+      message,
+      "messages must pass through untouched so the caller decides what to do",
+    );
+    assert.ok(
+      result.initialResponseNotice?.includes("not configured"),
+      `expected a configuration notice, got "${result.initialResponseNotice}"`,
+    );
+  });
+});
+
+suite("visionAffectingConfigKeys Test Suite", () => {
+  test("covers every setting captured when a describer is built", () => {
+    const keys = visionAffectingConfigKeys();
+    for (const name of [
+      "visionModel",
+      "visionPrompt",
+      "visionProxy.apiUrl",
+      "visionProxy.apiModelId",
+      "visionProxy.timeoutMs",
+      "visionProxy.maxTokens",
+    ]) {
+      assert.ok(
+        keys.includes(`${CONFIG_SECTION}.${name}`),
+        `${name} must reset the cached describer`,
+      );
+    }
+  });
+});
+
+suite("VisionService describer resolution Test Suite", () => {
+  const config = () => vscode.workspace.getConfiguration(CONFIG_SECTION);
+
+  async function applySettings(values: Record<string, unknown>): Promise<void> {
+    for (const [key, value] of Object.entries(values)) {
+      await config().update(key, value, vscode.ConfigurationTarget.Global);
+    }
+  }
+
+  function createService(): VisionService {
+    return new VisionService({
+      secrets: { onDidChange: () => ({ dispose: () => {} }) },
+    } as unknown as vscode.ExtensionContext);
+  }
+
+  function resetSettings(): Promise<void> {
+    return applySettings({
+      visionModel: undefined,
+      "visionProxy.apiUrl": undefined,
+      "visionProxy.apiModelId": undefined,
+      "visionProxy.timeoutMs": undefined,
+      "visionProxy.maxTokens": undefined,
+    });
+  }
+
+  teardown(resetSettings);
+
+  test("returns undefined when the custom endpoint is incomplete", async () => {
+    await applySettings({
+      visionModel: VISION_API_ENDPOINT_ID,
+      "visionProxy.apiUrl": "",
+      "visionProxy.apiModelId": "",
+    });
+
+    const service = createService();
+    try {
+      assert.strictEqual(
+        await service.get(),
+        undefined,
+        "an incomplete endpoint must not silently fall back to VS Code LM auto-detect",
+      );
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test("builds and caches an API endpoint describer when complete", async () => {
+    await applySettings({
+      visionModel: VISION_API_ENDPOINT_ID,
+      "visionProxy.apiUrl": "https://api.example.com/v1",
+      "visionProxy.apiModelId": "gpt-4o",
+    });
+
+    const service = createService();
+    try {
+      const first = await service.get();
+      assert.strictEqual(first?.source, "api-endpoint");
+      assert.strictEqual(await service.get(), first, "the describer is cached");
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test("rebuilds the describer when the endpoint timeout changes", async () => {
+    await applySettings({
+      visionModel: VISION_API_ENDPOINT_ID,
+      "visionProxy.apiUrl": "https://api.example.com/v1",
+      "visionProxy.apiModelId": "gpt-4o",
+      "visionProxy.timeoutMs": 1000,
+    });
+
+    const service = createService();
+    try {
+      const first = await service.get();
+      assert.notStrictEqual(first, undefined);
+
+      await applySettings({ "visionProxy.timeoutMs": 2000 });
+
+      // The reset runs from the workspace configuration event, which is
+      // delivered asynchronously.
+      const deadline = Date.now() + 2000;
+      let rebuilt = await service.get();
+      while (rebuilt === first && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        rebuilt = await service.get();
+      }
+
+      assert.notStrictEqual(
+        rebuilt,
+        first,
+        "changing visionProxy.timeoutMs must reset the cached describer",
+      );
+    } finally {
+      service.dispose();
+    }
   });
 });

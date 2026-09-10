@@ -99,10 +99,10 @@ suite("Registry Provider Test Suite", () => {
 
     pm.registerProvider(provider);
 
-    const models = pm.getModelsForProvider("test-provider");
-    assert.strictEqual(models.length, 2);
-    assert.strictEqual(models[0].id, "test-model-1");
-    assert.strictEqual(models[1].id, "test-model-2");
+    const models = pm.getProvider("test-provider")?.getModels();
+    assert.strictEqual(models?.length, 2);
+    assert.strictEqual(models?.[0].id, "test-model-1");
+    assert.strictEqual(models?.[1].id, "test-model-2");
   });
 
   test("registerProvider prevents duplicate registration", () => {
@@ -152,19 +152,6 @@ suite("Registry Provider Test Suite", () => {
     assert.strictEqual(allModels.length, 2);
   });
 
-  test("findModelById finds model across all providers", () => {
-    const pm = ProviderModels.getInstance();
-    const provider1 = createMockProvider("provider-1", [testModels[0]]);
-    const provider2 = createMockProvider("provider-2", [testModels[1]]);
-
-    pm.registerProvider(provider1);
-    pm.registerProvider(provider2);
-
-    const found = pm.findModelById("test-model-2");
-    assert.notStrictEqual(found, undefined);
-    assert.strictEqual(found?.id, "test-model-2");
-  });
-
   test("findProviderByModelId finds provider by model id", () => {
     const pm = ProviderModels.getInstance();
     const provider1 = createMockProvider("provider-1", [testModels[0]]);
@@ -196,9 +183,10 @@ suite("Registry Provider Test Suite", () => {
     assert.strictEqual(result, undefined);
   });
 
-  test("getModelsForProvider returns empty array for non-existent provider", () => {
+  test("findProviderByModelId returns undefined for an unknown model", () => {
     const pm = ProviderModels.getInstance();
-    const models = pm.getModelsForProvider("non-existent");
-    assert.strictEqual(models.length, 0);
+    pm.registerProvider(createMockProvider("test-provider", testModels));
+
+    assert.strictEqual(pm.findProviderByModelId("unknown-model"), undefined);
   });
 });

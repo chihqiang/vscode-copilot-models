@@ -5,6 +5,7 @@
 import vscode from "vscode";
 import {
   logger,
+  VISION_API_ENDPOINT_ID,
   getVisionLanguageModelOptions,
   storeVisionProxyApiKey,
   clearVisionProxyApiKey,
@@ -37,7 +38,7 @@ export async function openSetVisionModelWizard(
       {
         label: "Custom API Endpoint",
         description: "Use an OpenAI-compatible API endpoint",
-        value: "api:endpoint",
+        value: VISION_API_ENDPOINT_ID,
       },
     ],
     {
@@ -51,7 +52,7 @@ export async function openSetVisionModelWizard(
     return;
   }
 
-  if (selected.value === "api:endpoint") {
+  if (selected.value === VISION_API_ENDPOINT_ID) {
     await configureApiEndpoint(context);
   } else {
     await configureVisionModel(selected.value);
@@ -172,7 +173,7 @@ async function configureApiEndpoint(
   const config = vscode.workspace.getConfiguration("copilot-models");
   await config.update(
     "visionModel",
-    "api:endpoint",
+    VISION_API_ENDPOINT_ID,
     vscode.ConfigurationTarget.Global,
   );
   await config.update(

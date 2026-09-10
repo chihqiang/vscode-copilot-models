@@ -59,7 +59,7 @@ function createStubContext(): vscode.ExtensionContext {
   } as unknown as vscode.ExtensionContext;
 }
 
-/** Exposes the protected predicate so the wiring itself is under test. */
+/** Exposes protected internals so the cache-invalidation wiring is under test. */
 class TestableProvider extends BaseChatProvider {
   constructor() {
     super(createStubContext(), createStubProvider());
@@ -67,6 +67,19 @@ class TestableProvider extends BaseChatProvider {
 
   isAffectedBy(e: vscode.ConfigurationChangeEvent): boolean {
     return this.affectsConfiguration(e);
+  }
+
+  /** Seed the client cache the way a completed request would. */
+  seedCachedClient(key: string): void {
+    this.clientCache.set(key, {} as never);
+  }
+
+  cachedClientCount(): number {
+    return this.clientCache.size;
+  }
+
+  notifySecretChange(key: string): void {
+    this.onSecretsChanged({ key } as vscode.SecretStorageChangeEvent);
   }
 }
 
@@ -133,6 +146,45 @@ suite("BaseChatProvider.affectsConfiguration Test Suite", () => {
       // Unrelated settings must not drop the cache.
       assert.strictEqual(affects(`${CONFIG_SECTION}.debugMode`), false);
       assert.strictEqual(affects(`${CONFIG_SECTION}.visionModel`), false);
+    } finally {
+      provider.dispose();
+    }
+  });
+});
+
+suite("BaseChatProvider secret change Test Suite", () => {
+  const apiKeySecret = `${CONFIG_SECTION}.${PROVIDER}.apiKey`;
+
+  test("drops cached API clients when the provider API key is rotated", () => {
+    const provider = new TestableProvider();
+    try {
+      provider.seedCachedClient("https://api.deepseek.com::sk-old");
+      assert.strictEqual(provider.cachedClientCount(), 1);
+
+      provider.notifySecretChange(apiKeySecret);
+
+      assert.strictEqual(
+        provider.cachedClientCount(),
+        0,
+        "a rotated API key must not keep the old client cached — the cache key embeds the key",
+      );
+    } finally {
+      provider.dispose();
+    }
+  });
+
+  test("keeps cached API clients when an unrelated secret changes", () => {
+    const provider = new TestableProvider();
+    try {
+      provider.seedCachedClient("https://api.deepseek.com::sk-old");
+
+      provider.notifySecretChange("some.other.secret");
+
+      assert.strictEqual(
+        provider.cachedClientCount(),
+        1,
+        "unrelated secrets must not thrash the client cache",
+      );
     } finally {
       provider.dispose();
     }

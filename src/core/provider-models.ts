@@ -176,26 +176,12 @@ export class ProviderModels {
     return Array.from(this.providers.values());
   }
 
-  getModelsForProvider(providerId: string): ModelDefinition[] {
-    return this.models.get(providerId) || [];
-  }
-
   getAllModels(): ModelDefinition[] {
     const allModels: ModelDefinition[] = [];
     for (const models of this.models.values()) {
       allModels.push(...models);
     }
     return allModels;
-  }
-
-  findModelById(modelId: string): ModelDefinition | undefined {
-    for (const models of this.models.values()) {
-      const found = models.find((m) => m.id === modelId);
-      if (found) {
-        return found;
-      }
-    }
-    return undefined;
   }
 
   findProviderByModelId(modelId: string): IModelProvider | undefined {

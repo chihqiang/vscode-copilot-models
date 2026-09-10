@@ -1,6 +1,6 @@
 import * as assert from "assert";
 import { encodeUTF8 } from "../core/bytes";
-import { LineDecoder, findDoubleNewlineIndex } from "../core/line-decoder";
+import { LineDecoder } from "../core/line-decoder";
 import { _iterSSEMessages, type ServerSentEvent, Stream } from "../core/sse";
 
 suite("LineDecoder Test Suite", () => {
@@ -61,39 +61,6 @@ suite("LineDecoder Test Suite", () => {
     const decoder = new LineDecoder();
     assert.deepStrictEqual(decoder.decode(null), []);
     assert.deepStrictEqual(decoder.decode(undefined), []);
-  });
-});
-
-suite("findDoubleNewlineIndex Test Suite", () => {
-  test("finds \\n\\n", () => {
-    const buf = encodeUTF8("data\n\n");
-    assert.strictEqual(findDoubleNewlineIndex(buf), 6); // data(4) + \n(1) + \n(1) = 6
-  });
-
-  test("finds \\r\\r", () => {
-    const buf = encodeUTF8("data\r\r");
-    assert.strictEqual(findDoubleNewlineIndex(buf), 6);
-  });
-
-  test("finds \\r\\n\\r\\n", () => {
-    const buf = encodeUTF8("data\r\n\r\n");
-    // \r\n\r\n: d(1)a(2)t(3)a(4)\r(5)\n(6)\r(7)\n(8) → index = 8
-    assert.strictEqual(findDoubleNewlineIndex(buf), 8);
-  });
-
-  test("returns -1 when no double newline", () => {
-    const buf = encodeUTF8("hello world");
-    assert.strictEqual(findDoubleNewlineIndex(buf), -1);
-  });
-
-  test("returns -1 for short buffer", () => {
-    const buf = encodeUTF8("a");
-    assert.strictEqual(findDoubleNewlineIndex(buf), -1);
-  });
-
-  test("finds double newline in middle of data", () => {
-    const buf = encodeUTF8("header\n\nbody");
-    assert.strictEqual(findDoubleNewlineIndex(buf), 8); // header(6) + \n(1) + \n(1) = 8
   });
 });
 

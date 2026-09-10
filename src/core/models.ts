@@ -36,8 +36,6 @@ export interface ModelDefinition {
   maxOutputTokens: number;
   /** Model capabilities */
   capabilities: ModelCapabilities;
-  /** Whether thinking parameter is required */
-  requiresThinkingParam?: boolean;
 }
 
 /**

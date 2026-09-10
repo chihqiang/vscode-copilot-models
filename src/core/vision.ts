@@ -37,6 +37,12 @@ Return one concise factual description suitable for inserting into a text-only c
 export const VISION_PROXY_API_KEY_SECRET = "copilot-models.visionProxy.apiKey";
 
 /**
+ * Sentinel stored in `visionModel` when the user picks "Custom API Endpoint".
+ * Shared with the wizard so the value is not duplicated as a bare literal.
+ */
+export const VISION_API_ENDPOINT_ID = "api:endpoint";
+
+/**
  * Store the vision proxy API key.
  *
  * This was previously read-only: `ApiEndpointVisionDescriber` looked the key
@@ -384,6 +390,25 @@ export class ApiEndpointVisionDescriber implements VisionDescriber {
 // ── Vision Service ──────────────────────────────────────────
 
 /**
+ * Vision settings that are captured when a describer is constructed.
+ *
+ * `VisionService` caches the describer it builds, so a change to any of these
+ * must reset that cache. `visionProxy.timeoutMs` / `visionProxy.maxTokens`
+ * used to be missing from this list, which made editing them a no-op until
+ * the window was reloaded.
+ */
+export function visionAffectingConfigKeys(): string[] {
+  return [
+    `${CONFIG_SECTION}.visionModel`,
+    `${CONFIG_SECTION}.visionPrompt`,
+    `${CONFIG_SECTION}.visionProxy.apiUrl`,
+    `${CONFIG_SECTION}.visionProxy.apiModelId`,
+    `${CONFIG_SECTION}.visionProxy.timeoutMs`,
+    `${CONFIG_SECTION}.visionProxy.maxTokens`,
+  ];
+}
+
+/**
  * Vision proxy service
  */
 export class VisionService {
@@ -394,10 +419,7 @@ export class VisionService {
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (
-          e.affectsConfiguration(`${CONFIG_SECTION}.visionModel`) ||
-          e.affectsConfiguration(`${CONFIG_SECTION}.visionPrompt`) ||
-          e.affectsConfiguration(`${CONFIG_SECTION}.visionProxy.apiUrl`) ||
-          e.affectsConfiguration(`${CONFIG_SECTION}.visionProxy.apiModelId`)
+          visionAffectingConfigKeys().some((key) => e.affectsConfiguration(key))
         ) {
           this.reset();
         }
@@ -411,7 +433,14 @@ export class VisionService {
   }
 
   /**
-   * Get the current vision describer
+   * Get the current vision describer, or `undefined` when the configured proxy
+   * cannot be built.
+   *
+   * The `undefined` return is reserved for an incomplete custom endpoint.
+   * Previously that case fell through to VS Code LM auto-detect, so a user who
+   * selected "Custom API Endpoint" without filling in the URL or model ID
+   * silently got auto-detected descriptions while believing their own endpoint
+   * was in use — and the caller's "not configured" notice was unreachable.
    */
   async get(): Promise<VisionDescriber | undefined> {
     if (this.describer) {
@@ -421,31 +450,32 @@ export class VisionService {
     const config = getConfig();
     const visionModelId = config.get<string>("visionModel");
 
-    if (visionModelId) {
-      if (visionModelId === "api:endpoint") {
-        const apiUrl = config.get<string>("visionProxy.apiUrl");
-        const apiModelId = config.get<string>("visionProxy.apiModelId");
-        const apiTimeoutMs = config.get<number>("visionProxy.timeoutMs");
-        const apiMaxTokens = config.get<number>("visionProxy.maxTokens");
+    if (visionModelId === VISION_API_ENDPOINT_ID) {
+      const apiUrl = config.get<string>("visionProxy.apiUrl");
+      const apiModelId = config.get<string>("visionProxy.apiModelId");
 
-        if (apiUrl && apiModelId) {
-          this.describer = new ApiEndpointVisionDescriber(
-            {
-              url: apiUrl,
-              modelId: apiModelId,
-              timeoutMs: apiTimeoutMs,
-              maxTokens: apiMaxTokens,
-            },
-            this.context.secrets,
-          );
-          return this.describer;
-        }
-      } else {
-        this.describer = new VSCodeLMVisionDescriber();
-        return this.describer;
+      if (!apiUrl || !apiModelId) {
+        logger.vision.warn(
+          `Vision proxy is set to a custom endpoint but its configuration is incomplete ` +
+            `(apiUrl=${apiUrl ? "set" : "missing"}, apiModelId=${apiModelId ? "set" : "missing"}); ` +
+            `image descriptions are disabled`,
+        );
+        return undefined;
       }
+
+      this.describer = new ApiEndpointVisionDescriber(
+        {
+          url: apiUrl,
+          modelId: apiModelId,
+          timeoutMs: config.get<number>("visionProxy.timeoutMs"),
+          maxTokens: config.get<number>("visionProxy.maxTokens"),
+        },
+        this.context.secrets,
+      );
+      return this.describer;
     }
 
+    // No explicit model id means "auto-detect" (the documented default).
     this.describer = new VSCodeLMVisionDescriber();
     return this.describer;
   }

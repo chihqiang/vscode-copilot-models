@@ -44,12 +44,6 @@ export interface TokenConsumption {
   timestamp: number;
 }
 
-/**
- * @deprecated Use {@link TokenConsumption}. Renamed when usage tracking was
- * extended beyond token plan requests.
- */
-export type TokenPlanConsumption = TokenConsumption;
-
 export interface ProviderPreset {
   id: string;
   defaultBaseUrl: string;

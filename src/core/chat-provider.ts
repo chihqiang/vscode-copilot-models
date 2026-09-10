@@ -70,15 +70,6 @@ export type ModelPickerChatInformation = vscode.LanguageModelChatInformation & {
   };
 };
 
-/**
- * Conversation segment info
- */
-export interface ConversationSegment {
-  index: number;
-  id: string;
-  timestamp: number;
-}
-
 // Re-export PlanOverride for backward compatibility
 export type { PlanOverride } from "./token-plan";
 
@@ -133,7 +124,12 @@ export abstract class BaseChatProvider
   protected readonly visionService: VisionService;
   protected isActive = true;
   private disposables: vscode.Disposable[] = [];
-  private clientCache = new Map<string, IApiClient>();
+
+  /**
+   * Cached API clients, keyed by `baseUrl::apiKey`. Exposed to subclasses and
+   * tests so cache invalidation (config / secret changes) is verifiable.
+   */
+  protected readonly clientCache = new Map<string, IApiClient>();
 
   /** Cached API key presence, invalidated on secret change */
   private hasApiKeyCache: boolean | undefined;
@@ -142,14 +138,6 @@ export abstract class BaseChatProvider
     this.onDidChangeLanguageModelChatInformationEmitter.event;
 
   // ── Static helpers ───────────────────────────────
-
-  private static hasTimestamp(msg: unknown): msg is { timestamp: number } {
-    if (typeof msg !== "object" || msg === null) {
-      return false;
-    }
-    const timestamp = Reflect.get(msg, "timestamp");
-    return typeof timestamp === "number";
-  }
 
   private static isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
@@ -265,6 +253,10 @@ export abstract class BaseChatProvider
         `[${this.providerId}] Secret affects this provider, refreshing...`,
       );
       this.hasApiKeyCache = undefined;
+      // The cache key embeds the API key, so a rotated key would otherwise
+      // leave the previous client — and its plaintext key — cached for the
+      // lifetime of the provider.
+      this.clientCache.clear();
       this.onDidChangeLanguageModelChatInformationEmitter.fire();
     }
     if (this.isActive && e.key.startsWith("copilot-models.tokenPlan.")) {
@@ -351,39 +343,6 @@ export abstract class BaseChatProvider
         ? { configurationSchema: BaseChatProvider.buildThinkingEffortSchema() }
         : {}),
     };
-  }
-
-  /**
-   * Get conversation segment info
-   */
-  protected resolveConversationSegment(
-    messages: readonly vscode.LanguageModelChatRequestMessage[],
-  ): ConversationSegment {
-    if (messages.length === 0) {
-      logger.chat.debug("No messages, creating new segment");
-      return { index: 0, id: `seg-${Date.now()}`, timestamp: Date.now() };
-    }
-
-    let latestTimestamp = 0;
-    let index = 0;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (BaseChatProvider.hasTimestamp(msg)) {
-        latestTimestamp = msg.timestamp;
-        index = i;
-        break;
-      }
-    }
-
-    const segment = {
-      index,
-      id: `seg-${latestTimestamp || Date.now()}`,
-      timestamp: latestTimestamp || Date.now(),
-    };
-    logger.chat.debug(
-      `Resolved segment: ${segment.id}, index: ${segment.index}`,
-    );
-    return segment;
   }
 
   /**
