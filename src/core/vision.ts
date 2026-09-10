@@ -673,15 +673,21 @@ export async function resolveImageMessages(
 
   const currentImageMessageIndex =
     findCurrentImageMessageIndexFromResolved(resolved);
-  if (currentImageMessageIndex === undefined) {
-    return { messages, stats };
-  }
 
-  const describer = await visionService.get();
-  if (!describer) {
+  // Only the current turn's images are described, so the describer is only
+  // needed when there is one to describe. This used to return early when the
+  // images all belonged to earlier turns, which sent those images through
+  // untouched — to a model the proxy exists to keep them away from.
+  const describer =
+    currentImageMessageIndex === undefined
+      ? undefined
+      : await visionService.get();
+
+  if (currentImageMessageIndex !== undefined && !describer) {
     stats.unavailableImageMessages += 1;
     return {
-      messages,
+      // Nothing could be described, so nothing may be forwarded either.
+      messages: replaceImagesInAllMessages(resolved),
       stats,
       initialResponseNotice:
         "Vision proxy not configured. Image descriptions will be unavailable.",
@@ -705,7 +711,7 @@ export async function resolveImageMessages(
       continue;
     }
 
-    if (index === currentImageMessageIndex) {
+    if (describer && index === currentImageMessageIndex) {
       stats.currentImageMessages += 1;
 
       try {
@@ -735,19 +741,19 @@ export async function resolveImageMessages(
         } else {
           stats.failedImageMessages += 1;
           initialResponseNotice = "Vision proxy returned empty description.";
-          result.push(message);
+          result.push(replaceImagesWithPlaceholder(message));
         }
       } catch (error) {
         stats.failedImageMessages += 1;
         initialResponseNotice = `Vision proxy failed: ${error instanceof Error ? error.message : String(error)}`;
-        result.push(message);
+        result.push(replaceImagesWithPlaceholder(message));
       }
 
       stats.droppedImageParts += parts.imageParts.length;
     } else {
       stats.omittedImageMessages += 1;
       stats.droppedImageParts += parts.imageParts.length;
-      result.push(message);
+      result.push(replaceImagesWithPlaceholder(message));
     }
   }
 
@@ -810,4 +816,51 @@ function toVisionImagePart(
 
 function createImageDescriptionText(description: string): string {
   return IMAGE_DESCRIPTION_PREFIX + description + IMAGE_DESCRIPTION_SUFFIX;
+}
+
+/**
+ * Rebuild a message with its image parts replaced by a placeholder.
+ *
+ * A model without image input must never receive image parts — that is the
+ * whole point of the proxy. This covers the images it did not describe: an
+ * empty description, a describer that threw, a describer that is not
+ * configured, and images from earlier turns, which are not described again.
+ *
+ * The role is preserved and every non-image part is kept, so surrounding text
+ * and tool calls survive. Callers must have established that the message holds
+ * at least one image part; otherwise the message is returned unchanged, since
+ * rebuilding it would only risk dropping parts for no reason.
+ */
+function replaceImagesWithPlaceholder(
+  message: vscode.LanguageModelChatRequestMessage,
+): vscode.LanguageModelChatRequestMessage {
+  const content = message.content as readonly vscode.LanguageModelInputPart[];
+
+  const hasImage = content.some(
+    (part) =>
+      part instanceof vscode.LanguageModelDataPart &&
+      isImageMime(part.mimeType),
+  );
+  if (!hasImage) {
+    return message;
+  }
+
+  const replaced = content.map((part) =>
+    part instanceof vscode.LanguageModelDataPart && isImageMime(part.mimeType)
+      ? new vscode.LanguageModelTextPart(IMAGE_DESCRIPTION_UNAVAILABLE)
+      : part,
+  );
+
+  return new vscode.LanguageModelChatMessage(message.role, replaced);
+}
+
+/** Apply {@link replaceImagesWithPlaceholder} where a message has images. */
+function replaceImagesInAllMessages(
+  resolved: readonly ResolvedMessage[],
+): vscode.LanguageModelChatRequestMessage[] {
+  return resolved.map((entry) =>
+    entry.parts.imageParts.length > 0
+      ? replaceImagesWithPlaceholder(entry.message)
+      : entry.message,
+  );
 }

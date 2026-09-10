@@ -80,18 +80,47 @@ export function isSensitiveKey(key: string): boolean {
 // ── String-value redaction ───────────────────────────
 
 /**
+ * A redaction rule: what to match, and what to leave in its place.
+ *
+ * The replacement is a string rather than a callback on purpose. These
+ * patterns have different numbers of capture groups, and a shared callback
+ * receives arguments positionally — `(match, p1, p2, p3, offset, input)`. With
+ * patterns of mixed arity the same callback reads `offset` as `p1`, which
+ * injected the match offset into the log text (`Bearer 0[REDACTED]`, and
+ * `using 6[REDACTED]` for a prefixed key). A per-rule replacement string
+ * cannot be misread, and keeps the prefix each rule needs to preserve.
+ */
+interface RedactionRule {
+  pattern: RegExp;
+  /** `$1`/`$2` refer to this rule's own capture groups. */
+  replacement: string;
+}
+
+/**
  * Patterns that match sensitive values embedded in a log string:
  * - OpenAI-style prefixed keys (sk-..., pk-..., ...)
  * - Bearer tokens in headers
  * - `key: value` / `key=value` forms (query strings, JSON, TS objects)
  */
-const SENSITIVE_VALUE_PATTERNS: RegExp[] = [
+const SENSITIVE_VALUE_RULES: readonly RedactionRule[] = [
   // Prefixed API keys: sk-abc..., pk-..., rk-..., tk-..., ak-...
-  /\b(?:sk|pk|rk|tk|ak)-[A-Za-z0-9_-]{8,}/g,
-  // Bearer tokens
-  /\b(Bearer\s+)[A-Za-z0-9._~+/=-]{6,}/gi,
-  // key: value / key = value / key=value / "key":"value" (sensitive key names only)
-  /\b(api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|secret|password|authorization|credential)\b(\s*["']?\s*[:=]\s*["']?)([^\s"',;&<>]+)/gi,
+  // The whole token is the secret, so nothing is preserved.
+  {
+    pattern: /\b(?:sk|pk|rk|tk|ak)-[A-Za-z0-9_-]{8,}/g,
+    replacement: "[REDACTED]",
+  },
+  // Bearer tokens: keep the scheme so the log still reads as a header.
+  {
+    pattern: /\b(Bearer\s+)[A-Za-z0-9._~+/=-]{6,}/gi,
+    replacement: "$1[REDACTED]",
+  },
+  // key: value / key = value / key=value / "key":"value" (sensitive key names only).
+  // Keeps the key and separator so the entry remains identifiable.
+  {
+    pattern:
+      /\b(api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|secret|password|authorization|credential)\b(\s*["']?\s*[:=]\s*["']?)([^\s"',;&<>]+)/gi,
+    replacement: "$1$2[REDACTED]",
+  },
 ];
 
 /**
@@ -101,26 +130,12 @@ const SENSITIVE_VALUE_PATTERNS: RegExp[] = [
  */
 export function redactSensitiveValues(text: string): string {
   let out = text;
-  for (const pattern of SENSITIVE_VALUE_PATTERNS) {
-    out = out.replace(
-      pattern,
-      (
-        _match,
-        keyOrPrefix: string,
-        separator: string | undefined,
-        value: string | undefined,
-      ) => {
-        if (value !== undefined && separator !== undefined) {
-          // key=value form: keep the key and separator, redact the value.
-          return `${keyOrPrefix}${separator}[REDACTED]`;
-        }
-        if (keyOrPrefix) {
-          // prefix form (e.g. "Bearer "): keep the prefix, redact the rest.
-          return `${keyOrPrefix}[REDACTED]`;
-        }
-        return "[REDACTED]";
-      },
-    );
+  for (const { pattern, replacement } of SENSITIVE_VALUE_RULES) {
+    // A fresh `lastIndex` per call: the regexes are module-level and carry the
+    // `g` flag, so a shared one would resume mid-string depending on how the
+    // previous call left it.
+    pattern.lastIndex = 0;
+    out = out.replace(pattern, replacement);
   }
   return out;
 }

@@ -92,6 +92,11 @@ VS Code SecretStorage.
 > **Note:** The proxy only applies to models that cannot accept image input
 > natively. Models with image support receive the original images and are
 > never routed through the proxy.
+>
+> Only the most recent message is described. Images from earlier turns — and
+> any image whose description fails or is empty — are replaced with
+> `[Image: description unavailable]`, so no image part reaches a model that
+> cannot accept one.
 
 Run `Copilot Models: Clear Vision Model` to remove the configuration.
 
