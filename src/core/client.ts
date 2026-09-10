@@ -16,12 +16,14 @@
 import type { CancellationToken } from "vscode";
 import { logger } from "./logger";
 import { CircuitBreaker } from "./circuit-breaker";
-import { calculateDelay, delay } from "./retry";
+import { calculateDelay, delay, parseRetryAfter } from "./retry";
 import {
   createApiError,
   classifyError,
   isRetryableError,
   CancelledError,
+  RateLimitError,
+  TimeoutError,
 } from "./errors";
 import { sanitizeForLog, sanitizeUrl } from "./sanitize";
 import {
@@ -165,7 +167,33 @@ export interface ApiClientConfig {
 
 // ── HTTP Utilities ─────────────────────────────────────
 
-/** Send HTTP request and return streaming SSE response */
+/**
+ * Upper bound on a server-requested retry delay, so an implausible or
+ * erroneous `Retry-After` cannot leave the request hanging for long.
+ */
+const MAX_RETRY_AFTER_MS = 60_000;
+
+/**
+ * Join a base URL and an API path without producing a double slash.
+ *
+ * A `baseUrl` entered with a trailing slash (e.g. `https://host/v1/`) used to
+ * be concatenated verbatim, yielding `https://host/v1//chat/completions` —
+ * an empty path segment that some gateways reject with a 404.
+ */
+export function joinApiUrl(baseUrl: string, apiPath: string): string {
+  const base = baseUrl.trim().replace(/\/+$/, "");
+  const path = apiPath.trim();
+  return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
+}
+
+/**
+ * Send HTTP request and return streaming SSE response.
+ *
+ * The timeout here only covers connect + response headers — it is cleared as
+ * soon as `fetch` resolves. Guarding the streaming phase is the consumer's
+ * job; see `ConsumeStreamOptions.idleTimeoutMs` in
+ * `consumeChatCompletionStream`.
+ */
 async function fetchStream(
   url: string,
   apiKey: string,
@@ -224,7 +252,20 @@ async function handleResponseError(
     (parsed.message as string) ||
     errorBody ||
     response.statusText;
-  throw createApiError(response.status, providerName, message, errorBody);
+
+  // Surfaced on RateLimitError and honoured by the retry backoff. Read
+  // defensively: a Response stand-in may not carry headers.
+  const retryAfterMs = parseRetryAfter(
+    response.headers?.get?.("retry-after") ?? null,
+  );
+
+  throw createApiError(
+    response.status,
+    providerName,
+    message,
+    errorBody,
+    retryAfterMs,
+  );
 }
 
 // ── API Client Implementation ───────────────────────────
@@ -326,6 +367,10 @@ class ApiClientImpl implements IApiClient {
           callbacks,
           cancellationToken,
           providerName,
+          {
+            idleTimeoutMs: this.timeoutMs,
+            onIdleTimeout: () => controller.abort(),
+          },
         );
       });
 
@@ -350,112 +395,20 @@ class ApiClientImpl implements IApiClient {
    * Consume a streaming response chunk by chunk, dispatching to callbacks.
    * Returns false if the stream was stopped early due to cancellation.
    */
-  private async consumeStream(
+  private consumeStream(
     stream: Stream<ChatCompletionChunk>,
     callbacks: StreamCallbacks,
     cancellationToken: CancellationToken | undefined,
     providerName: string,
+    options?: ConsumeStreamOptions,
   ): Promise<boolean> {
-    const pendingToolCalls = new Map<
-      number,
-      {
-        id: string;
-        type: "function";
-        function: { name: string; arguments: string };
-      }
-    >();
-
-    logger.api.debug(`[${providerName}] Streaming started`);
-
-    for await (const chunk of stream) {
-      if (cancellationToken?.isCancellationRequested) {
-        logger.api.debug(
-          `[${providerName}] Cancellation requested, stopping stream`,
-        );
-        return false;
-      }
-
-      const choice = chunk.choices?.[0];
-      if (!choice) {
-        continue;
-      }
-
-      const delta = choice.delta;
-
-      if (
-        "reasoning_content" in delta &&
-        typeof delta.reasoning_content === "string" &&
-        delta.reasoning_content
-      ) {
-        callbacks.onThinking(delta.reasoning_content);
-      }
-
-      if (delta.content) {
-        callbacks.onContent(delta.content);
-      }
-
-      if (delta.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          let pending = pendingToolCalls.get(tc.index);
-          if (!pending && tc.id) {
-            pending = {
-              id: tc.id,
-              type: "function",
-              function: { name: "", arguments: "" },
-            };
-            pendingToolCalls.set(tc.index, pending);
-          }
-          if (pending) {
-            if (tc.function?.name) {
-              pending.function.name += tc.function.name;
-            }
-            if (tc.function?.arguments) {
-              pending.function.arguments += tc.function.arguments;
-            }
-          }
-        }
-      }
-
-      if (choice.finish_reason) {
-        logger.api.debug(
-          `[${providerName}] finish_reason="${choice.finish_reason}"`,
-        );
-        if (choice.finish_reason === "length") {
-          logger.api.warn(
-            `[${providerName}] Response truncated due to max_tokens limit (finish_reason="length")`,
-          );
-        }
-      }
-
-      if (
-        choice.finish_reason === "tool_calls" ||
-        choice.finish_reason === "stop"
-      ) {
-        for (const tc of pendingToolCalls.values()) {
-          if (tc.function.name) {
-            callbacks.onToolCall({
-              id: tc.id,
-              type: tc.type,
-              function: {
-                name: tc.function.name,
-                arguments: tc.function.arguments,
-              },
-            });
-          }
-        }
-        pendingToolCalls.clear();
-      }
-
-      if (chunk.usage && callbacks.onUsage) {
-        callbacks.onUsage({
-          prompt_tokens: chunk.usage.prompt_tokens,
-          completion_tokens: chunk.usage.completion_tokens,
-          total_tokens: chunk.usage.total_tokens,
-        });
-      }
-    }
-
-    return true;
+    return consumeChatCompletionStream(
+      stream,
+      callbacks,
+      cancellationToken,
+      providerName,
+      options,
+    );
   }
 
   private async sendWithRetry(
@@ -465,19 +418,28 @@ class ApiClientImpl implements IApiClient {
     const { providerName, baseUrl, apiKey, timeoutMs, maxRetries, apiPath } =
       this;
 
+    /** Server-requested delay carried over from the previous failed attempt. */
+    let serverRetryAfterMs: number | undefined;
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         if (attempt > 0) {
-          const backoff = calculateDelay(attempt - 1);
+          // Prefer the server's own guidance (Retry-After) over our backoff.
+          // Capped so an implausible header cannot stall the request for a
+          // long time — beyond that, failing fast beats waiting.
+          const backoff =
+            serverRetryAfterMs === undefined
+              ? calculateDelay(attempt - 1)
+              : Math.min(serverRetryAfterMs, MAX_RETRY_AFTER_MS);
           logger.api.warn(
-            `[${providerName}] Retry ${attempt}/${maxRetries} after ${backoff}ms`,
+            `[${providerName}] Retry ${attempt}/${maxRetries} after ${backoff}ms${serverRetryAfterMs !== undefined ? " (server Retry-After)" : ""}`,
           );
           // Pass the signal so a user cancellation aborts the backoff
           // immediately instead of waiting for the full delay.
           await delay(backoff, signal);
         }
 
-        const url = `${baseUrl}${apiPath}`;
+        const url = joinApiUrl(baseUrl, apiPath);
         logger.api.debug(
           `[${providerName}] POST ${sanitizeUrl(url)}  (apiKey=${apiKey ? "configured" : "missing"})`,
         );
@@ -509,6 +471,12 @@ class ApiClientImpl implements IApiClient {
           streamController,
         );
       } catch (error) {
+        if (
+          error instanceof RateLimitError &&
+          error.retryAfterMs !== undefined
+        ) {
+          serverRetryAfterMs = error.retryAfterMs;
+        }
         if (!isRetryableError(error) || attempt >= maxRetries) {
           throw error;
         }
@@ -520,6 +488,217 @@ class ApiClientImpl implements IApiClient {
 
     throw new Error(`Exhausted ${maxRetries + 1} retry attempts`);
   }
+}
+
+/**
+ * Options controlling how a streaming response is consumed.
+ */
+export interface ConsumeStreamOptions {
+  /**
+   * Abort the request when no chunk arrives within this window (ms).
+   *
+   * The connect timeout used by `fetchStream` is cleared once response headers
+   * arrive, so without a stall guard a server that stops sending mid-stream
+   * leaves the request hanging until the user cancels manually.
+   */
+  idleTimeoutMs?: number | undefined;
+  /**
+   * Invoked when the idle timeout fires, so the caller can abort the
+   * underlying HTTP request and release the connection.
+   */
+  onIdleTimeout?: (() => void) | undefined;
+}
+
+/**
+ * Await the next iterator result, failing with a `TimeoutError` when nothing
+ * arrives within `idleTimeoutMs`.
+ */
+async function nextChunkWithIdleTimeout<Item>(
+  iterator: AsyncIterator<Item>,
+  providerName: string,
+  options: ConsumeStreamOptions | undefined,
+): Promise<IteratorResult<Item>> {
+  const pending = iterator.next();
+  const idleTimeoutMs = options?.idleTimeoutMs;
+  if (!idleTimeoutMs || idleTimeoutMs <= 0) {
+    return pending;
+  }
+
+  // The aborted request may reject after the timeout already won the race;
+  // swallow that so it does not surface as an unhandled rejection.
+  pending.catch(() => {});
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          logger.api.error(
+            `[${providerName}] Stream stalled: no data for ${idleTimeoutMs}ms, aborting`,
+          );
+          options?.onIdleTimeout?.();
+          reject(new TimeoutError(providerName, idleTimeoutMs));
+        }, idleTimeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+/**
+ * Consume an OpenAI-compatible streaming response, dispatching each chunk to
+ * the supplied callbacks.
+ *
+ * Extracted from the client class so the chunk-handling rules are unit
+ * testable without a live HTTP stream:
+ * - usage arrives in a trailing chunk with an empty `choices` array, so it
+ *   must be handled before the choice guard or it is silently dropped;
+ * - `delta` may be missing entirely on the final chunk of some gateways;
+ * - tool call fragments are accumulated across chunks and flushed either on
+ *   finish_reason or, defensively, when the stream ends without one.
+ *
+ * @returns false when the stream was stopped early due to cancellation.
+ */
+export async function consumeChatCompletionStream(
+  stream: AsyncIterable<ChatCompletionChunk>,
+  callbacks: StreamCallbacks,
+  cancellationToken: CancellationToken | undefined,
+  providerName: string,
+  options?: ConsumeStreamOptions,
+): Promise<boolean> {
+  const pendingToolCalls = new Map<
+    number,
+    {
+      id: string;
+      type: "function";
+      function: { name: string; arguments: string };
+    }
+  >();
+
+  /** Emit all accumulated tool calls and reset the buffer. */
+  const flushToolCalls = (): void => {
+    for (const tc of pendingToolCalls.values()) {
+      if (tc.function.name) {
+        callbacks.onToolCall({
+          id: tc.id,
+          type: tc.type,
+          function: {
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          },
+        });
+      }
+    }
+    pendingToolCalls.clear();
+  };
+
+  logger.api.debug(`[${providerName}] Streaming started`);
+
+  const iterator = stream[Symbol.asyncIterator]();
+
+  while (true) {
+    const result = await nextChunkWithIdleTimeout(
+      iterator,
+      providerName,
+      options,
+    );
+    if (result.done) {
+      break;
+    }
+
+    const chunk = result.value;
+
+    if (cancellationToken?.isCancellationRequested) {
+      logger.api.debug(
+        `[${providerName}] Cancellation requested, stopping stream`,
+      );
+      return false;
+    }
+
+    // Usage is delivered in a final chunk whose `choices` array is empty
+    // (OpenAI streaming spec), so it must be handled BEFORE the choice guard
+    // below — otherwise it is silently dropped and callers relying on usage
+    // (e.g. token plan consumption tracking) never fire.
+    if (chunk.usage && callbacks.onUsage) {
+      callbacks.onUsage({
+        prompt_tokens: chunk.usage.prompt_tokens,
+        completion_tokens: chunk.usage.completion_tokens,
+        total_tokens: chunk.usage.total_tokens,
+      });
+    }
+
+    const choice = chunk.choices?.[0];
+    if (!choice) {
+      continue;
+    }
+
+    const delta = choice.delta ?? {};
+
+    if (delta.reasoning_content) {
+      callbacks.onThinking(delta.reasoning_content);
+    }
+
+    if (delta.content) {
+      callbacks.onContent(delta.content);
+    }
+
+    if (delta.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        let pending = pendingToolCalls.get(tc.index);
+        if (!pending && tc.id) {
+          pending = {
+            id: tc.id,
+            type: "function",
+            function: { name: "", arguments: "" },
+          };
+          pendingToolCalls.set(tc.index, pending);
+        }
+        if (pending) {
+          if (tc.function?.name) {
+            pending.function.name += tc.function.name;
+          }
+          if (tc.function?.arguments) {
+            pending.function.arguments += tc.function.arguments;
+          }
+        }
+      }
+    }
+
+    if (choice.finish_reason) {
+      logger.api.debug(
+        `[${providerName}] finish_reason="${choice.finish_reason}"`,
+      );
+      if (choice.finish_reason === "length") {
+        logger.api.warn(
+          `[${providerName}] Response truncated due to max_tokens limit (finish_reason="length")`,
+        );
+      }
+    }
+
+    if (
+      choice.finish_reason === "tool_calls" ||
+      choice.finish_reason === "stop"
+    ) {
+      flushToolCalls();
+    }
+  }
+
+  // Some gateways end the stream without ever sending a finish_reason.
+  // Flush any tool calls accumulated so far instead of dropping them, which
+  // would surface to the user as "the model decided to call a tool but
+  // nothing happened".
+  if (pendingToolCalls.size > 0) {
+    logger.api.debug(
+      `[${providerName}] Stream ended without finish_reason, flushing ${pendingToolCalls.size} pending tool call(s)`,
+    );
+    flushToolCalls();
+  }
+
+  return true;
 }
 
 /**

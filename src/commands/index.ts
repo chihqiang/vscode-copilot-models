@@ -3,7 +3,17 @@
  */
 
 import vscode from "vscode";
-import { logger, type ModelRouter } from "../core";
+import {
+  logger,
+  MAX_CONSUMPTION_RECORDS,
+  TokenPlan,
+  buildUsageSummary,
+  collectProviderBalances,
+  formatBalanceSection,
+  formatUsageReport,
+  type ModelRouter,
+} from "../core";
+import { confirmAction } from "../wizard/utils";
 import {
   openSetApiKeyWizard,
   openClearApiKeyWizard,
@@ -67,9 +77,9 @@ export function registerAllCommands(
 
   // ── Settings & Logging ────────────────────────────
 
-  registerCommand(context, "copilot-models.openSettings", () => {
+  registerCommand(context, "copilot-models.openSettings", async () => {
     logger.core.info("openSettings command invoked");
-    vscode.commands.executeCommand(
+    await vscode.commands.executeCommand(
       "workbench.action.openSettings",
       "copilot-models",
     );
@@ -129,17 +139,65 @@ export function registerAllCommands(
     );
   });
 
+  // ── Token Usage ───────────────────────────────────
+
+  registerCommand(
+    context,
+    "copilot-models.showTokenUsage",
+    safeAsync("showTokenUsage", async () => {
+      logger.core.info("showTokenUsage command invoked");
+      const records = TokenPlan.getInstance().getConsumptions();
+      // Balance is best-effort: providers without a balance API are skipped and
+      // failures degrade to an "unavailable" line inside the report.
+      const balances = await collectProviderBalances();
+      const hasReportableBalance = formatBalanceSection(balances).length > 0;
+
+      // A fresh install has no usage yet, but the balance is still worth
+      // showing — configure the key and this is the first thing to check.
+      if (records.length === 0 && !hasReportableBalance) {
+        vscode.window.showInformationMessage("No token usage recorded yet");
+        return;
+      }
+
+      const summary = buildUsageSummary(records, Date.now());
+      await vscode.window.showInformationMessage(
+        formatUsageReport(summary, {
+          retentionLimit: MAX_CONSUMPTION_RECORDS,
+          balances,
+        }),
+        { modal: true },
+      );
+    }),
+  );
+
+  registerCommand(
+    context,
+    "copilot-models.clearTokenUsage",
+    safeAsync("clearTokenUsage", async () => {
+      const confirmed = await confirmAction(
+        "Clear all recorded token usage?",
+        "Clear",
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      await TokenPlan.getInstance().clearConsumptions();
+      vscode.window.showInformationMessage("Token usage cleared");
+    }),
+  );
+
   // ── Vision Model ─────────────────────────────────
 
   registerCommand(
     context,
     "copilot-models.setVisionModel",
-    safeAsync("setVisionModel", openSetVisionModelWizard),
+    safeAsync("setVisionModel", () => openSetVisionModelWizard(context)),
   );
 
   registerCommand(
     context,
     "copilot-models.clearVisionModel",
-    safeAsync("clearVisionModel", openClearVisionModelWizard),
+    safeAsync("clearVisionModel", () => openClearVisionModelWizard(context)),
   );
 }

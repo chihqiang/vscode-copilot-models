@@ -3,7 +3,13 @@
  */
 
 import vscode from "vscode";
-import { logger, getVisionLanguageModelOptions } from "../core";
+import {
+  logger,
+  getVisionLanguageModelOptions,
+  storeVisionProxyApiKey,
+  clearVisionProxyApiKey,
+  hasVisionProxyApiKey,
+} from "../core";
 import { confirmAction } from "./utils";
 
 /**
@@ -11,7 +17,9 @@ import { confirmAction } from "./utils";
  * 1. Let user select a vision model or API endpoint
  * 2. Configure the vision proxy
  */
-export async function openSetVisionModelWizard(): Promise<void> {
+export async function openSetVisionModelWizard(
+  context: vscode.ExtensionContext,
+): Promise<void> {
   const options = await getVisionLanguageModelOptions();
 
   if (options.length === 0) {
@@ -44,7 +52,7 @@ export async function openSetVisionModelWizard(): Promise<void> {
   }
 
   if (selected.value === "api:endpoint") {
-    await configureApiEndpoint();
+    await configureApiEndpoint(context);
   } else {
     await configureVisionModel(selected.value);
   }
@@ -54,7 +62,9 @@ export async function openSetVisionModelWizard(): Promise<void> {
  * Clear Vision Model wizard:
  * 1. Confirm and clear vision proxy configuration
  */
-export async function openClearVisionModelWizard(): Promise<void> {
+export async function openClearVisionModelWizard(
+  context: vscode.ExtensionContext,
+): Promise<void> {
   const confirmed = await confirmAction(
     "Clear vision model configuration?",
     "Clear",
@@ -79,6 +89,7 @@ export async function openClearVisionModelWizard(): Promise<void> {
     undefined,
     vscode.ConfigurationTarget.Global,
   );
+  await clearVisionProxyApiKey(context.secrets);
 
   logger.auth.info("Vision model configuration cleared");
   vscode.window.showInformationMessage("Vision model configuration cleared");
@@ -96,7 +107,9 @@ async function configureVisionModel(modelId: string): Promise<void> {
   vscode.window.showInformationMessage(`Vision model configured: ${modelId}`);
 }
 
-async function configureApiEndpoint(): Promise<void> {
+async function configureApiEndpoint(
+  context: vscode.ExtensionContext,
+): Promise<void> {
   const apiUrl = await vscode.window.showInputBox({
     prompt: "Enter API endpoint URL",
     placeHolder: "https://api.example.com/v1",
@@ -134,6 +147,28 @@ async function configureApiEndpoint(): Promise<void> {
     return;
   }
 
+  // The endpoint may require authentication. Previously the key was never
+  // requested nor stored, so every authenticated endpoint failed at request
+  // time with "API key not configured for vision proxy".
+  const existingKey = await hasVisionProxyApiKey(context.secrets);
+  const apiKey = await vscode.window.showInputBox({
+    title: "Vision API Key",
+    prompt: existingKey
+      ? "Enter the API key (leave empty to keep the stored key)"
+      : "Enter the API key (leave empty for unauthenticated endpoints)",
+    placeHolder: existingKey ? "(leave empty to keep current key)" : "sk-...",
+    password: true,
+    ignoreFocusOut: true,
+  });
+
+  // `undefined` means the user dismissed the input box.
+  if (apiKey === undefined) {
+    return;
+  }
+  if (apiKey.trim()) {
+    await storeVisionProxyApiKey(context.secrets, apiKey);
+  }
+
   const config = vscode.workspace.getConfiguration("copilot-models");
   await config.update(
     "visionModel",
@@ -151,7 +186,9 @@ async function configureApiEndpoint(): Promise<void> {
     vscode.ConfigurationTarget.Global,
   );
 
-  logger.auth.info(`Vision API endpoint configured: ${apiUrl} (${apiModelId})`);
+  logger.auth.info(
+    `Vision API endpoint configured: ${apiUrl} (${apiModelId}, apiKey=${apiKey.trim() || existingKey ? "configured" : "none"})`,
+  );
   vscode.window.showInformationMessage(
     `Vision API endpoint configured: ${apiModelId}`,
   );

@@ -58,11 +58,16 @@ export class NotFoundError extends ApiError {
 export class RateLimitError extends ApiError {
   constructor(
     providerId: string,
-    public readonly retryAfter?: number,
+    /** Server-requested delay from the `Retry-After` header, in milliseconds. */
+    public readonly retryAfterMs?: number,
     responseBody?: string,
   ) {
+    const hint =
+      retryAfterMs === undefined
+        ? ""
+        : ` Try again in ${Math.max(1, Math.ceil(retryAfterMs / 1000))} second(s).`;
     super(
-      `Rate limit exceeded for ${providerId}. Please try again later${retryAfter ? ` after ${retryAfter} seconds` : ""}.`,
+      `Rate limit exceeded for ${providerId}. Please try again later.${hint}`,
       429,
       providerId,
       responseBody,
@@ -140,6 +145,7 @@ export function createApiError(
   providerId: string,
   errorBody: string,
   responseBody?: string,
+  retryAfterMs?: number,
 ): ApiError {
   switch (statusCode) {
     case 401:
@@ -153,7 +159,7 @@ export function createApiError(
     case 415:
       return new UnsupportedMediaTypeError(providerId, responseBody);
     case 429:
-      return new RateLimitError(providerId, undefined, responseBody);
+      return new RateLimitError(providerId, retryAfterMs, responseBody);
     case 503:
       return new ServiceUnavailableError(providerId, responseBody);
     default:

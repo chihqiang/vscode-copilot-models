@@ -1,10 +1,11 @@
 import * as assert from "assert";
+import { getEventListeners } from "node:events";
 import {
   CircuitBreaker,
   CircuitBreakerError,
   CircuitState,
 } from "../core/circuit-breaker";
-import { delay, calculateDelay } from "../core/retry";
+import { delay, calculateDelay, parseRetryAfter } from "../core/retry";
 
 const TEST_PROVIDER = "test-provider";
 
@@ -175,11 +176,108 @@ suite("calculateDelay Test Suite", () => {
   });
 });
 
+suite("parseRetryAfter Test Suite", () => {
+  test("parses the delay-seconds form", () => {
+    assert.strictEqual(parseRetryAfter("5"), 5_000);
+    assert.strictEqual(parseRetryAfter("0"), 0);
+    assert.strictEqual(parseRetryAfter(" 12 "), 12_000);
+  });
+
+  test("parses the HTTP-date form relative to now", () => {
+    const now = Date.parse("2026-09-10T00:00:00Z");
+    const value = new Date(now + 30_000).toUTCString();
+
+    assert.strictEqual(parseRetryAfter(value, now), 30_000);
+  });
+
+  test("treats a past date as retry-now rather than negative", () => {
+    const now = Date.parse("2026-09-10T00:00:00Z");
+    const value = new Date(now - 60_000).toUTCString();
+
+    assert.strictEqual(parseRetryAfter(value, now), 0);
+  });
+
+  test("returns undefined for absent or unparseable values", () => {
+    assert.strictEqual(parseRetryAfter(null), undefined);
+    assert.strictEqual(parseRetryAfter(undefined), undefined);
+    assert.strictEqual(parseRetryAfter(""), undefined);
+    assert.strictEqual(parseRetryAfter("   "), undefined);
+    assert.strictEqual(parseRetryAfter("soon"), undefined);
+    assert.strictEqual(parseRetryAfter("-5"), undefined);
+  });
+
+  test("rejects values Date.parse would leniently accept", () => {
+    // Date.parse reads "-5" as a year and "0.5" as a date. Treating those as
+    // valid would turn a malformed header into "retry now", hammering a server
+    // that asked us to back off. Bare integers are NOT in this list: the spec
+    // defines delay-seconds as any non-negative integer, so "2026" legitimately
+    // means 2026 seconds (the caller caps it).
+    for (const value of ["-5", "0.5", "null", "1e3", "+7"]) {
+      assert.strictEqual(
+        parseRetryAfter(value),
+        undefined,
+        `"${value}" is not a valid Retry-After`,
+      );
+    }
+  });
+
+  test("accepts a large delay-seconds value, leaving capping to the caller", () => {
+    assert.strictEqual(parseRetryAfter("2026"), 2_026_000);
+  });
+});
+
 suite("delay Test Suite", () => {
   test("resolves after specified time", async () => {
     const start = Date.now();
     await delay(10);
     const elapsed = Date.now() - start;
     assert.ok(elapsed >= 5, `Expected >= 5ms, got ${elapsed}ms`);
+  });
+
+  test("rejects when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await assert.rejects(
+      () => delay(10, controller.signal),
+      (err: unknown) => err instanceof DOMException,
+    );
+  });
+
+  test("rejects when aborted mid-delay", async () => {
+    const controller = new AbortController();
+    const pending = delay(10_000, controller.signal);
+    controller.abort();
+
+    await assert.rejects(
+      () => pending,
+      (err: unknown) => err instanceof DOMException,
+    );
+  });
+
+  test("detaches its abort listener once the delay resolves", async () => {
+    const controller = new AbortController();
+    await delay(5, controller.signal);
+
+    assert.strictEqual(
+      getEventListeners(controller.signal, "abort").length,
+      0,
+      "abort listener must be removed on the happy path",
+    );
+  });
+
+  test("does not accumulate abort listeners across retries", async () => {
+    // Retries share one AbortSignal, so a leak would pile up listeners until
+    // Node emits its MaxListenersExceededWarning.
+    const controller = new AbortController();
+    for (let i = 0; i < 15; i++) {
+      await delay(1, controller.signal);
+    }
+
+    assert.strictEqual(
+      getEventListeners(controller.signal, "abort").length,
+      0,
+      "listener count must stay at zero regardless of retry count",
+    );
   });
 });

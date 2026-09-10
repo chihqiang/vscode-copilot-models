@@ -55,7 +55,8 @@ run `Copilot Models: Set Token Plan` to configure plan access:
 
 1. Press `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`), run `Copilot Models: Set Token Plan`
 2. Select a built-in provider preset or enter a custom URL
-   - The Qwen preset is preconfigured with the endpoint URL and 9 supported models
+   - The Qwen preset is preconfigured with the endpoint URL and
+     6 supported models
 3. Enter the plan API token
 4. Select the models covered by this plan
 
@@ -73,16 +74,24 @@ Run `Copilot Models: Clear Token Plan` to remove a configured plan.
 ### 4. (Optional) Configure Vision Model
 
 If you want to use image attachments with models that don't natively support
-image input (e.g., GLM-5 series, Qwen3.7 Max), configure a vision proxy to
+image input (e.g., GLM-5.3, GLM-5.2), configure a vision proxy to
 automatically convert images to text descriptions:
 
 1. Press `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`), run
    `Copilot Models: Set Vision Model`
 2. Select a vision-capable model, or choose "Custom API Endpoint"
-3. For custom API endpoint, enter the URL and model ID
+3. For custom API endpoint, enter the URL, model ID, and API key
+   (leave the key empty for unauthenticated endpoints)
 
 The vision proxy describes images before sending them to the chat model.
-For custom API endpoints, an OpenAI-compatible `/chat/completions` endpoint is required.
+For custom API endpoints, an OpenAI-compatible endpoint is required — enter
+either the base URL (`https://host/v1`) or the full
+`/chat/completions` URL, both are accepted. The API key is stored in
+VS Code SecretStorage.
+
+> **Note:** The proxy only applies to models that cannot accept image input
+> natively. Models with image support receive the original images and are
+> never routed through the proxy.
 
 Run `Copilot Models: Clear Vision Model` to remove the configuration.
 
@@ -99,29 +108,31 @@ Run `Copilot Models: Clear Vision Model` to remove the configuration.
 
 | Model | Context | Output | Tool Calling | Image Input | Thinking Mode |
 | :----- | :------: | :----: | :--------: | :---------: | :--------: |
-| Qwen3.7 Max | 1M | 64K | ✅ | ❌ | ✅ |
+| Qwen3.8 Max | 1M | 64K | ✅ | ✅ | ✅ |
+| Qwen3.8 Flash | 1M | 64K | ✅ | ✅ | ✅ |
 | Qwen3.7 Plus | 1M | 64K | ✅ | ✅ | ✅ |
-| Qwen3.6 Flash | 1M | 64K | ✅ | ✅ | ✅ |
-| Qwen3.6 Plus | 128K | 64K | ✅ | ✅ | ✅ |
-| Qwen3 Max | 128K | 64K | ✅ | ✅ | ✅ |
-| Qwen3.5 Flash | 128K | 64K | ✅ | ✅ | ✅ |
+| Qwen3.7 Flash | 1M | 64K | ✅ | ✅ | ✅ |
 
 ### DeepSeek
 
 | Model | Context | Output | Tool Calling | Image Input | Thinking Mode |
 | :----- | :------: | :----: | :--------: | :---------: | :--------: |
-| DeepSeek V4 Flash | 640K | 384K | ✅ | ✅ | ✅ |
-| DeepSeek V4 Pro | 640K | 384K | ✅ | ✅ | ✅ |
+| DeepSeek V4.1 Flash | 1M | 384K | ✅ | ✅ | ✅ |
+
+> **Note:** `deepseek-v4-flash` has been retired and `deepseek-v4-pro` is being
+> retired — requests to either ID are served by DeepSeek-V4.1-Flash.
 
 ### Zhipu AI (BigModel)
 
 | Model | Context | Output | Tool Calling | Image Input | Thinking Mode |
 | :----- | :------: | :----: | :--------: | :---------: | :--------: |
+| GLM-5.3 | 1M | 128K | ✅ | ❌ | ✅ |
+| GLM-5.3-Flash | 1M | 128K | ✅ | ✅ | ✅ |
 | GLM-5.2 | 1M | 128K | ✅ | ❌ | ✅ |
 | GLM-5.1 | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5-Turbo | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5 | 200K | 128K | ✅ | ❌ | ✅ |
-| GLM-4.7-Flash | 128K | 16K | ✅ | ❌ | ❌ |
+| GLM-4.7-Flash | 200K | 128K | ✅ | ❌ | ❌ |
 
 > **Tip:** Models marked with ❌ for Image Input can still handle images
 > through the Vision Proxy feature (see Quick Start step 4).
@@ -133,18 +144,20 @@ a single unified endpoint:
 
 | Model | ID |
 | :---- | :- |
-| Qwen3.7 Max | `qwen3.7-max` |
+| Qwen3.8 Max | `qwen3.8-max` |
+| Qwen3.8 Flash | `qwen3.8-flash` |
 | Qwen3.7 Plus | `qwen3.7-plus` |
-| Qwen3.6 Flash | `qwen3.6-flash` |
-| Qwen3.6 Plus | `qwen3.6-plus` |
+| Qwen3.7 Flash | `qwen3.7-flash` |
 | GLM-5.2 | `glm-5.2` |
-| GLM-5.1 | `glm-5.1` |
-| GLM-5 | `glm-5` |
-| DeepSeek V4 Pro | `deepseek-v4-pro` |
-| DeepSeek V4 Flash | `deepseek-v4-flash` |
+| DeepSeek V4.1 Flash | `deepseek-flash` |
 
-Models not listed (e.g. Qwen3 Max, GLM-5-Turbo) are still available via direct
+Models not listed (e.g. GLM-5-Turbo, kimi-k2.7-code) are still available via direct
 provider API access — they are simply not covered by this Token Plan preset.
+
+> **Note:** The IDs above must match the model IDs exposed by the extension
+> (see the Supported Models tables). `deepseek-v4-pro` and `deepseek-v4-flash`
+> are accepted by the DeepSeek API itself, but the extension only exposes them
+> as `deepseek-flash`.
 
 ## Configuration Options
 
@@ -162,11 +175,12 @@ Available in VS Code settings (search `copilot-models`):
 | Config | Description | Default |
 | :----- | :---------- | :------ |
 | `routingStrategy` | `"failover"` or `"latency"` routing | `"failover"` |
-| `failoverModels` | Primary model → fallback model ID map | `{}` |
+| `failoverModels` | Primary model → fallback ID map (chained A→B→C) | `{}` |
 | `modelIdOverrides` | Map model IDs to custom API names | `{}` |
-| `maxImageSize` | Max image size in bytes (0 = disabled) | `20971520` (20MB) |
+| `maxImageSize` | Max image size in bytes (0 = no limit) | `20971520` (20MB) |
 | `timeoutMs` | Request timeout in milliseconds | `60000` |
 | `maxRetries` | Maximum retry attempts | `1` |
+| `showStatusBar` | Show today's token usage in the status bar | `true` |
 | `debugMode` | Log level: `minimal / metadata / verbose` | `minimal` |
 
 ### Vision Proxy Settings
@@ -180,10 +194,45 @@ Available in VS Code settings (search `copilot-models`):
 | `visionProxy.timeoutMs` | Vision proxy timeout in milliseconds | `60000` |
 | `visionProxy.maxTokens` | Max tokens for vision proxy response | `1024` |
 
-> **Note:** The `maxTokens` config has been removed. Each model now
+> **Note:** `visionProxy.maxTokens` applies only to the vision description
+> request sent to `visionProxy.apiUrl` — it does not affect normal chat
+> requests. Chat requests have no separate `max_tokens` setting: each model
 > automatically uses its own `maxOutputTokens` as the API's `max_tokens`
-> parameter — no manual configuration needed. See the "Output" column in
-> the Supported Models tables above.
+> parameter. See the "Output" column in the Supported Models tables above.
+
+## Token Usage
+
+Every completed request records its token usage locally — including requests
+that use a directly configured API key, not only token plan traffic.
+
+- The status bar shows today's tokens and request count, for example
+  `12.3K tok · 18 req`. Click it to open the report. The item stays hidden
+  until the first request is recorded; set `copilot-models.showStatusBar` to
+  `false` to hide it permanently.
+- Run `Copilot Models: Show Token Usage` for a breakdown by plan and by model.
+- Run `Copilot Models: Clear Token Usage` to drop the recorded history.
+
+> **Note:** Only the most recent 1000 requests are kept, so the "all time"
+> figures are a rolling window rather than a lifetime total. Usage is stored in
+> VS Code global state and never leaves your machine.
+
+### Account Balance
+
+The usage report also shows your **DeepSeek** account balance, queried from the
+official `GET /user/balance` endpoint. It refreshes each time you run the
+command, and is shown even before any request has been recorded.
+
+```text
+Balance:
+  deepseek: ¥110.00 (granted ¥10.00 · topped up ¥100.00)
+```
+
+> **Note:** DeepSeek is the only supported provider with a documented balance
+> API. Zhipu AI, Qwen/DashScope and the Qwen Token Plan endpoint expose none, so
+> no figure is shown for requests served through them. Providers without a
+> configured API key are omitted entirely; a configured provider whose lookup
+> fails reads as `unavailable` — a balance problem never blocks the rest of the
+> report. No request is sent when no API key is set.
 
 ## Commands
 
@@ -196,6 +245,8 @@ Available in VS Code settings (search `copilot-models`):
 | `Copilot Models: Clear Log` | Clear logs |
 | `Copilot Models: Refresh Models` | Refresh model list |
 | `Copilot Models: Show Latency Stats` | Show provider latency statistics |
+| `Copilot Models: Show Token Usage` | Show usage by plan and model |
+| `Copilot Models: Clear Token Usage` | Clear all recorded token usage |
 | `Copilot Models: Set Token Plan` | Configure prepaid token plan |
 | `Copilot Models: Clear Token Plan` | Remove configured token plan |
 | `Copilot Models: Set Vision Model` | Configure vision image proxy |

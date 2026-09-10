@@ -1,4 +1,5 @@
 import type { ModelDefinition } from "../core/models";
+import models from "./deepseek.models.json";
 
 export const deepseekConfig = {
   id: "deepseek",
@@ -8,28 +9,5 @@ export const deepseekConfig = {
   apiKeyPlaceholder: "sk-xxxxxxxxxxxxxxxxxxxxxxxx",
   supportsThinking: true,
   thinkingFormat: "thinking_type",
-  models: [
-    {
-      id: "deepseek-v4-flash",
-      name: "DeepSeek V4 Flash",
-      family: "deepseek",
-      version: "v4",
-      detail: "Fast, general-purpose model",
-      maxInputTokens: 655360,
-      maxOutputTokens: 393216,
-      capabilities: { toolCalling: true, imageInput: true, thinking: true },
-      requiresThinkingParam: true,
-    },
-    {
-      id: "deepseek-v4-pro",
-      name: "DeepSeek V4 Pro",
-      family: "deepseek",
-      version: "v4",
-      detail: "Most capable reasoning model",
-      maxInputTokens: 655360,
-      maxOutputTokens: 393216,
-      capabilities: { toolCalling: true, imageInput: true, thinking: true },
-      requiresThinkingParam: true,
-    },
-  ] satisfies ModelDefinition[],
+  models: models satisfies ModelDefinition[],
 };

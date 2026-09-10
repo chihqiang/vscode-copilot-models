@@ -1,4 +1,5 @@
 import type { ModelDefinition } from "../core/models";
+import models from "./bigmodel.models.json";
 
 export const bigmodelConfig = {
   id: "bigmodel",
@@ -9,61 +10,5 @@ export const bigmodelConfig = {
   supportsThinking: true,
   /** BigModel 使用 thinking: { type: "disabled" | "enabled" } 格式 */
   thinkingFormat: "thinking_type" as const,
-  models: [
-    {
-      id: "glm-5.2",
-      name: "GLM-5.2",
-      family: "bigmodel",
-      version: "5.2",
-      detail: "Latest flagship model, 1M context, enhanced reasoning",
-      maxInputTokens: 1000000,
-      maxOutputTokens: 131072,
-      capabilities: { toolCalling: true, imageInput: false, thinking: true },
-      requiresThinkingParam: true,
-    },
-    {
-      id: "glm-4.7-flash",
-      name: "GLM-4.7-Flash",
-      family: "bigmodel",
-      version: "4.7",
-      detail: "Fast, lightweight model for quick tasks",
-      maxInputTokens: 128000,
-      maxOutputTokens: 16384,
-      capabilities: { toolCalling: true, imageInput: false, thinking: false },
-      requiresThinkingParam: false,
-    },
-    {
-      id: "glm-5.1",
-      name: "GLM-5.1",
-      family: "bigmodel",
-      version: "5.1",
-      detail: "Flagship base model, 200K context, thinking enabled",
-      maxInputTokens: 200000,
-      maxOutputTokens: 131072,
-      capabilities: { toolCalling: true, imageInput: false, thinking: true },
-      requiresThinkingParam: true,
-    },
-    {
-      id: "glm-5-turbo",
-      name: "GLM-5-Turbo",
-      family: "bigmodel",
-      version: "5",
-      detail: "Optimized for OpenClaw scenarios, 200K context",
-      maxInputTokens: 200000,
-      maxOutputTokens: 131072,
-      capabilities: { toolCalling: true, imageInput: false, thinking: true },
-      requiresThinkingParam: true,
-    },
-    {
-      id: "glm-5",
-      name: "GLM-5",
-      family: "bigmodel",
-      version: "5",
-      detail: "General purpose model, 200K context",
-      maxInputTokens: 200000,
-      maxOutputTokens: 131072,
-      capabilities: { toolCalling: true, imageInput: false, thinking: true },
-      requiresThinkingParam: true,
-    },
-  ] satisfies ModelDefinition[],
+  models: models satisfies ModelDefinition[],
 };

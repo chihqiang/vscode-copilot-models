@@ -32,6 +32,14 @@ suite("Extension Test Suite", () => {
       commands.includes("copilot-models.refreshModels"),
       "refreshModels command should be registered",
     );
+    assert.ok(
+      commands.includes("copilot-models.showTokenUsage"),
+      "showTokenUsage command should be registered",
+    );
+    assert.ok(
+      commands.includes("copilot-models.clearTokenUsage"),
+      "clearTokenUsage command should be registered",
+    );
   });
 
   test("Extension configuration should exist", () => {
@@ -59,6 +67,12 @@ suite("Extension Test Suite", () => {
       config.get<number>("visionProxy.maxTokens"),
       1024,
       "visionProxy.maxTokens should default to 1024",
+    );
+
+    assert.strictEqual(
+      config.get<boolean>("showStatusBar"),
+      true,
+      "showStatusBar should default to true",
     );
   });
 

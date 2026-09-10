@@ -96,6 +96,26 @@ export interface PreparedChatRequest {
 }
 
 /**
+ * Configuration keys that change how an API client is constructed.
+ *
+ * Clients are cached per provider (see `BaseChatProvider.clientCache`) and
+ * capture timeout/retry settings at construction time, so a change to any of
+ * these must invalidate the cache — otherwise editing `timeoutMs` or
+ * `maxRetries` has no effect until the window is reloaded.
+ */
+export function clientAffectingConfigKeys(
+  configSection: string,
+  providerId: string,
+): string[] {
+  return [
+    `${configSection}.${providerId}.baseUrl`,
+    `${configSection}.modelIdOverrides`,
+    `${configSection}.timeoutMs`,
+    `${configSection}.maxRetries`,
+  ];
+}
+
+/**
  * Base Chat Provider implementation
  */
 export abstract class BaseChatProvider
@@ -230,10 +250,8 @@ export abstract class BaseChatProvider
    * Check if configuration affects this provider (subclass can override)
    */
   protected affectsConfiguration(e: vscode.ConfigurationChangeEvent): boolean {
-    return (
-      e.affectsConfiguration(
-        `${this.configSection}.${this.providerId}.baseUrl`,
-      ) || e.affectsConfiguration(`${this.configSection}.modelIdOverrides`)
+    return clientAffectingConfigKeys(this.configSection, this.providerId).some(
+      (key) => e.affectsConfiguration(key),
     );
   }
 
@@ -369,6 +387,13 @@ export abstract class BaseChatProvider
   }
 
   /**
+   * Find the model definition backing a VS Code model info, by model ID.
+   */
+  protected findModelDefinition(modelId: string): ModelDefinition | undefined {
+    return this.modelProvider.getModels().find((m) => m.id === modelId);
+  }
+
+  /**
    * Prepare chat request
    */
   protected async prepareChatRequest(
@@ -396,9 +421,7 @@ export abstract class BaseChatProvider
       }
     }
 
-    const modelDefinition = this.modelProvider
-      .getModels()
-      .find((m) => m.id === modelInfo.id);
+    const modelDefinition = this.findModelDefinition(modelInfo.id);
     const isThinkingModel = modelDefinition?.capabilities.thinking ?? false;
     const thinkingEffort = this.getConfiguredThinkingEffort(options);
 
@@ -955,11 +978,15 @@ export abstract class BaseChatProvider
       `[${this.providerId}] provideLanguageModelChatResponse called, model: ${modelInfo.id}`,
     );
     try {
-      // Resolve image messages using vision proxy
+      // Models with native image input must see the real images — routing
+      // them through the vision proxy would downgrade them to a lossy text
+      // description.
+      const modelDefinition = this.findModelDefinition(modelInfo.id);
       const visionResolution = await resolveImageMessages(
         messages,
         token,
         this.visionService,
+        { skipVisionProxy: modelDefinition?.capabilities.imageInput === true },
       );
 
       // Report vision proxy notice if available
@@ -976,23 +1003,35 @@ export abstract class BaseChatProvider
         visionResolution.messages,
         options,
       );
-      const usageCallback = prepared.planOverride
-        ? (usage: {
-            prompt_tokens: number;
-            completion_tokens: number;
-            total_tokens: number;
-          }) => {
-            const rate = prepared.planOverride!.consumptionRate ?? 1;
-            TokenPlan.getInstance().recordConsumption({
-              planId: prepared.planOverride!.planId,
-              modelId: modelInfo.id,
-              promptTokens: Math.round(usage.prompt_tokens * rate),
-              completionTokens: Math.round(usage.completion_tokens * rate),
-              totalTokens: Math.round(usage.total_tokens * rate),
-              timestamp: Date.now(),
-            });
-          }
-        : undefined;
+      // Usage is recorded for every request, not only token plan ones, so the
+      // status bar and the usage report cover direct API-key traffic too.
+      const usageCallback = (usage: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+      }) => {
+        const plan = prepared.planOverride;
+        const rate = plan?.consumptionRate ?? 1;
+        // `recordConsumption` writes to globalState asynchronously. Not
+        // awaiting it is intentional (it must not block or fail the chat
+        // response), but the rejection still needs a handler.
+        TokenPlan.getInstance()
+          .recordConsumption({
+            ...(plan ? { planId: plan.planId } : {}),
+            providerId: this.providerId,
+            modelId: modelInfo.id,
+            promptTokens: Math.round(usage.prompt_tokens * rate),
+            completionTokens: Math.round(usage.completion_tokens * rate),
+            totalTokens: Math.round(usage.total_tokens * rate),
+            timestamp: Date.now(),
+          })
+          .catch((error: unknown) => {
+            logger.plan.error(
+              `Failed to record usage for model "${modelInfo.id}":`,
+              error,
+            );
+          });
+      };
       await this.sendStreamRequest(
         prepared.request,
         progress,

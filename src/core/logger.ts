@@ -77,9 +77,21 @@ export function getLogContext(): LogContext | undefined {
   return asyncLocalStorage.getStore();
 }
 
-/** Generate a short request correlation ID (6 hex chars) */
+/** Monotonic tie-breaker so ids stay unique within a session. */
+let requestCounter = 0;
+
+/**
+ * Generate a short request correlation ID (6 hex chars).
+ *
+ * Combines a per-process counter in the high bits with a random suffix in the
+ * low bits. A pure `Math.random()` value only spans 24 bits and collided in
+ * ~3% of runs across 1000 ids, which would splice unrelated requests into a
+ * single `req=` log trail (and made the uniqueness test flaky).
+ */
 export function generateRequestId(): string {
-  return Math.random().toString(16).slice(2, 8);
+  requestCounter = (requestCounter + 1) % 0x1000;
+  const suffix = Math.floor(Math.random() * 0x1000);
+  return ((requestCounter << 12) | suffix).toString(16).padStart(6, "0");
 }
 
 // ── Constants ────────────────────────────────────────
@@ -337,7 +349,7 @@ export class Logger implements vscode.Disposable {
       : "";
 
     // Structured per-request context, e.g.
-    //   req=a1b2c3 provider=deepseek model=deepseek-v4-flash
+    //   req=a1b2c3 provider=deepseek model=deepseek-flash
     const ctx = getLogContext();
     const ctxText = ctx
       ? `req=${ctx.requestId ?? "-"} provider=${ctx.providerId ?? "-"} model=${ctx.modelId ?? "-"} `

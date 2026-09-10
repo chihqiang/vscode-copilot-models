@@ -41,7 +41,7 @@
 
 1. 按 `Ctrl+Shift+P`，运行 `Copilot Models: Set Token Plan`
 2. 选择内置服务商预设或输入自定义 URL
-   - 通义千问预设已预配好端点 URL 和 9 个支持的模型
+   - 通义千问预设已预配好端点 URL 和 6 个支持的模型
 3. 输入套餐 API 令牌
 4. 选择该套餐覆盖的模型
 
@@ -57,15 +57,21 @@
 
 ### 4. (可选) 配置视觉模型
 
-如果你想在不原生支持图片输入的模型（如 GLM-5 系列、Qwen3.7 Max）中使用图片附件，
+如果你想在不原生支持图片输入的模型（如 GLM-5.3、GLM-5.2）中使用图片附件，
 可以配置视觉代理，自动将图片转换为文字描述：
 
 1. 按 `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`)，运行 `Copilot Models: Set Vision Model`
 2. 从列表中选择支持视觉的模型，或选择 "Custom API Endpoint"
-3. 如果选择自定义 API 端点，输入 URL 和模型 ID
+3. 如果选择自定义 API 端点，依次输入 URL、模型 ID 和 API 密钥
+   （无鉴权的端点密钥留空即可）
 
 视觉代理会在发送消息前先将图片描述为文字，再传递给聊天模型。
-自定义 API 端点需支持 OpenAI 兼容的 `/chat/completions` 接口。
+自定义 API 端点需支持 OpenAI 兼容接口——既可填基础地址
+（`https://host/v1`），也可填完整的 `/chat/completions` 地址，两者都支持。
+API 密钥保存在 VS Code SecretStorage 中。
+
+> **注意：** 视觉代理只对无法原生接收图片的模型生效。支持图片输入的模型
+> 会直接收到原始图片，不会经过代理。
 
 运行 `Copilot Models: Clear Vision Model` 可清除配置。
 
@@ -82,29 +88,31 @@
 
 | 模型 | 上下文 | 输出 | 工具调用 | 图片输入 | 思考模式 |
 | :----- | :------: | :----: | :--------: | :------: | :--------: |
-| Qwen3.7 Max | 1M | 64K | ✅ | ❌ | ✅ |
+| Qwen3.8 Max | 1M | 64K | ✅ | ✅ | ✅ |
+| Qwen3.8 Flash | 1M | 64K | ✅ | ✅ | ✅ |
 | Qwen3.7 Plus | 1M | 64K | ✅ | ✅ | ✅ |
-| Qwen3.6 Flash | 1M | 64K | ✅ | ✅ | ✅ |
-| Qwen3.6 Plus | 128K | 64K | ✅ | ✅ | ✅ |
-| Qwen3 Max | 128K | 64K | ✅ | ✅ | ✅ |
-| Qwen3.5 Flash | 128K | 64K | ✅ | ✅ | ✅ |
+| Qwen3.7 Flash | 1M | 64K | ✅ | ✅ | ✅ |
 
 ### DeepSeek
 
 | 模型 | 上下文 | 输出 | 工具调用 | 图片输入 | 思考模式 |
 | :----- | :------: | :----: | :--------: | :------: | :--------: |
-| DeepSeek V4 Flash | 640K | 384K | ✅ | ✅ | ✅ |
-| DeepSeek V4 Pro | 640K | 384K | ✅ | ✅ | ✅ |
+| DeepSeek V4.1 Flash | 1M | 384K | ✅ | ✅ | ✅ |
+
+> **注意：** `deepseek-v4-flash` 已停服，`deepseek-v4-pro` 正在逐步下线，
+> 两个 ID 的请求在过渡期内均由 DeepSeek-V4.1-Flash 承接。
 
 ### 智谱 AI (BigModel)
 
 | 模型 | 上下文 | 输出 | 工具调用 | 图片输入 | 思考模式 |
 | :----- | :------: | :----: | :--------: | :------: | :--------: |
+| GLM-5.3 | 1M | 128K | ✅ | ❌ | ✅ |
+| GLM-5.3-Flash | 1M | 128K | ✅ | ✅ | ✅ |
 | GLM-5.2 | 1M | 128K | ✅ | ❌ | ✅ |
 | GLM-5.1 | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5-Turbo | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5 | 200K | 128K | ✅ | ❌ | ✅ |
-| GLM-4.7-Flash | 128K | 16K | ✅ | ❌ | ❌ |
+| GLM-4.7-Flash | 200K | 128K | ✅ | ❌ | ❌ |
 
 > **提示：** 图片输入标记为 ❌ 的模型仍可通过视觉代理功能处理图片
 > （见快速开始第 4 步）。
@@ -115,18 +123,19 @@
 
 | 模型 | ID |
 | :--- | :- |
-| Qwen3.7 Max | `qwen3.7-max` |
+| Qwen3.8 Max | `qwen3.8-max` |
+| Qwen3.8 Flash | `qwen3.8-flash` |
 | Qwen3.7 Plus | `qwen3.7-plus` |
-| Qwen3.6 Flash | `qwen3.6-flash` |
-| Qwen3.6 Plus | `qwen3.6-plus` |
+| Qwen3.7 Flash | `qwen3.7-flash` |
 | GLM-5.2 | `glm-5.2` |
-| GLM-5.1 | `glm-5.1` |
-| GLM-5 | `glm-5` |
-| DeepSeek V4 Pro | `deepseek-v4-pro` |
-| DeepSeek V4 Flash | `deepseek-v4-flash` |
+| DeepSeek V4.1 Flash | `deepseek-flash` |
 
-未列出的模型（如 Qwen3 Max、GLM-5-Turbo）仍可通过直接 Provider API 访问，
+未列出的模型（如 GLM-5-Turbo、kimi-k2.7-code）仍可通过直接 Provider API 访问，
 只是不在这个 Token Plan 预设的覆盖范围内。
+
+> **注意：** 上表中的 ID 必须与扩展实际暴露的模型 ID 一致（见"支持的模型"表格）。
+> `deepseek-v4-pro` 与 `deepseek-v4-flash` 虽然 DeepSeek API 本身仍接受，
+> 但扩展只以 `deepseek-flash` 这一个 ID 暴露它们。
 
 ## 配置选项
 
@@ -144,11 +153,12 @@
 | 配置 | 说明 | 默认值 |
 | :--- | :--- | :----- |
 | `routingStrategy` | 路由策略：`failover` 或 `latency` | `"failover"` |
-| `failoverModels` | 主模型→备用模型 ID 映射 | `{}` |
+| `failoverModels` | 主模型→备用模型 ID 映射，支持多级链式（A→B→C） | `{}` |
 | `modelIdOverrides` | 将内部模型 ID 映射为自定义 API 模型名 | `{}` |
-| `maxImageSize` | 图片输入最大字节数（0 = 禁用） | `20971520` (20MB) |
+| `maxImageSize` | 图片输入最大字节数（0 = 不限制） | `20971520` (20MB) |
 | `timeoutMs` | API 请求超时（毫秒） | `60000` |
 | `maxRetries` | 最大重试次数 | `1` |
+| `showStatusBar` | 在状态栏显示今日 token 消耗 | `true` |
 | `debugMode` | 日志级别：`minimal / metadata / verbose` | `minimal` |
 
 ### 视觉代理设置
@@ -162,9 +172,40 @@
 | `visionProxy.timeoutMs` | 视觉代理请求超时（毫秒） | `60000` |
 | `visionProxy.maxTokens` | 视觉代理响应最大 token 数 | `1024` |
 
-> **注意：** 移除了 `maxTokens` 配置。每个模型自动使用其自身最大输出上限
-> （`maxOutputTokens`）作为 API 的 `max_tokens` 参数，无需手动设置。
-> 详见上方"支持的模型"表格中的"输出"列。
+> **注意：** `visionProxy.maxTokens` 只作用于发往 `visionProxy.apiUrl` 的
+> 图片描述请求，不影响正常的对话请求。对话请求没有单独的 `max_tokens` 配置：
+> 每个模型自动使用其自身最大输出上限（`maxOutputTokens`）作为 API 的
+> `max_tokens` 参数。详见上方"支持的模型"表格中的"输出"列。
+
+## Token 消耗统计
+
+每个完成的请求都会在本地记录 token 消耗——包括直连 API 密钥的请求，
+而不只是走令牌套餐的流量。
+
+- 状态栏显示今日 token 数与请求数，例如 `12.3K tok · 18 req`，点击即可打开报表。
+  在记录到第一个请求之前该项保持隐藏；将 `copilot-models.showStatusBar`
+  设为 `false` 可永久隐藏。
+- 运行 `Copilot Models: Show Token Usage` 查看按套餐和按模型的明细。
+- 运行 `Copilot Models: Clear Token Usage` 清空已记录的历史。
+
+> **注意：** 只保留最近 1000 条请求记录，更早的会被丢弃，因此“历史总计”
+> 是滚动窗口而非生命周期总量。数据保存在 VS Code 全局状态中，不会离开本机。
+
+### 账户余额
+
+报表还会显示 **DeepSeek** 账户余额，来自官方 `GET /user/balance` 接口，
+每次运行命令时刷新；即使还没产生任何请求记录也会显示。
+
+```text
+Balance:
+  deepseek: ¥110.00 (granted ¥10.00 · topped up ¥100.00)
+```
+
+> **注意：** DeepSeek 是唯一提供官方余额接口的服务商。智谱 AI、通义千问
+> （DashScope）以及通义千问 Token Plan 端点都没有公开余额接口，
+> 因此经它们发起的请求不显示余额。未配置 API 密钥的服务商会整行省略；
+> 已配置但查询失败时显示 `unavailable`——余额问题不会影响报表其余部分的展示。
+> 未配置密钥时不会发起任何网络请求。
 
 ## 命令
 
@@ -177,6 +218,8 @@
 | `Copilot Models: Clear Log` | 清除日志 |
 | `Copilot Models: Refresh Models` | 刷新模型列表 |
 | `Copilot Models: Show Latency Stats` | 查看 Provider 延迟统计 |
+| `Copilot Models: Show Token Usage` | 查看按套餐/模型统计的 token 消耗 |
+| `Copilot Models: Clear Token Usage` | 清空所有已记录的 token 消耗 |
 | `Copilot Models: Set Token Plan` | 配置预付费令牌套餐 |
 | `Copilot Models: Clear Token Plan` | 删除已配置的令牌套餐 |
 | `Copilot Models: Set Vision Model` | 配置视觉代理用于图片描述 |

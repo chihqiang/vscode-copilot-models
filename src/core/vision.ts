@@ -36,6 +36,55 @@ Return one concise factual description suitable for inserting into a text-only c
 /** SecretStorage key for vision proxy API key */
 export const VISION_PROXY_API_KEY_SECRET = "copilot-models.visionProxy.apiKey";
 
+/**
+ * Store the vision proxy API key.
+ *
+ * This was previously read-only: `ApiEndpointVisionDescriber` looked the key
+ * up in SecretStorage, but nothing ever wrote it, so every authenticated
+ * custom vision endpoint failed with "API key not configured for vision
+ * proxy".
+ */
+export async function storeVisionProxyApiKey(
+  secretStorage: vscode.SecretStorage,
+  apiKey: string,
+): Promise<void> {
+  await secretStorage.store(VISION_PROXY_API_KEY_SECRET, apiKey.trim());
+}
+
+/** Remove the stored vision proxy API key, if any. */
+export async function clearVisionProxyApiKey(
+  secretStorage: vscode.SecretStorage,
+): Promise<void> {
+  try {
+    await secretStorage.delete(VISION_PROXY_API_KEY_SECRET);
+  } catch {
+    // may not exist
+  }
+}
+
+/** Whether a vision proxy API key is currently stored. */
+export async function hasVisionProxyApiKey(
+  secretStorage: vscode.SecretStorage,
+): Promise<boolean> {
+  const key = await secretStorage.get(VISION_PROXY_API_KEY_SECRET);
+  return typeof key === "string" && key.length > 0;
+}
+
+/**
+ * Normalize an OpenAI-compatible endpoint URL into the chat completions path.
+ *
+ * The settings description and README tell users an OpenAI-compatible
+ * `/chat/completions` endpoint is required, while the wizard placeholder shows
+ * a base URL — so both forms are entered in practice. Appending the path
+ * unconditionally turned the first form into `.../chat/completions/chat/completions`.
+ */
+export function resolveVisionCompletionUrl(url: string): string {
+  const trimmed = url.trim().replace(/\/+$/, "");
+  return trimmed.endsWith("/chat/completions")
+    ? trimmed
+    : `${trimmed}/chat/completions`;
+}
+
 // ── Types ───────────────────────────────────────────────────
 
 /**
@@ -142,18 +191,17 @@ export class VSCodeLMVisionDescriber implements VisionDescriber {
     const prompt = request.prompt || this.visionPrompt;
 
     try {
-      const selector: vscode.LanguageModelChatSelector = this.visionModelId
-        ? { family: this.visionModelId }
-        : {};
+      const model = await this.selectVisionModel();
 
-      const models = await vscode.lm.selectChatModels(selector);
-
-      if (!models || models.length === 0) {
-        logger.vision.warn("No vision models available");
+      if (!model) {
+        logger.vision.warn(
+          this.visionModelId
+            ? `No vision model matched "${this.visionModelId}", falling back to auto-detect failed`
+            : "No vision models available",
+        );
         return "";
       }
 
-      const model = models[0];
       logger.vision.info(
         `Using vision model: ${model.id} (${model.family}/${model.name})`,
       );
@@ -187,6 +235,34 @@ export class VSCodeLMVisionDescriber implements VisionDescriber {
       logger.vision.error("Failed to generate vision description:", error);
       throw error;
     }
+  }
+
+  /**
+   * Resolve the language model used for descriptions.
+   *
+   * The stored `visionModel` value is written by the wizard as a model **id**
+   * (`LanguageModelChat.id`), but settings can also carry a model **family**
+   * entered by hand. The previous implementation matched every value against
+   * `family` only, so models picked from the wizard list never matched and
+   * every description came back empty. Try the id first, then the family.
+   */
+  private async selectVisionModel(): Promise<
+    vscode.LanguageModelChat | undefined
+  > {
+    if (!this.visionModelId) {
+      const all = await vscode.lm.selectChatModels();
+      return all[0];
+    }
+
+    const byId = await vscode.lm.selectChatModels({ id: this.visionModelId });
+    if (byId.length > 0) {
+      return byId[0];
+    }
+
+    const byFamily = await vscode.lm.selectChatModels({
+      family: this.visionModelId,
+    });
+    return byFamily[0];
   }
 }
 
@@ -255,15 +331,18 @@ export class ApiEndpointVisionDescriber implements VisionDescriber {
         `Sending vision request to ${sanitizeUrl(this.config.url)}, model: ${this.config.modelId}, timeout: ${timeoutMs}ms`,
       );
 
-      const response = await fetch(`${this.config.url}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
+      const response = await fetch(
+        resolveVisionCompletionUrl(this.config.url),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
         },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
+      );
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => "Unknown error");
@@ -482,6 +561,18 @@ function resolveAllMessageParts(
 }
 
 /**
+ * Options for {@link resolveImageMessages}.
+ */
+export interface ResolveImageMessagesOptions {
+  /**
+   * Set when the target model accepts image input natively. The vision proxy
+   * is then bypassed entirely: replacing a real image with a text description
+   * throws away visual detail the model could have used directly.
+   */
+  skipVisionProxy?: boolean | undefined;
+}
+
+/**
  * Resolve image messages in a conversation
  * Converts image parts to text descriptions using the vision proxy
  */
@@ -489,6 +580,7 @@ export async function resolveImageMessages(
   messages: readonly vscode.LanguageModelChatRequestMessage[],
   token: vscode.CancellationToken,
   visionService: VisionService,
+  options?: ResolveImageMessagesOptions,
 ): Promise<VisionResolutionResult> {
   const stats = createVisionResolutionStats();
 
@@ -505,6 +597,13 @@ export async function resolveImageMessages(
   }
 
   if (stats.inputImageParts === 0) {
+    return { messages, stats };
+  }
+
+  if (options?.skipVisionProxy) {
+    logger.vision.debug(
+      "Model accepts image input natively, bypassing vision proxy",
+    );
     return { messages, stats };
   }
 
@@ -530,6 +629,10 @@ export async function resolveImageMessages(
   let visionProxySource: VisionProxySource | undefined;
   let initialResponseNotice: string | undefined;
 
+  // Resolve the prompt once rather than re-reading configuration inside the
+  // per-message loop below.
+  const visionPrompt = getVisionPrompt();
+
   for (const [index, entry] of resolved.entries()) {
     const { message, parts } = entry;
 
@@ -542,9 +645,8 @@ export async function resolveImageMessages(
       stats.currentImageMessages += 1;
 
       try {
-        const prompt = getVisionPrompt();
         const description = await describer.describe({
-          prompt,
+          prompt: visionPrompt,
           images: parts.imageParts.map(toVisionImagePart),
           token,
         });

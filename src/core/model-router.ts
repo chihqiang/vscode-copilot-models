@@ -24,6 +24,7 @@ import {
   ServiceUnavailableError,
   TimeoutError,
 } from "./errors";
+import { CircuitBreakerError } from "./circuit-breaker";
 import { type RoutingStrategy } from "./models";
 import {
   getFailoverModels as getConfiguredFailoverModels,
@@ -183,6 +184,33 @@ export class LatencyTracker {
       agg.min = agg.durations.length > 0 ? newMin : Infinity;
       agg.max = agg.durations.length > 0 ? newMax : -Infinity;
     }
+  }
+}
+
+/**
+ * Wraps a progress sink to record whether an attempt already reported output.
+ *
+ * Failover re-sends the whole prompt to another provider, but parts already
+ * handed to `progress` cannot be retracted — they are on screen. Switching
+ * providers after partial output would therefore show the beginning of the
+ * response twice. The router only fails over while an attempt has produced
+ * nothing.
+ */
+class ProgressProbe implements vscode.Progress<vscode.LanguageModelResponsePart> {
+  private emitted = false;
+
+  constructor(
+    private readonly target: vscode.Progress<vscode.LanguageModelResponsePart>,
+  ) {}
+
+  /** True once any part (text, thinking, tool call) has been reported. */
+  get hasEmitted(): boolean {
+    return this.emitted;
+  }
+
+  report(part: vscode.LanguageModelResponsePart): void {
+    this.emitted = true;
+    this.target.report(part);
   }
 }
 
@@ -386,6 +414,10 @@ export class ModelRouter implements IChatProvider {
     const modelId = modelInfo.id;
     const startTime = Date.now();
 
+    // Tracks whether anything reached the user, which decides whether failover
+    // is still safe (see ProgressProbe).
+    const probe = new ProgressProbe(progress);
+
     const found = this.findProviderForModel(modelId);
     if (!found) {
       throw new Error(`[Router] No provider found for model "${modelId}"`);
@@ -418,7 +450,7 @@ export class ModelRouter implements IChatProvider {
         modelInfo,
         messages,
         options,
-        progress,
+        probe,
         token,
       );
       this.latencyTracker.record({
@@ -437,13 +469,21 @@ export class ModelRouter implements IChatProvider {
         timestamp: Date.now(),
       });
 
-      if (this.isTransientError(error)) {
+      if (isTransientError(error)) {
         const triedProviders = new Set<string>([activeProviderId]);
         let lastError = error;
+        // Chain the lookup from the model that just failed. Always resolving
+        // the *original* model made the loop re-read the same entry, so the
+        // second hop saw an already-tried provider and bailed out — the
+        // multi-level failover below could never go past one hop.
+        let activeModelId = modelId;
 
         // Multi-level failover: keep trying fallback providers until one succeeds or none remain
         while (true) {
-          const fallback = this.findFallbackProvider(modelId, triedProviders);
+          const fallback = this.findFallbackProvider(
+            activeModelId,
+            triedProviders,
+          );
           if (!fallback) {
             break;
           }
@@ -453,6 +493,18 @@ export class ModelRouter implements IChatProvider {
             providerId: fallbackPid,
             fallbackModelId,
           } = fallback;
+
+          // Failover re-sends the whole prompt, but parts already handed to
+          // `progress` cannot be retracted — they are on screen. Switching
+          // providers now would show the beginning of the response twice, so
+          // only fail over while this request has emitted nothing.
+          if (probe.hasEmitted) {
+            logger.router.warn(
+              `Not failing over for "${activeModelId}": output was already streamed for this request, so re-sending the prompt would duplicate it`,
+            );
+            break;
+          }
+
           triedProviders.add(fallbackPid);
 
           logger.router.warn(
@@ -472,7 +524,7 @@ export class ModelRouter implements IChatProvider {
               fallbackModelInfo,
               messages,
               options,
-              progress,
+              probe,
               token,
             );
             this.latencyTracker.record({
@@ -492,10 +544,13 @@ export class ModelRouter implements IChatProvider {
               timestamp: Date.now(),
             });
 
-            if (!this.isTransientError(fallbackError)) {
+            if (!isTransientError(fallbackError)) {
               throw fallbackError;
             }
             lastError = fallbackError;
+            // Next hop resolves the failover mapping for the model we just
+            // attempted, so A→B→C chains work.
+            activeModelId = fallbackModelId;
           }
         }
 
@@ -614,32 +669,44 @@ export class ModelRouter implements IChatProvider {
       }
     }
   }
+}
 
-  private isTransientError(error: unknown): boolean {
-    if (
-      error instanceof RateLimitError ||
-      error instanceof ServiceUnavailableError ||
-      error instanceof NetworkError ||
-      error instanceof TimeoutError
-    ) {
-      return true;
-    }
-
-    if (error instanceof Error) {
-      const msg = error.message.toLowerCase();
-      return (
-        msg.includes("timeout") ||
-        msg.includes("network") ||
-        msg.includes("econnrefused") ||
-        msg.includes("econnreset") ||
-        msg.includes("503") ||
-        msg.includes("502") ||
-        msg.includes("429") ||
-        msg.includes("rate limit") ||
-        msg.includes("service unavailable") ||
-        msg.includes("too many requests")
-      );
-    }
-    return false;
+/**
+ * Decide whether an error is worth failing over for.
+ *
+ * Circuit breaker rejections count as transient: an open circuit means the
+ * provider is temporarily unhealthy, which is exactly the case failover exists
+ * for. Without this the error is rethrown straight to the user and the
+ * fallback chain never runs.
+ */
+export function isTransientError(error: unknown): boolean {
+  if (error instanceof CircuitBreakerError) {
+    return true;
   }
+
+  if (
+    error instanceof RateLimitError ||
+    error instanceof ServiceUnavailableError ||
+    error instanceof NetworkError ||
+    error instanceof TimeoutError
+  ) {
+    return true;
+  }
+
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    return (
+      msg.includes("timeout") ||
+      msg.includes("network") ||
+      msg.includes("econnrefused") ||
+      msg.includes("econnreset") ||
+      msg.includes("503") ||
+      msg.includes("502") ||
+      msg.includes("429") ||
+      msg.includes("rate limit") ||
+      msg.includes("service unavailable") ||
+      msg.includes("too many requests")
+    );
+  }
+  return false;
 }

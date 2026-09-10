@@ -1,5 +1,5 @@
 import * as assert from "assert";
-import { TokenPlan } from "../core/token-plan";
+import { TokenPlan, type TokenConsumption } from "../core/token-plan";
 import { builtInPresets } from "../plans";
 
 function createMockContext(): Record<string, unknown> {
@@ -295,6 +295,168 @@ suite("TokenPlan Test Suite", () => {
         timestamp: 2,
       });
       assert.strictEqual(plan.getConsumptions().length, 2);
+    });
+
+    test("concurrent recordConsumption calls do not lose records", async () => {
+      // Model a globalState whose writes take a turn of the event loop, which
+      // is what real disk-backed storage does. A read-modify-write without
+      // serialization loses every record but the last writer's.
+      const state = new Map<string, unknown>();
+      const slowCtx = {
+        globalState: {
+          get: (key: string, defaultValue?: unknown) =>
+            state.has(key) ? state.get(key) : defaultValue,
+          update: async (key: string, value: unknown) => {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            state.set(key, value);
+          },
+        },
+        secrets: {
+          store: async () => {},
+          get: async () => undefined,
+          delete: async () => {},
+        },
+      };
+      const concurrentPlan = TokenPlan.init(slowCtx as never, builtInPresets);
+
+      const COUNT = 10;
+      await Promise.all(
+        Array.from({ length: COUNT }, (_, i) =>
+          concurrentPlan.recordConsumption({
+            planId: "p1",
+            modelId: `m${i}`,
+            promptTokens: 1,
+            completionTokens: 1,
+            totalTokens: 2,
+            timestamp: i,
+          }),
+        ),
+      );
+
+      assert.strictEqual(
+        concurrentPlan.getConsumptions().length,
+        COUNT,
+        "every concurrent record must survive",
+      );
+    });
+  });
+
+  // ── 使用量事件与清空 ──────────────────────────
+
+  suite("Usage events and reset", () => {
+    test("records direct API-key usage without a plan id", async () => {
+      await plan.recordConsumption({
+        providerId: "deepseek",
+        modelId: "deepseek-flash",
+        promptTokens: 1,
+        completionTokens: 2,
+        totalTokens: 3,
+        timestamp: 5,
+      });
+
+      const records = plan.getConsumptions();
+      assert.strictEqual(records.length, 1);
+      assert.strictEqual(
+        records[0].planId,
+        undefined,
+        "direct requests carry no plan id",
+      );
+      assert.strictEqual(records[0].providerId, "deepseek");
+    });
+
+    test("emits onDidChangeUsage once the record is persisted", async () => {
+      let changes = 0;
+      const subscription = plan.onDidChangeUsage(() => {
+        changes++;
+      });
+
+      try {
+        await plan.recordConsumption({
+          planId: "p1",
+          modelId: "m1",
+          promptTokens: 1,
+          completionTokens: 2,
+          totalTokens: 3,
+          timestamp: 5,
+        });
+      } finally {
+        subscription.dispose();
+      }
+
+      assert.strictEqual(changes, 1);
+    });
+
+    test("emits onDidChangeUsage when the log is cleared", async () => {
+      // Without this the status bar keeps showing the pre-clear figures.
+      let changes = 0;
+      const subscription = plan.onDidChangeUsage(() => {
+        changes++;
+      });
+
+      try {
+        await plan.recordConsumption({
+          planId: "p1",
+          modelId: "m1",
+          promptTokens: 1,
+          completionTokens: 1,
+          totalTokens: 2,
+          timestamp: 1,
+        });
+        await plan.clearConsumptions();
+      } finally {
+        subscription.dispose();
+      }
+
+      assert.strictEqual(changes, 2, "one for the record, one for the clear");
+    });
+
+    test("clearConsumptions drops every record", async () => {
+      await plan.recordConsumption({
+        planId: "p1",
+        modelId: "m1",
+        promptTokens: 1,
+        completionTokens: 1,
+        totalTokens: 2,
+        timestamp: 1,
+      });
+      await plan.recordConsumption({
+        planId: "p2",
+        modelId: "m2",
+        promptTokens: 3,
+        completionTokens: 4,
+        totalTokens: 7,
+        timestamp: 2,
+      });
+      assert.strictEqual(plan.getConsumptions().length, 2);
+
+      await plan.clearConsumptions();
+
+      assert.strictEqual(plan.getConsumptions().length, 0);
+    });
+
+    test("accepts new records after clearing", async () => {
+      await plan.recordConsumption({
+        planId: "p1",
+        modelId: "m1",
+        promptTokens: 1,
+        completionTokens: 1,
+        totalTokens: 2,
+        timestamp: 1,
+      });
+      await plan.clearConsumptions();
+
+      await plan.recordConsumption({
+        planId: "p1",
+        modelId: "m2",
+        promptTokens: 5,
+        completionTokens: 5,
+        totalTokens: 10,
+        timestamp: 2,
+      });
+
+      const records = plan.getConsumptions();
+      assert.strictEqual(records.length, 1);
+      assert.strictEqual(records[0].totalTokens, 10);
     });
   });
 
