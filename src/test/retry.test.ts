@@ -1,4 +1,5 @@
 import * as assert from "assert";
+import { getEventListeners } from "node:events";
 import {
   CircuitBreaker,
   CircuitBreakerError,
@@ -181,5 +182,52 @@ suite("delay Test Suite", () => {
     await delay(10);
     const elapsed = Date.now() - start;
     assert.ok(elapsed >= 5, `Expected >= 5ms, got ${elapsed}ms`);
+  });
+
+  test("rejects when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await assert.rejects(
+      () => delay(10, controller.signal),
+      (err: unknown) => err instanceof DOMException,
+    );
+  });
+
+  test("rejects when aborted mid-delay", async () => {
+    const controller = new AbortController();
+    const pending = delay(10_000, controller.signal);
+    controller.abort();
+
+    await assert.rejects(
+      () => pending,
+      (err: unknown) => err instanceof DOMException,
+    );
+  });
+
+  test("detaches its abort listener once the delay resolves", async () => {
+    const controller = new AbortController();
+    await delay(5, controller.signal);
+
+    assert.strictEqual(
+      getEventListeners(controller.signal, "abort").length,
+      0,
+      "abort listener must be removed on the happy path",
+    );
+  });
+
+  test("does not accumulate abort listeners across retries", async () => {
+    // Retries share one AbortSignal, so a leak would pile up listeners until
+    // Node emits its MaxListenersExceededWarning.
+    const controller = new AbortController();
+    for (let i = 0; i < 15; i++) {
+      await delay(1, controller.signal);
+    }
+
+    assert.strictEqual(
+      getEventListeners(controller.signal, "abort").length,
+      0,
+      "listener count must stay at zero regardless of retry count",
+    );
   });
 });

@@ -55,7 +55,8 @@ run `Copilot Models: Set Token Plan` to configure plan access:
 
 1. Press `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`), run `Copilot Models: Set Token Plan`
 2. Select a built-in provider preset or enter a custom URL
-   - The Qwen preset is preconfigured with the endpoint URL and 9 supported models
+   - The Qwen preset is preconfigured with the endpoint URL and
+     6 supported models
 3. Enter the plan API token
 4. Select the models covered by this plan
 
@@ -140,11 +141,15 @@ a single unified endpoint:
 | Qwen3.7 Plus | `qwen3.7-plus` |
 | Qwen3.7 Flash | `qwen3.7-flash` |
 | GLM-5.2 | `glm-5.2` |
-| DeepSeek V4 Pro | `deepseek-v4-pro` |
-| DeepSeek V4 Flash | `deepseek-v4-flash` |
+| DeepSeek V4.1 Flash | `deepseek-flash` |
 
 Models not listed (e.g. GLM-5-Turbo, kimi-k2.7-code) are still available via direct
 provider API access — they are simply not covered by this Token Plan preset.
+
+> **Note:** The IDs above must match the model IDs exposed by the extension
+> (see the Supported Models tables). `deepseek-v4-pro` and `deepseek-v4-flash`
+> are accepted by the DeepSeek API itself, but the extension only exposes them
+> as `deepseek-flash`.
 
 ## Configuration Options
 
@@ -180,10 +185,11 @@ Available in VS Code settings (search `copilot-models`):
 | `visionProxy.timeoutMs` | Vision proxy timeout in milliseconds | `60000` |
 | `visionProxy.maxTokens` | Max tokens for vision proxy response | `1024` |
 
-> **Note:** The `maxTokens` config has been removed. Each model now
+> **Note:** `visionProxy.maxTokens` applies only to the vision description
+> request sent to `visionProxy.apiUrl` — it does not affect normal chat
+> requests. Chat requests have no separate `max_tokens` setting: each model
 > automatically uses its own `maxOutputTokens` as the API's `max_tokens`
-> parameter — no manual configuration needed. See the "Output" column in
-> the Supported Models tables above.
+> parameter. See the "Output" column in the Supported Models tables above.
 
 ## Commands
 

@@ -22,11 +22,20 @@ export function delay(ms: number, signal?: AbortSignal): Promise<void> {
       reject(new DOMException("Aborted", "AbortError"));
       return;
     }
-    const timer = setTimeout(resolve, ms);
+
     const onAbort = () => {
       clearTimeout(timer);
       reject(new DOMException("Aborted", "AbortError"));
     };
+
+    const timer = setTimeout(() => {
+      // Detach the abort listener on the happy path. Retries share a single
+      // AbortSignal, so leaving listeners attached accumulates them on the
+      // signal and eventually trips Node's MaxListeners warning.
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 }

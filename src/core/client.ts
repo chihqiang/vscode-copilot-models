@@ -350,112 +350,18 @@ class ApiClientImpl implements IApiClient {
    * Consume a streaming response chunk by chunk, dispatching to callbacks.
    * Returns false if the stream was stopped early due to cancellation.
    */
-  private async consumeStream(
+  private consumeStream(
     stream: Stream<ChatCompletionChunk>,
     callbacks: StreamCallbacks,
     cancellationToken: CancellationToken | undefined,
     providerName: string,
   ): Promise<boolean> {
-    const pendingToolCalls = new Map<
-      number,
-      {
-        id: string;
-        type: "function";
-        function: { name: string; arguments: string };
-      }
-    >();
-
-    logger.api.debug(`[${providerName}] Streaming started`);
-
-    for await (const chunk of stream) {
-      if (cancellationToken?.isCancellationRequested) {
-        logger.api.debug(
-          `[${providerName}] Cancellation requested, stopping stream`,
-        );
-        return false;
-      }
-
-      const choice = chunk.choices?.[0];
-      if (!choice) {
-        continue;
-      }
-
-      const delta = choice.delta;
-
-      if (
-        "reasoning_content" in delta &&
-        typeof delta.reasoning_content === "string" &&
-        delta.reasoning_content
-      ) {
-        callbacks.onThinking(delta.reasoning_content);
-      }
-
-      if (delta.content) {
-        callbacks.onContent(delta.content);
-      }
-
-      if (delta.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          let pending = pendingToolCalls.get(tc.index);
-          if (!pending && tc.id) {
-            pending = {
-              id: tc.id,
-              type: "function",
-              function: { name: "", arguments: "" },
-            };
-            pendingToolCalls.set(tc.index, pending);
-          }
-          if (pending) {
-            if (tc.function?.name) {
-              pending.function.name += tc.function.name;
-            }
-            if (tc.function?.arguments) {
-              pending.function.arguments += tc.function.arguments;
-            }
-          }
-        }
-      }
-
-      if (choice.finish_reason) {
-        logger.api.debug(
-          `[${providerName}] finish_reason="${choice.finish_reason}"`,
-        );
-        if (choice.finish_reason === "length") {
-          logger.api.warn(
-            `[${providerName}] Response truncated due to max_tokens limit (finish_reason="length")`,
-          );
-        }
-      }
-
-      if (
-        choice.finish_reason === "tool_calls" ||
-        choice.finish_reason === "stop"
-      ) {
-        for (const tc of pendingToolCalls.values()) {
-          if (tc.function.name) {
-            callbacks.onToolCall({
-              id: tc.id,
-              type: tc.type,
-              function: {
-                name: tc.function.name,
-                arguments: tc.function.arguments,
-              },
-            });
-          }
-        }
-        pendingToolCalls.clear();
-      }
-
-      if (chunk.usage && callbacks.onUsage) {
-        callbacks.onUsage({
-          prompt_tokens: chunk.usage.prompt_tokens,
-          completion_tokens: chunk.usage.completion_tokens,
-          total_tokens: chunk.usage.total_tokens,
-        });
-      }
-    }
-
-    return true;
+    return consumeChatCompletionStream(
+      stream,
+      callbacks,
+      cancellationToken,
+      providerName,
+    );
   }
 
   private async sendWithRetry(
@@ -520,6 +426,147 @@ class ApiClientImpl implements IApiClient {
 
     throw new Error(`Exhausted ${maxRetries + 1} retry attempts`);
   }
+}
+
+/**
+ * Consume an OpenAI-compatible streaming response, dispatching each chunk to
+ * the supplied callbacks.
+ *
+ * Extracted from the client class so the chunk-handling rules are unit
+ * testable without a live HTTP stream:
+ * - usage arrives in a trailing chunk with an empty `choices` array, so it
+ *   must be handled before the choice guard or it is silently dropped;
+ * - tool call fragments are accumulated across chunks and flushed either on
+ *   finish_reason or, defensively, when the stream ends without one.
+ *
+ * @returns false when the stream was stopped early due to cancellation.
+ */
+export async function consumeChatCompletionStream(
+  stream: AsyncIterable<ChatCompletionChunk>,
+  callbacks: StreamCallbacks,
+  cancellationToken: CancellationToken | undefined,
+  providerName: string,
+): Promise<boolean> {
+  const pendingToolCalls = new Map<
+    number,
+    {
+      id: string;
+      type: "function";
+      function: { name: string; arguments: string };
+    }
+  >();
+
+  /** Emit all accumulated tool calls and reset the buffer. */
+  const flushToolCalls = (): void => {
+    for (const tc of pendingToolCalls.values()) {
+      if (tc.function.name) {
+        callbacks.onToolCall({
+          id: tc.id,
+          type: tc.type,
+          function: {
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          },
+        });
+      }
+    }
+    pendingToolCalls.clear();
+  };
+
+  logger.api.debug(`[${providerName}] Streaming started`);
+
+  for await (const chunk of stream) {
+    if (cancellationToken?.isCancellationRequested) {
+      logger.api.debug(
+        `[${providerName}] Cancellation requested, stopping stream`,
+      );
+      return false;
+    }
+
+    // Usage is delivered in a final chunk whose `choices` array is empty
+    // (OpenAI streaming spec), so it must be handled BEFORE the choice guard
+    // below — otherwise it is silently dropped and callers relying on usage
+    // (e.g. token plan consumption tracking) never fire.
+    if (chunk.usage && callbacks.onUsage) {
+      callbacks.onUsage({
+        prompt_tokens: chunk.usage.prompt_tokens,
+        completion_tokens: chunk.usage.completion_tokens,
+        total_tokens: chunk.usage.total_tokens,
+      });
+    }
+
+    const choice = chunk.choices?.[0];
+    if (!choice) {
+      continue;
+    }
+
+    const delta = choice.delta;
+
+    if (
+      "reasoning_content" in delta &&
+      typeof delta.reasoning_content === "string" &&
+      delta.reasoning_content
+    ) {
+      callbacks.onThinking(delta.reasoning_content);
+    }
+
+    if (delta.content) {
+      callbacks.onContent(delta.content);
+    }
+
+    if (delta.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        let pending = pendingToolCalls.get(tc.index);
+        if (!pending && tc.id) {
+          pending = {
+            id: tc.id,
+            type: "function",
+            function: { name: "", arguments: "" },
+          };
+          pendingToolCalls.set(tc.index, pending);
+        }
+        if (pending) {
+          if (tc.function?.name) {
+            pending.function.name += tc.function.name;
+          }
+          if (tc.function?.arguments) {
+            pending.function.arguments += tc.function.arguments;
+          }
+        }
+      }
+    }
+
+    if (choice.finish_reason) {
+      logger.api.debug(
+        `[${providerName}] finish_reason="${choice.finish_reason}"`,
+      );
+      if (choice.finish_reason === "length") {
+        logger.api.warn(
+          `[${providerName}] Response truncated due to max_tokens limit (finish_reason="length")`,
+        );
+      }
+    }
+
+    if (
+      choice.finish_reason === "tool_calls" ||
+      choice.finish_reason === "stop"
+    ) {
+      flushToolCalls();
+    }
+  }
+
+  // Some gateways end the stream without ever sending a finish_reason.
+  // Flush any tool calls accumulated so far instead of dropping them, which
+  // would surface to the user as "the model decided to call a tool but
+  // nothing happened".
+  if (pendingToolCalls.size > 0) {
+    logger.api.debug(
+      `[${providerName}] Stream ended without finish_reason, flushing ${pendingToolCalls.size} pending tool call(s)`,
+    );
+    flushToolCalls();
+  }
+
+  return true;
 }
 
 /**

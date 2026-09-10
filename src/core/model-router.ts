@@ -24,6 +24,7 @@ import {
   ServiceUnavailableError,
   TimeoutError,
 } from "./errors";
+import { CircuitBreakerError } from "./circuit-breaker";
 import { type RoutingStrategy } from "./models";
 import {
   getFailoverModels as getConfiguredFailoverModels,
@@ -437,7 +438,7 @@ export class ModelRouter implements IChatProvider {
         timestamp: Date.now(),
       });
 
-      if (this.isTransientError(error)) {
+      if (isTransientError(error)) {
         const triedProviders = new Set<string>([activeProviderId]);
         let lastError = error;
 
@@ -492,7 +493,7 @@ export class ModelRouter implements IChatProvider {
               timestamp: Date.now(),
             });
 
-            if (!this.isTransientError(fallbackError)) {
+            if (!isTransientError(fallbackError)) {
               throw fallbackError;
             }
             lastError = fallbackError;
@@ -614,32 +615,44 @@ export class ModelRouter implements IChatProvider {
       }
     }
   }
+}
 
-  private isTransientError(error: unknown): boolean {
-    if (
-      error instanceof RateLimitError ||
-      error instanceof ServiceUnavailableError ||
-      error instanceof NetworkError ||
-      error instanceof TimeoutError
-    ) {
-      return true;
-    }
-
-    if (error instanceof Error) {
-      const msg = error.message.toLowerCase();
-      return (
-        msg.includes("timeout") ||
-        msg.includes("network") ||
-        msg.includes("econnrefused") ||
-        msg.includes("econnreset") ||
-        msg.includes("503") ||
-        msg.includes("502") ||
-        msg.includes("429") ||
-        msg.includes("rate limit") ||
-        msg.includes("service unavailable") ||
-        msg.includes("too many requests")
-      );
-    }
-    return false;
+/**
+ * Decide whether an error is worth failing over for.
+ *
+ * Circuit breaker rejections count as transient: an open circuit means the
+ * provider is temporarily unhealthy, which is exactly the case failover exists
+ * for. Without this the error is rethrown straight to the user and the
+ * fallback chain never runs.
+ */
+export function isTransientError(error: unknown): boolean {
+  if (error instanceof CircuitBreakerError) {
+    return true;
   }
+
+  if (
+    error instanceof RateLimitError ||
+    error instanceof ServiceUnavailableError ||
+    error instanceof NetworkError ||
+    error instanceof TimeoutError
+  ) {
+    return true;
+  }
+
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    return (
+      msg.includes("timeout") ||
+      msg.includes("network") ||
+      msg.includes("econnrefused") ||
+      msg.includes("econnreset") ||
+      msg.includes("503") ||
+      msg.includes("502") ||
+      msg.includes("429") ||
+      msg.includes("rate limit") ||
+      msg.includes("service unavailable") ||
+      msg.includes("too many requests")
+    );
+  }
+  return false;
 }

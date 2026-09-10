@@ -4,6 +4,5 @@
   { "id": "qwen3.7-plus" },
   { "id": "qwen3.7-flash" },
   { "id": "glm-5.2" },
-  { "id": "deepseek-v4-pro" },
-  { "id": "deepseek-v4-flash" }
+  { "id": "deepseek-flash" }
 ]

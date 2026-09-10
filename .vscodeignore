@@ -10,3 +10,6 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+# Compiled test harness + specs are not needed at runtime
+out/test/**
+.vscode-test.mjs

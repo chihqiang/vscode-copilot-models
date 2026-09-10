@@ -99,27 +99,36 @@ class CopilotModelsExtension {
   async deactivate(): Promise<void> {
     logger.core.info("Deactivating extension...");
 
-    if (this.modelRouter) {
-      await this.modelRouter.prepareForDeactivate();
-      this.modelRouter.dispose();
-      this.modelRouter = undefined;
-    }
-
-    for (const [providerId, disposable] of this.registrationDisposables) {
-      try {
-        disposable.dispose();
-        logger.core.info(`Disposable "${providerId}" disposed`);
-      } catch (error) {
-        logger.core.error(`Failed to dispose "${providerId}":`, error);
+    try {
+      if (this.modelRouter) {
+        await this.modelRouter.prepareForDeactivate();
+        this.modelRouter.dispose();
+        this.modelRouter = undefined;
       }
+
+      for (const [providerId, disposable] of this.registrationDisposables) {
+        try {
+          disposable.dispose();
+          logger.core.info(`Disposable "${providerId}" disposed`);
+        } catch (error) {
+          logger.core.error(`Failed to dispose "${providerId}":`, error);
+        }
+      }
+      this.registrationDisposables.clear();
+
+      // ProviderModels is a strict singleton: if activation failed before
+      // init(), getInstance() throws. Guard it so a failed activation still
+      // lets the rest of the teardown (and logger.dispose) run.
+      if (ProviderModels.isInitialized()) {
+        ProviderModels.getInstance().clear();
+      }
+      Tokenizer.getInstance().dispose();
+    } catch (error) {
+      logger.core.error("Failed to deactivate cleanly:", error);
+    } finally {
+      logger.core.info("Extension deactivated");
+      logger.dispose();
     }
-    this.registrationDisposables.clear();
-
-    ProviderModels.getInstance().clear();
-    Tokenizer.getInstance().dispose();
-
-    logger.core.info("Extension deactivated");
-    logger.dispose();
   }
 
   private registerProvider(

@@ -41,7 +41,7 @@
 
 1. 按 `Ctrl+Shift+P`，运行 `Copilot Models: Set Token Plan`
 2. 选择内置服务商预设或输入自定义 URL
-   - 通义千问预设已预配好端点 URL 和 9 个支持的模型
+   - 通义千问预设已预配好端点 URL 和 6 个支持的模型
 3. 输入套餐 API 令牌
 4. 选择该套餐覆盖的模型
 
@@ -122,11 +122,14 @@
 | Qwen3.7 Plus | `qwen3.7-plus` |
 | Qwen3.7 Flash | `qwen3.7-flash` |
 | GLM-5.2 | `glm-5.2` |
-| DeepSeek V4 Pro | `deepseek-v4-pro` |
-| DeepSeek V4 Flash | `deepseek-v4-flash` |
+| DeepSeek V4.1 Flash | `deepseek-flash` |
 
 未列出的模型（如 GLM-5-Turbo、kimi-k2.7-code）仍可通过直接 Provider API 访问，
 只是不在这个 Token Plan 预设的覆盖范围内。
+
+> **注意：** 上表中的 ID 必须与扩展实际暴露的模型 ID 一致（见"支持的模型"表格）。
+> `deepseek-v4-pro` 与 `deepseek-v4-flash` 虽然 DeepSeek API 本身仍接受，
+> 但扩展只以 `deepseek-flash` 这一个 ID 暴露它们。
 
 ## 配置选项
 
@@ -162,9 +165,10 @@
 | `visionProxy.timeoutMs` | 视觉代理请求超时（毫秒） | `60000` |
 | `visionProxy.maxTokens` | 视觉代理响应最大 token 数 | `1024` |
 
-> **注意：** 移除了 `maxTokens` 配置。每个模型自动使用其自身最大输出上限
-> （`maxOutputTokens`）作为 API 的 `max_tokens` 参数，无需手动设置。
-> 详见上方"支持的模型"表格中的"输出"列。
+> **注意：** `visionProxy.maxTokens` 只作用于发往 `visionProxy.apiUrl` 的
+> 图片描述请求，不影响正常的对话请求。对话请求没有单独的 `max_tokens` 配置：
+> 每个模型自动使用其自身最大输出上限（`maxOutputTokens`）作为 API 的
+> `max_tokens` 参数。详见上方"支持的模型"表格中的"输出"列。
 
 ## 命令
 
