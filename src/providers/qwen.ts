@@ -1,4 +1,5 @@
 import type { ModelDefinition } from "../core/models";
+import models from "./qwen.models.json";
 
 export const qwenConfig = {
   id: "qwen",
@@ -7,50 +8,5 @@ export const qwenConfig = {
   apiKeyPrompt: "Enter your Qwen API Key",
   apiKeyPlaceholder: "Qwen API Key",
   supportsThinking: true,
-  models: [
-    {
-      id: "qwen3.8-max",
-      name: "Qwen3.8 Max",
-      family: "qwen",
-      version: "3.8",
-      detail: "Latest flagship model with vision & language, 1M context",
-      maxInputTokens: 1000000,
-      maxOutputTokens: 64000,
-      capabilities: { toolCalling: true, imageInput: true, thinking: true },
-      requiresThinkingParam: true,
-    },
-    {
-      id: "qwen3.8-flash",
-      name: "Qwen3.8 Flash",
-      family: "qwen",
-      version: "3.8",
-      detail: "Fast, cost-efficient multimodal model with 1M context window",
-      maxInputTokens: 1000000,
-      maxOutputTokens: 64000,
-      capabilities: { toolCalling: true, imageInput: true, thinking: true },
-      requiresThinkingParam: true,
-    },
-    {
-      id: "qwen3.7-plus",
-      name: "Qwen3.7 Plus",
-      family: "qwen",
-      version: "3.7",
-      detail: "Balanced multimodal agent model with 1M context",
-      maxInputTokens: 1000000,
-      maxOutputTokens: 64000,
-      capabilities: { toolCalling: true, imageInput: true, thinking: true },
-      requiresThinkingParam: true,
-    },
-    {
-      id: "qwen3.7-flash",
-      name: "Qwen3.7 Flash",
-      family: "qwen",
-      version: "3.7",
-      detail: "Fast multimodal model with 1M context window",
-      maxInputTokens: 1000000,
-      maxOutputTokens: 64000,
-      capabilities: { toolCalling: true, imageInput: true, thinking: true },
-      requiresThinkingParam: true,
-    },
-  ] satisfies ModelDefinition[],
+  models: models satisfies ModelDefinition[],
 };

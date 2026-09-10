@@ -1,0 +1,107 @@
+[
+  {
+    "id": "glm-5.3",
+    "name": "GLM-5.3",
+    "family": "bigmodel",
+    "version": "5.3",
+    "detail": "Latest flagship model, 1M context, thinking always enabled",
+    "maxInputTokens": 1000000,
+    "maxOutputTokens": 131072,
+    "capabilities": {
+      "toolCalling": true,
+      "imageInput": false,
+      "thinking": true
+    },
+    "requiresThinkingParam": true
+  },
+  {
+    "id": "glm-5.3-flash",
+    "name": "GLM-5.3-Flash",
+    "family": "bigmodel",
+    "version": "5.3",
+    "detail": "Native multimodal model, 1M context, image & video input",
+    "maxInputTokens": 1000000,
+    "maxOutputTokens": 131072,
+    "capabilities": {
+      "toolCalling": true,
+      "imageInput": true,
+      "thinking": true
+    },
+    "requiresThinkingParam": true
+  },
+  {
+    "id": "glm-5.2",
+    "name": "GLM-5.2",
+    "family": "bigmodel",
+    "version": "5.2",
+    "detail": "Flagship base model, 1M context, enhanced reasoning",
+    "maxInputTokens": 1000000,
+    "maxOutputTokens": 131072,
+    "capabilities": {
+      "toolCalling": true,
+      "imageInput": false,
+      "thinking": true
+    },
+    "requiresThinkingParam": true
+  },
+  {
+    "id": "glm-5.1",
+    "name": "GLM-5.1",
+    "family": "bigmodel",
+    "version": "5.1",
+    "detail": "Flagship base model, 200K context, thinking enabled",
+    "maxInputTokens": 200000,
+    "maxOutputTokens": 131072,
+    "capabilities": {
+      "toolCalling": true,
+      "imageInput": false,
+      "thinking": true
+    },
+    "requiresThinkingParam": true
+  },
+  {
+    "id": "glm-5-turbo",
+    "name": "GLM-5-Turbo",
+    "family": "bigmodel",
+    "version": "5",
+    "detail": "Optimized for OpenClaw scenarios, 200K context",
+    "maxInputTokens": 200000,
+    "maxOutputTokens": 131072,
+    "capabilities": {
+      "toolCalling": true,
+      "imageInput": false,
+      "thinking": true
+    },
+    "requiresThinkingParam": true
+  },
+  {
+    "id": "glm-5",
+    "name": "GLM-5",
+    "family": "bigmodel",
+    "version": "5",
+    "detail": "General purpose model, 200K context",
+    "maxInputTokens": 200000,
+    "maxOutputTokens": 131072,
+    "capabilities": {
+      "toolCalling": true,
+      "imageInput": false,
+      "thinking": true
+    },
+    "requiresThinkingParam": true
+  },
+  {
+    "id": "glm-4.7-flash",
+    "name": "GLM-4.7-Flash",
+    "family": "bigmodel",
+    "version": "4.7",
+    "detail": "Free text model for quick tasks, 200K context",
+    "maxInputTokens": 200000,
+    "maxOutputTokens": 131072,
+    "capabilities": {
+      "toolCalling": true,
+      "imageInput": false,
+      "thinking": false
+    },
+    "requiresThinkingParam": false
+  }
+]
