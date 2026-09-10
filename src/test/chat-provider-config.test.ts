@@ -61,12 +61,16 @@ function createStubContext(): vscode.ExtensionContext {
 
 /** Exposes protected internals so the cache-invalidation wiring is under test. */
 class TestableProvider extends BaseChatProvider {
-  constructor() {
-    super(createStubContext(), createStubProvider());
+  constructor(context: vscode.ExtensionContext = createStubContext()) {
+    super(context, createStubProvider());
   }
 
   isAffectedBy(e: vscode.ConfigurationChangeEvent): boolean {
     return this.affectsConfiguration(e);
+  }
+
+  get visionServiceForTest(): vscode.Disposable {
+    return this.visionService;
   }
 
   /** Seed the client cache the way a completed request would. */
@@ -154,7 +158,6 @@ suite("BaseChatProvider.affectsConfiguration Test Suite", () => {
 
 suite("BaseChatProvider secret change Test Suite", () => {
   const apiKeySecret = `${CONFIG_SECTION}.${PROVIDER}.apiKey`;
-
   test("drops cached API clients when the provider API key is rotated", () => {
     const provider = new TestableProvider();
     try {
@@ -187,6 +190,76 @@ suite("BaseChatProvider secret change Test Suite", () => {
       );
     } finally {
       provider.dispose();
+    }
+  });
+});
+
+suite("BaseChatProvider vision service sharing Test Suite", () => {
+  /** The private listener list of VisionService, to observe disposal. */
+  interface VisionServiceInternals {
+    disposables: vscode.Disposable[];
+  }
+
+  test("shares one vision service per extension context", () => {
+    const context = createStubContext();
+    const first = new TestableProvider(context);
+    const second = new TestableProvider(context);
+
+    try {
+      assert.strictEqual(
+        first.visionServiceForTest,
+        second.visionServiceForTest,
+        "each provider used to build its own VisionService, duplicating its listeners",
+      );
+      assert.strictEqual(
+        context.subscriptions.length,
+        1,
+        "the shared service must be registered with the extension once",
+      );
+    } finally {
+      first.dispose();
+      second.dispose();
+    }
+  });
+
+  test("keeps contexts isolated", () => {
+    const first = new TestableProvider(createStubContext());
+    const second = new TestableProvider(createStubContext());
+
+    try {
+      assert.notStrictEqual(
+        first.visionServiceForTest,
+        second.visionServiceForTest,
+      );
+    } finally {
+      first.dispose();
+      second.dispose();
+    }
+  });
+
+  test("disposing one provider does not tear down the shared service", () => {
+    const context = createStubContext();
+    const disabled = new TestableProvider(context);
+    const remaining = new TestableProvider(context);
+    const shared = remaining.visionServiceForTest;
+
+    try {
+      // Disabling a provider disposes it. The vision service is owned by the
+      // extension, so the provider still in use must keep working.
+      disabled.dispose();
+
+      assert.strictEqual(
+        remaining.visionServiceForTest,
+        shared,
+        "the shared instance must survive a provider disposal",
+      );
+      assert.strictEqual(
+        (shared as unknown as VisionServiceInternals).disposables.length,
+        2,
+        "its configuration and secret listeners must still be registered",
+      );
+    } finally {
+      remaining.dispose();
     }
   });
 });

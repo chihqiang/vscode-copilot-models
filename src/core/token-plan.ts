@@ -234,6 +234,16 @@ export class TokenPlan {
    */
   private consumptionWriteChain: Promise<void> = Promise.resolve();
 
+  /**
+   * True while a write is queued but has not started.
+   *
+   * Records that arrive during that window have nothing to add: the pending
+   * write snapshots the live log when it runs, so it already includes them.
+   * Queueing one write per record turned a burst of N records into N writes of
+   * a growing array — O(N²) copying — for a single resulting log.
+   */
+  private consumptionWriteQueued = false;
+
   private getConsumptionRecords(): TokenConsumption[] {
     if (!this.consumptionCache) {
       this.consumptionCache = [
@@ -246,6 +256,35 @@ export class TokenPlan {
     return this.consumptionCache;
   }
 
+  /**
+   * Persist the current log once, behind any in-flight write.
+   *
+   * The snapshot is taken when the write actually runs, so the final write
+   * always persists the complete log. `force` queues a write even when one is
+   * already pending, which `clearConsumptions` needs so that an emptying of
+   * the log is never left unpersisted behind an earlier queued write.
+   */
+  private flushConsumptionWrites(force = false): Promise<void> {
+    if (this.consumptionWriteQueued && !force) {
+      return this.consumptionWriteChain;
+    }
+
+    this.consumptionWriteQueued = true;
+    this.consumptionWriteChain = this.consumptionWriteChain
+      .catch(() => {
+        // A previous write failed; keep the chain alive so later records
+        // are still persisted.
+      })
+      .then(() => {
+        this.consumptionWriteQueued = false;
+        return this.context.globalState.update(CONSUMPTION_STORAGE_KEY, [
+          ...this.getConsumptionRecords(),
+        ]);
+      });
+
+    return this.consumptionWriteChain;
+  }
+
   async recordConsumption(consumption: TokenConsumption): Promise<void> {
     const records = this.getConsumptionRecords();
     records.push(consumption);
@@ -253,19 +292,7 @@ export class TokenPlan {
       records.splice(0, records.length - MAX_CONSUMPTION_RECORDS);
     }
 
-    // Queue the write behind any in-flight one so no update is lost. The
-    // snapshot is taken when the write actually runs, so the final write
-    // always persists the complete log.
-    this.consumptionWriteChain = this.consumptionWriteChain
-      .catch(() => {
-        // A previous write failed; keep the chain alive so later records
-        // are still persisted.
-      })
-      .then(() =>
-        this.context.globalState.update(CONSUMPTION_STORAGE_KEY, [...records]),
-      );
-
-    await this.consumptionWriteChain;
+    await this.flushConsumptionWrites();
     this.onDidChangeUsageEmitter.fire();
     logger.plan.debug(
       `Recorded consumption: ${consumption.totalTokens} tokens for ${consumption.planId ?? "direct API key"}`,
@@ -282,13 +309,10 @@ export class TokenPlan {
     const dropped = this.getConsumptionRecords().length;
     this.consumptionCache = [];
 
-    this.consumptionWriteChain = this.consumptionWriteChain
-      .catch(() => {
-        // Keep the chain alive after a failed write.
-      })
-      .then(() => this.context.globalState.update(CONSUMPTION_STORAGE_KEY, []));
-
-    await this.consumptionWriteChain;
+    // Forced: a write queued before the clear has already run (or will run)
+    // against the now-empty cache, but forcing one of its own guarantees the
+    // emptied log is persisted after it rather than depending on that timing.
+    await this.flushConsumptionWrites(true);
     // Must notify: the status bar still shows the pre-clear figures otherwise.
     this.onDidChangeUsageEmitter.fire();
     logger.plan.info(`Cleared ${dropped} usage record(s)`);

@@ -341,6 +341,146 @@ suite("TokenPlan Test Suite", () => {
     });
   });
 
+  // ── 写入合并 ─────────────────────────────────────
+
+  suite("Consumption write coalescing", () => {
+    /**
+     * A context whose writes are counted and take a turn of the event loop,
+     * like the real disk-backed storage does.
+     */
+    function createCountingContext(): {
+      context: Record<string, unknown>;
+      updates: () => number;
+      persisted: () => TokenConsumption[] | undefined;
+    } {
+      const state = new Map<string, unknown>();
+      let updates = 0;
+      const context = {
+        globalState: {
+          get: (key: string, defaultValue?: unknown) =>
+            state.has(key) ? state.get(key) : defaultValue,
+          update: async (key: string, value: unknown) => {
+            updates++;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            state.set(key, value);
+          },
+        },
+        secrets: {
+          store: async () => {},
+          get: async () => undefined,
+          delete: async () => {},
+        },
+      };
+
+      return {
+        context,
+        updates: () => updates,
+        // The key is private to TokenPlan, so pick the stored array instead of
+        // duplicating the literal here.
+        persisted: () =>
+          [...state.values()].find((v) => Array.isArray(v)) as
+            | TokenConsumption[]
+            | undefined,
+      };
+    }
+
+    function consumption(index: number): TokenConsumption {
+      return {
+        planId: "p1",
+        modelId: `m${index}`,
+        promptTokens: 1,
+        completionTokens: 1,
+        totalTokens: 2,
+        timestamp: index,
+      };
+    }
+
+    test("coalesces a burst into a single write without losing records", async () => {
+      const { context, updates, persisted } = createCountingContext();
+      const burstPlan = TokenPlan.init(context as never, builtInPresets);
+
+      const COUNT = 10;
+      await Promise.all(
+        Array.from({ length: COUNT }, (_, i) =>
+          burstPlan.recordConsumption(consumption(i)),
+        ),
+      );
+
+      // Records queued while a write is pending add nothing to it: the pending
+      // write snapshots the live log when it runs. One write per record made a
+      // burst of N cost N writes of a growing array.
+      assert.strictEqual(
+        updates(),
+        1,
+        `expected one coalesced write, got ${updates()}`,
+      );
+      assert.strictEqual(
+        persisted()?.length,
+        COUNT,
+        "the coalesced write must still contain every record",
+      );
+    });
+
+    test("a record written on its own is still persisted immediately", async () => {
+      const { context, updates, persisted } = createCountingContext();
+      const singlePlan = TokenPlan.init(context as never, builtInPresets);
+
+      await singlePlan.recordConsumption(consumption(1));
+
+      assert.strictEqual(updates(), 1);
+      assert.strictEqual(persisted()?.length, 1);
+    });
+
+    test("clearing while a write is queued still persists the empty log", async () => {
+      const { context, persisted } = createCountingContext();
+      const burstPlan = TokenPlan.init(context as never, builtInPresets);
+
+      // Not awaited: the clear must be safe while the record's write is still
+      // queued, otherwise a stale snapshot could resurrect the records.
+      const recording = burstPlan.recordConsumption(consumption(1));
+      const clearing = burstPlan.clearConsumptions();
+      await Promise.all([recording, clearing]);
+
+      assert.deepStrictEqual(persisted(), []);
+      assert.strictEqual(burstPlan.getConsumptions().length, 0);
+    });
+
+    test("keeps persisting after a failed write", async () => {
+      let failNext = true;
+      let stored: unknown;
+      const context = {
+        globalState: {
+          get: () => [],
+          update: async (_key: string, value: unknown) => {
+            if (failNext) {
+              failNext = false;
+              throw new Error("disk full");
+            }
+            stored = value;
+          },
+        },
+        secrets: {
+          store: async () => {},
+          get: async () => undefined,
+          delete: async () => {},
+        },
+      };
+      const flakyPlan = TokenPlan.init(context as never, builtInPresets);
+
+      await assert.rejects(
+        () => flakyPlan.recordConsumption(consumption(1)),
+        /disk full/,
+      );
+      await flakyPlan.recordConsumption(consumption(2));
+
+      assert.strictEqual(
+        (stored as TokenConsumption[] | undefined)?.length,
+        2,
+        "a failed write must not break the chain",
+      );
+    });
+  });
+
   // ── 使用量事件与清空 ──────────────────────────
 
   suite("Usage events and reset", () => {

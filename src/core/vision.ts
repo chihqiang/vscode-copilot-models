@@ -496,6 +496,40 @@ export class VisionService {
   }
 }
 
+/**
+ * Shared vision services, one per extension context.
+ *
+ * Every chat provider needs a `VisionService`, but the service only reads
+ * global settings — building one per provider registered the same two
+ * configuration/secret listeners three times over and kept a separate
+ * describer cache in each. Keyed by context so a test that uses its own
+ * context still gets an isolated instance.
+ */
+const sharedVisionServices = new WeakMap<
+  vscode.ExtensionContext,
+  VisionService
+>();
+
+/**
+ * Get the `VisionService` for an extension context, creating it on first use.
+ *
+ * The service is owned by the extension (`context.subscriptions`), not by the
+ * provider that happened to request it first: disposing a single provider —
+ * which happens whenever a provider is disabled — must not tear down state the
+ * other providers still use.
+ */
+export function getVisionService(
+  context: vscode.ExtensionContext,
+): VisionService {
+  let service = sharedVisionServices.get(context);
+  if (!service) {
+    service = new VisionService(context);
+    sharedVisionServices.set(context, service);
+    context.subscriptions?.push(service);
+  }
+  return service;
+}
+
 // ── Helper Functions ────────────────────────────────────────
 
 /**

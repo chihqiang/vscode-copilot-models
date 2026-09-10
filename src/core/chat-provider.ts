@@ -27,7 +27,11 @@ import { sanitizeUrl } from "./sanitize";
 import { IModelProvider } from "./model-provider";
 import { Tokenizer } from "./tokenizer";
 import { TokenPlan, type PlanOverride } from "./token-plan";
-import { VisionService, resolveImageMessages } from "./vision";
+import {
+  VisionService,
+  getVisionService,
+  resolveImageMessages,
+} from "./vision";
 
 /**
  * Chat Provider interface (simplified, for type checking)
@@ -180,13 +184,15 @@ export abstract class BaseChatProvider
     this.providerName = modelProvider.config.vendorName;
     this.configSection = this.getConfigSection();
     this.supportsThinking = this.getSupportsThinking();
-    this.visionService = new VisionService(context);
+    this.visionService = getVisionService(context);
 
     logger.provider.debug(`[${this.providerId}] ChatProvider initialized`);
 
+    // The vision service is intentionally absent here: it is shared across
+    // providers and owned by the extension context, so disposing this provider
+    // must not dispose it.
     this.disposables.push(
       this.onDidChangeLanguageModelChatInformationEmitter,
-      this.visionService,
       vscode.workspace.onDidChangeConfiguration((e) => {
         this.onConfigurationChanged(e);
       }),
