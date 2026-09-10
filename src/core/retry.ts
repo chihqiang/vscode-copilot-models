@@ -2,6 +2,8 @@
  * Retry utilities with exponential backoff
  */
 
+import { setTimeout as sleep } from "node:timers/promises";
+
 /** Retry configuration */
 export interface RetryConfig {
   baseDelayMs: number;
@@ -17,27 +19,16 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 
 /** Delay utility function */
 export function delay(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException("Aborted", "AbortError"));
-      return;
-    }
-
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-
-    const timer = setTimeout(() => {
-      // Detach the abort listener on the happy path. Retries share a single
-      // AbortSignal, so leaving listeners attached accumulates them on the
-      // signal and eventually trips Node's MaxListeners warning.
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
+  // `node:timers/promises` owns the abort wiring: it clears its timer when the
+  // signal aborts and detaches its listener when the delay resolves, so a
+  // shared, long-lived signal (retries reuse one) cannot accumulate listeners
+  // nor leave a timer pending.
+  //
+  // On abort it rejects with an `Error` whose `name` is `AbortError` — exactly
+  // what `classifyError` and `isAbortError` match on. Note it is not a
+  // `DOMException` as the previous hand-rolled version produced, so assert on
+  // the name rather than the class.
+  return sleep(ms, undefined, signal ? { signal } : {});
 }
 
 /** Month name present in every RFC 9110 HTTP-date form. */

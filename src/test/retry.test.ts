@@ -234,14 +234,25 @@ suite("delay Test Suite", () => {
     assert.ok(elapsed >= 5, `Expected >= 5ms, got ${elapsed}ms`);
   });
 
+  /**
+   * The contract callers actually depend on.
+   *
+   * `classifyError` maps an abort to `CancelledError` via
+   * `error instanceof Error && error.name === "AbortError"`, and
+   * `isAbortError` (sse.ts) matches the same name. Asserting the concrete
+   * class instead pinned the implementation rather than the interface:
+   * `node:timers/promises` rejects with a plain `Error` subclass, which
+   * satisfies both predicates but is not a `DOMException`.
+   */
+  function isAbortError(err: unknown): boolean {
+    return err instanceof Error && err.name === "AbortError";
+  }
+
   test("rejects when the signal is already aborted", async () => {
     const controller = new AbortController();
     controller.abort();
 
-    await assert.rejects(
-      () => delay(10, controller.signal),
-      (err: unknown) => err instanceof DOMException,
-    );
+    await assert.rejects(() => delay(10, controller.signal), isAbortError);
   });
 
   test("rejects when aborted mid-delay", async () => {
@@ -249,9 +260,22 @@ suite("delay Test Suite", () => {
     const pending = delay(10_000, controller.signal);
     controller.abort();
 
-    await assert.rejects(
-      () => pending,
-      (err: unknown) => err instanceof DOMException,
+    await assert.rejects(() => pending, isAbortError);
+  });
+
+  test("rejects without waiting out the delay when aborted mid-delay", async () => {
+    // Aborting must short-circuit the remaining wait, not merely mark it:
+    // retries share a signal, so a cancelled request that still slept for the
+    // full backoff would keep the extension busy after the user gave up.
+    const controller = new AbortController();
+    const start = Date.now();
+    const pending = delay(30_000, controller.signal);
+    controller.abort();
+
+    await assert.rejects(() => pending, isAbortError);
+    assert.ok(
+      Date.now() - start < 5_000,
+      "abort must not wait for the full delay",
     );
   });
 
@@ -263,6 +287,19 @@ suite("delay Test Suite", () => {
       getEventListeners(controller.signal, "abort").length,
       0,
       "abort listener must be removed on the happy path",
+    );
+  });
+
+  test("leaves no abort listener behind after an abort", async () => {
+    const controller = new AbortController();
+    const pending = delay(30_000, controller.signal).catch(() => {});
+    controller.abort();
+    await pending;
+
+    assert.strictEqual(
+      getEventListeners(controller.signal, "abort").length,
+      0,
+      "the abort path must clean up in both directions too",
     );
   });
 
