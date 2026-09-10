@@ -8,6 +8,7 @@ import {
   MAX_CONSUMPTION_RECORDS,
   TokenPlan,
   buildUsageSummary,
+  collectProviderBalances,
   formatUsageReport,
   type ModelRouter,
 } from "../core";
@@ -151,8 +152,14 @@ export function registerAllCommands(
       }
 
       const summary = buildUsageSummary(records, Date.now());
+      // Balance is best-effort: providers without a balance API are skipped and
+      // failures degrade to an "unavailable" line inside the report.
+      const balances = await collectProviderBalances();
       await vscode.window.showInformationMessage(
-        formatUsageReport(summary, MAX_CONSUMPTION_RECORDS),
+        formatUsageReport(summary, {
+          retentionLimit: MAX_CONSUMPTION_RECORDS,
+          balances,
+        }),
         { modal: true },
       );
     }),

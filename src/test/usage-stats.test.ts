@@ -229,7 +229,7 @@ suite("formatUsageReport Test Suite", () => {
       ],
       now,
     );
-    const report = formatUsageReport(summary, 1000);
+    const report = formatUsageReport(summary, { retentionLimit: 1000 });
 
     assert.ok(report.includes("Today:"));
     assert.ok(report.includes("All time:"));
@@ -241,15 +241,45 @@ suite("formatUsageReport Test Suite", () => {
   });
 
   test("surfaces the retention cap so all-time is not read as a lifetime total", () => {
-    const report = formatUsageReport(
-      buildUsageSummary([record(now)], now),
-      1000,
-    );
+    const report = formatUsageReport(buildUsageSummary([record(now)], now), {
+      retentionLimit: 1000,
+    });
     assert.ok(report.includes("most recent 1000 records"));
   });
 
   test("omits the retention note when no cap is given", () => {
     const report = formatUsageReport(buildUsageSummary([record(now)], now));
     assert.ok(!report.includes("Retention"));
+  });
+
+  test("omits the balance section when no lookups ran", () => {
+    const report = formatUsageReport(buildUsageSummary([record(now)], now));
+    assert.ok(!report.includes("Balance:"));
+  });
+
+  test("includes the balance section when lookups are supplied", () => {
+    const report = formatUsageReport(buildUsageSummary([record(now)], now), {
+      balances: [
+        {
+          providerId: "deepseek",
+          balance: {
+            providerId: "deepseek",
+            isAvailable: true,
+            entries: [
+              {
+                currency: "CNY",
+                totalBalance: "110.00",
+                grantedBalance: "10.00",
+                toppedUpBalance: "100.00",
+              },
+            ],
+            fetchedAt: now,
+          },
+        },
+      ],
+    });
+
+    assert.ok(report.includes("Balance:"));
+    assert.ok(report.includes("deepseek: ¥110.00"));
   });
 });

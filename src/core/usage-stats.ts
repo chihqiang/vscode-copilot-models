@@ -5,6 +5,7 @@
  * the status bar text and the `Show Token Usage` report stay unit testable.
  */
 
+import { formatBalanceSection, type ProviderBalanceResult } from "./balance";
 import type { TokenConsumption } from "./token-plan";
 
 // ── Types ────────────────────────────────────────────
@@ -198,15 +199,23 @@ function describeTotals(totals: UsageTotals): string {
   return `${formatTokenCount(totals.totalTokens)} tok · ${totals.requests} req`;
 }
 
+/** Options for {@link formatUsageReport}. */
+export interface UsageReportOptions {
+  /**
+   * Record cap, surfaced so "all time" is not mistaken for a lifetime total
+   * when older entries have been dropped.
+   */
+  retentionLimit?: number | undefined;
+  /** Balance lookups to append; an empty list omits the section. */
+  balances?: readonly ProviderBalanceResult[] | undefined;
+}
+
 /**
  * Multi-line report shown by `Copilot Models: Show Token Usage`.
- *
- * @param retentionLimit Record cap, surfaced so "all time" is not mistaken
- * for a lifetime total when older entries have been dropped.
  */
 export function formatUsageReport(
   summary: UsageSummary,
-  retentionLimit?: number,
+  options: UsageReportOptions = {},
 ): string {
   const lines = [
     `Today: ${describeTotals(summary.today)}`,
@@ -215,6 +224,13 @@ export function formatUsageReport(
     `All time: ${describeTotals(summary.allTime)}`,
     `  prompt ${formatTokenCount(summary.allTime.promptTokens)} · completion ${formatTokenCount(summary.allTime.completionTokens)}`,
   ];
+
+  if (options.balances && options.balances.length > 0) {
+    const balanceLines = formatBalanceSection(options.balances);
+    if (balanceLines.length > 0) {
+      lines.push("", ...balanceLines);
+    }
+  }
 
   if (summary.byPlan.length > 0) {
     lines.push("", "By plan:");
@@ -237,10 +253,10 @@ export function formatUsageReport(
     );
   }
 
-  if (retentionLimit !== undefined) {
+  if (options.retentionLimit !== undefined) {
     lines.push(
       "",
-      `Retention: most recent ${retentionLimit} records; older entries are dropped.`,
+      `Retention: most recent ${options.retentionLimit} records; older entries are dropped.`,
     );
   }
 

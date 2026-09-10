@@ -216,6 +216,24 @@ that use a directly configured API key, not only token plan traffic.
 > figures are a rolling window rather than a lifetime total. Usage is stored in
 > VS Code global state and never leaves your machine.
 
+### Account Balance
+
+The usage report also shows your **DeepSeek** account balance, queried from the
+official `GET /user/balance` endpoint. It refreshes each time you run the
+command.
+
+```text
+Balance:
+  deepseek: ¥110.00 (granted ¥10.00 · topped up ¥100.00)
+```
+
+> **Note:** DeepSeek is the only supported provider with a documented balance
+> API. Zhipu AI, Qwen/DashScope and the Qwen Token Plan endpoint expose none, so
+> no figure is shown for requests served through them. Providers without a
+> configured API key are omitted entirely; a configured provider whose lookup
+> fails reads as `unavailable` — a balance problem never blocks the rest of the
+> report. No request is sent when no API key is set.
+
 ## Commands
 
 | Command | Description |
