@@ -156,19 +156,19 @@ suite("Interfaces Test Suite", () => {
   suite("ApiRequest", () => {
     test("should support basic chat request", () => {
       const request: ApiRequest = {
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         messages: [{ role: "user", content: "Hello" }],
         stream: true,
       };
 
-      assert.strictEqual(request.model, "deepseek-v4-flash");
+      assert.strictEqual(request.model, "deepseek-flash");
       assert.strictEqual(request.messages.length, 1);
       assert.strictEqual(request.stream, true);
     });
 
     test("should support thinking parameters", () => {
       const request: ApiRequest = {
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         messages: [{ role: "user", content: "Hello" }],
         stream: true,
         thinking: { type: "enabled" },
@@ -181,7 +181,7 @@ suite("Interfaces Test Suite", () => {
 
     test("should support tool configuration", () => {
       const request: ApiRequest = {
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         messages: [{ role: "user", content: "Hello" }],
         stream: true,
         tools: [

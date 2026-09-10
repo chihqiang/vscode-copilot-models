@@ -57,7 +57,7 @@
 
 ### 4. (可选) 配置视觉模型
 
-如果你想在不原生支持图片输入的模型（如 GLM-5 系列、Qwen3.7 Max）中使用图片附件，
+如果你想在不原生支持图片输入的模型（如 GLM-5.3、GLM-5.2）中使用图片附件，
 可以配置视觉代理，自动将图片转换为文字描述：
 
 1. 按 `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`)，运行 `Copilot Models: Set Vision Model`
@@ -82,29 +82,31 @@
 
 | 模型 | 上下文 | 输出 | 工具调用 | 图片输入 | 思考模式 |
 | :----- | :------: | :----: | :--------: | :------: | :--------: |
-| Qwen3.7 Max | 1M | 64K | ✅ | ❌ | ✅ |
+| Qwen3.8 Max | 1M | 64K | ✅ | ✅ | ✅ |
+| Qwen3.8 Flash | 1M | 64K | ✅ | ✅ | ✅ |
 | Qwen3.7 Plus | 1M | 64K | ✅ | ✅ | ✅ |
-| Qwen3.6 Flash | 1M | 64K | ✅ | ✅ | ✅ |
-| Qwen3.6 Plus | 128K | 64K | ✅ | ✅ | ✅ |
-| Qwen3 Max | 128K | 64K | ✅ | ✅ | ✅ |
-| Qwen3.5 Flash | 128K | 64K | ✅ | ✅ | ✅ |
+| Qwen3.7 Flash | 1M | 64K | ✅ | ✅ | ✅ |
 
 ### DeepSeek
 
 | 模型 | 上下文 | 输出 | 工具调用 | 图片输入 | 思考模式 |
 | :----- | :------: | :----: | :--------: | :------: | :--------: |
-| DeepSeek V4 Flash | 640K | 384K | ✅ | ✅ | ✅ |
-| DeepSeek V4 Pro | 640K | 384K | ✅ | ✅ | ✅ |
+| DeepSeek V4.1 Flash | 1M | 384K | ✅ | ✅ | ✅ |
+
+> **注意：** `deepseek-v4-flash` 已停服，`deepseek-v4-pro` 正在逐步下线，
+> 两个 ID 的请求在过渡期内均由 DeepSeek-V4.1-Flash 承接。
 
 ### 智谱 AI (BigModel)
 
 | 模型 | 上下文 | 输出 | 工具调用 | 图片输入 | 思考模式 |
 | :----- | :------: | :----: | :--------: | :------: | :--------: |
+| GLM-5.3 | 1M | 128K | ✅ | ❌ | ✅ |
+| GLM-5.3-Flash | 1M | 128K | ✅ | ✅ | ✅ |
 | GLM-5.2 | 1M | 128K | ✅ | ❌ | ✅ |
 | GLM-5.1 | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5-Turbo | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5 | 200K | 128K | ✅ | ❌ | ✅ |
-| GLM-4.7-Flash | 128K | 16K | ✅ | ❌ | ❌ |
+| GLM-4.7-Flash | 200K | 128K | ✅ | ❌ | ❌ |
 
 > **提示：** 图片输入标记为 ❌ 的模型仍可通过视觉代理功能处理图片
 > （见快速开始第 4 步）。
@@ -115,17 +117,15 @@
 
 | 模型 | ID |
 | :--- | :- |
-| Qwen3.7 Max | `qwen3.7-max` |
+| Qwen3.8 Max | `qwen3.8-max` |
+| Qwen3.8 Flash | `qwen3.8-flash` |
 | Qwen3.7 Plus | `qwen3.7-plus` |
-| Qwen3.6 Flash | `qwen3.6-flash` |
-| Qwen3.6 Plus | `qwen3.6-plus` |
+| Qwen3.7 Flash | `qwen3.7-flash` |
 | GLM-5.2 | `glm-5.2` |
-| GLM-5.1 | `glm-5.1` |
-| GLM-5 | `glm-5` |
 | DeepSeek V4 Pro | `deepseek-v4-pro` |
 | DeepSeek V4 Flash | `deepseek-v4-flash` |
 
-未列出的模型（如 Qwen3 Max、GLM-5-Turbo）仍可通过直接 Provider API 访问，
+未列出的模型（如 GLM-5-Turbo、kimi-k2.7-code）仍可通过直接 Provider API 访问，
 只是不在这个 Token Plan 预设的覆盖范围内。
 
 ## 配置选项

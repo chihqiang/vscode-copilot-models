@@ -73,7 +73,7 @@ Run `Copilot Models: Clear Token Plan` to remove a configured plan.
 ### 4. (Optional) Configure Vision Model
 
 If you want to use image attachments with models that don't natively support
-image input (e.g., GLM-5 series, Qwen3.7 Max), configure a vision proxy to
+image input (e.g., GLM-5.3, GLM-5.2), configure a vision proxy to
 automatically convert images to text descriptions:
 
 1. Press `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`), run
@@ -99,29 +99,31 @@ Run `Copilot Models: Clear Vision Model` to remove the configuration.
 
 | Model | Context | Output | Tool Calling | Image Input | Thinking Mode |
 | :----- | :------: | :----: | :--------: | :---------: | :--------: |
-| Qwen3.7 Max | 1M | 64K | ✅ | ❌ | ✅ |
+| Qwen3.8 Max | 1M | 64K | ✅ | ✅ | ✅ |
+| Qwen3.8 Flash | 1M | 64K | ✅ | ✅ | ✅ |
 | Qwen3.7 Plus | 1M | 64K | ✅ | ✅ | ✅ |
-| Qwen3.6 Flash | 1M | 64K | ✅ | ✅ | ✅ |
-| Qwen3.6 Plus | 128K | 64K | ✅ | ✅ | ✅ |
-| Qwen3 Max | 128K | 64K | ✅ | ✅ | ✅ |
-| Qwen3.5 Flash | 128K | 64K | ✅ | ✅ | ✅ |
+| Qwen3.7 Flash | 1M | 64K | ✅ | ✅ | ✅ |
 
 ### DeepSeek
 
 | Model | Context | Output | Tool Calling | Image Input | Thinking Mode |
 | :----- | :------: | :----: | :--------: | :---------: | :--------: |
-| DeepSeek V4 Flash | 640K | 384K | ✅ | ✅ | ✅ |
-| DeepSeek V4 Pro | 640K | 384K | ✅ | ✅ | ✅ |
+| DeepSeek V4.1 Flash | 1M | 384K | ✅ | ✅ | ✅ |
+
+> **Note:** `deepseek-v4-flash` has been retired and `deepseek-v4-pro` is being
+> retired — requests to either ID are served by DeepSeek-V4.1-Flash.
 
 ### Zhipu AI (BigModel)
 
 | Model | Context | Output | Tool Calling | Image Input | Thinking Mode |
 | :----- | :------: | :----: | :--------: | :---------: | :--------: |
+| GLM-5.3 | 1M | 128K | ✅ | ❌ | ✅ |
+| GLM-5.3-Flash | 1M | 128K | ✅ | ✅ | ✅ |
 | GLM-5.2 | 1M | 128K | ✅ | ❌ | ✅ |
 | GLM-5.1 | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5-Turbo | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5 | 200K | 128K | ✅ | ❌ | ✅ |
-| GLM-4.7-Flash | 128K | 16K | ✅ | ❌ | ❌ |
+| GLM-4.7-Flash | 200K | 128K | ✅ | ❌ | ❌ |
 
 > **Tip:** Models marked with ❌ for Image Input can still handle images
 > through the Vision Proxy feature (see Quick Start step 4).
@@ -133,17 +135,15 @@ a single unified endpoint:
 
 | Model | ID |
 | :---- | :- |
-| Qwen3.7 Max | `qwen3.7-max` |
+| Qwen3.8 Max | `qwen3.8-max` |
+| Qwen3.8 Flash | `qwen3.8-flash` |
 | Qwen3.7 Plus | `qwen3.7-plus` |
-| Qwen3.6 Flash | `qwen3.6-flash` |
-| Qwen3.6 Plus | `qwen3.6-plus` |
+| Qwen3.7 Flash | `qwen3.7-flash` |
 | GLM-5.2 | `glm-5.2` |
-| GLM-5.1 | `glm-5.1` |
-| GLM-5 | `glm-5` |
 | DeepSeek V4 Pro | `deepseek-v4-pro` |
 | DeepSeek V4 Flash | `deepseek-v4-flash` |
 
-Models not listed (e.g. Qwen3 Max, GLM-5-Turbo) are still available via direct
+Models not listed (e.g. GLM-5-Turbo, kimi-k2.7-code) are still available via direct
 provider API access — they are simply not covered by this Token Plan preset.
 
 ## Configuration Options

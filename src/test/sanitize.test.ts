@@ -9,13 +9,13 @@ import {
 suite("Sanitize - object key redaction", () => {
   test("redacts common sensitive keys", () => {
     const input = {
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       apiKey: "sk-abc",
       Authorization: "Bearer tok",
       stream: true,
     };
     const out = sanitizeForLog(input) as Record<string, unknown>;
-    assert.strictEqual(out.model, "deepseek-v4-flash");
+    assert.strictEqual(out.model, "deepseek-flash");
     assert.strictEqual(out.stream, true);
     assert.strictEqual(out.apiKey, "[REDACTED]");
     assert.strictEqual(out.Authorization, "[REDACTED]");
@@ -75,7 +75,7 @@ suite("Sanitize - string value redaction", () => {
 
   test("does not redact benign content", () => {
     const text =
-      "model: deepseek-v4-flash, messages: 3, stream: true, provider: deepseek";
+      "model: deepseek-flash, messages: 3, stream: true, provider: deepseek";
     const out = redactSensitiveValues(text);
     assert.strictEqual(out, text);
   });

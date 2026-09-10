@@ -337,7 +337,7 @@ export class Logger implements vscode.Disposable {
       : "";
 
     // Structured per-request context, e.g.
-    //   req=a1b2c3 provider=deepseek model=deepseek-v4-flash
+    //   req=a1b2c3 provider=deepseek model=deepseek-flash
     const ctx = getLogContext();
     const ctxText = ctx
       ? `req=${ctx.requestId ?? "-"} provider=${ctx.providerId ?? "-"} model=${ctx.modelId ?? "-"} `
