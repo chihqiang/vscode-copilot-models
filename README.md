@@ -85,6 +85,10 @@ automatically convert images to text descriptions:
 The vision proxy describes images before sending them to the chat model.
 For custom API endpoints, an OpenAI-compatible `/chat/completions` endpoint is required.
 
+> **Note:** The proxy only applies to models that cannot accept image input
+> natively. Models with image support receive the original images and are
+> never routed through the proxy.
+
 Run `Copilot Models: Clear Vision Model` to remove the configuration.
 
 ### 5. Start Using

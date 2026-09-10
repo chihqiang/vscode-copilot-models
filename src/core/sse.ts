@@ -14,7 +14,12 @@ export interface ChatCompletionChunk {
   model: string;
   choices: Array<{
     index: number;
-    delta: {
+    /**
+     * Optional on purpose: some OpenAI-compatible gateways send a final chunk
+     * carrying only `finish_reason` (e.g. `{"choices":[{"finish_reason":
+     * "stop"}]}`), or an empty delta object. Consumers must tolerate both.
+     */
+    delta?: {
       content?: string | null;
       reasoning_content?: string;
       tool_calls?: Array<{

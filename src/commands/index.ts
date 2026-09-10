@@ -67,9 +67,9 @@ export function registerAllCommands(
 
   // ── Settings & Logging ────────────────────────────
 
-  registerCommand(context, "copilot-models.openSettings", () => {
+  registerCommand(context, "copilot-models.openSettings", async () => {
     logger.core.info("openSettings command invoked");
-    vscode.commands.executeCommand(
+    await vscode.commands.executeCommand(
       "workbench.action.openSettings",
       "copilot-models",
     );

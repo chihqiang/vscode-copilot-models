@@ -369,6 +369,13 @@ export abstract class BaseChatProvider
   }
 
   /**
+   * Find the model definition backing a VS Code model info, by model ID.
+   */
+  protected findModelDefinition(modelId: string): ModelDefinition | undefined {
+    return this.modelProvider.getModels().find((m) => m.id === modelId);
+  }
+
+  /**
    * Prepare chat request
    */
   protected async prepareChatRequest(
@@ -396,9 +403,7 @@ export abstract class BaseChatProvider
       }
     }
 
-    const modelDefinition = this.modelProvider
-      .getModels()
-      .find((m) => m.id === modelInfo.id);
+    const modelDefinition = this.findModelDefinition(modelInfo.id);
     const isThinkingModel = modelDefinition?.capabilities.thinking ?? false;
     const thinkingEffort = this.getConfiguredThinkingEffort(options);
 
@@ -955,11 +960,15 @@ export abstract class BaseChatProvider
       `[${this.providerId}] provideLanguageModelChatResponse called, model: ${modelInfo.id}`,
     );
     try {
-      // Resolve image messages using vision proxy
+      // Models with native image input must see the real images — routing
+      // them through the vision proxy would downgrade them to a lossy text
+      // description.
+      const modelDefinition = this.findModelDefinition(modelInfo.id);
       const visionResolution = await resolveImageMessages(
         messages,
         token,
         this.visionService,
+        { skipVisionProxy: modelDefinition?.capabilities.imageInput === true },
       );
 
       // Report vision proxy notice if available

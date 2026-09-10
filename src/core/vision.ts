@@ -482,6 +482,18 @@ function resolveAllMessageParts(
 }
 
 /**
+ * Options for {@link resolveImageMessages}.
+ */
+export interface ResolveImageMessagesOptions {
+  /**
+   * Set when the target model accepts image input natively. The vision proxy
+   * is then bypassed entirely: replacing a real image with a text description
+   * throws away visual detail the model could have used directly.
+   */
+  skipVisionProxy?: boolean | undefined;
+}
+
+/**
  * Resolve image messages in a conversation
  * Converts image parts to text descriptions using the vision proxy
  */
@@ -489,6 +501,7 @@ export async function resolveImageMessages(
   messages: readonly vscode.LanguageModelChatRequestMessage[],
   token: vscode.CancellationToken,
   visionService: VisionService,
+  options?: ResolveImageMessagesOptions,
 ): Promise<VisionResolutionResult> {
   const stats = createVisionResolutionStats();
 
@@ -505,6 +518,13 @@ export async function resolveImageMessages(
   }
 
   if (stats.inputImageParts === 0) {
+    return { messages, stats };
+  }
+
+  if (options?.skipVisionProxy) {
+    logger.vision.debug(
+      "Model accepts image input natively, bypassing vision proxy",
+    );
     return { messages, stats };
   }
 
@@ -530,6 +550,10 @@ export async function resolveImageMessages(
   let visionProxySource: VisionProxySource | undefined;
   let initialResponseNotice: string | undefined;
 
+  // Resolve the prompt once rather than re-reading configuration inside the
+  // per-message loop below.
+  const visionPrompt = getVisionPrompt();
+
   for (const [index, entry] of resolved.entries()) {
     const { message, parts } = entry;
 
@@ -542,9 +566,8 @@ export async function resolveImageMessages(
       stats.currentImageMessages += 1;
 
       try {
-        const prompt = getVisionPrompt();
         const description = await describer.describe({
-          prompt,
+          prompt: visionPrompt,
           images: parts.imageParts.map(toVisionImagePart),
           token,
         });

@@ -15,11 +15,12 @@ import {
   type ApiUsage,
   type StreamCallbacks,
 } from "../core/client";
+import { TimeoutError } from "../core/errors";
 import type { ChatCompletionChunk } from "../core/sse";
 
 const PROVIDER = "test-provider";
 
-type Delta = ChatCompletionChunk["choices"][number]["delta"];
+type Delta = NonNullable<ChatCompletionChunk["choices"][number]["delta"]>;
 
 function makeChunk(
   delta: Delta,
@@ -251,5 +252,101 @@ suite("consumeChatCompletionStream Test Suite", () => {
     );
 
     assert.strictEqual(completed, false);
+  });
+
+  test("tolerates a final chunk that omits delta", async () => {
+    const recorder = createRecorder();
+
+    // Some gateways send `{"choices":[{"finish_reason":"stop"}]}` with no
+    // delta object at all. Reading `"x" in delta` on undefined used to throw
+    // a TypeError and abort the whole stream.
+    const chunkWithoutDelta: ChatCompletionChunk = {
+      id: "chunk-no-delta",
+      object: "chat.completion.chunk",
+      created: 0,
+      model: "test-model",
+      choices: [{ index: 0, finish_reason: "stop" }],
+    };
+
+    const completed = await consumeChatCompletionStream(
+      streamOf([makeChunk({ content: "hi" }), chunkWithoutDelta]),
+      recorder.callbacks,
+      undefined,
+      PROVIDER,
+    );
+
+    assert.strictEqual(completed, true);
+    assert.deepStrictEqual(recorder.content, ["hi"]);
+    assert.strictEqual(recorder.errors.length, 0);
+  });
+
+  test("aborts a stalled stream once the idle timeout elapses", async () => {
+    const recorder = createRecorder();
+    let idleFired = 0;
+
+    // Emits one chunk, then never produces another — a gateway that accepted
+    // the request and then silently stopped sending.
+    const stalling: AsyncIterable<ChatCompletionChunk> = {
+      [Symbol.asyncIterator]() {
+        let sent = false;
+        return {
+          next(): Promise<IteratorResult<ChatCompletionChunk>> {
+            if (!sent) {
+              sent = true;
+              return Promise.resolve({
+                value: makeChunk({ content: "partial" }),
+                done: false,
+              });
+            }
+            return new Promise<IteratorResult<ChatCompletionChunk>>(() => {});
+          },
+        };
+      },
+    };
+
+    await assert.rejects(
+      () =>
+        consumeChatCompletionStream(
+          stalling,
+          recorder.callbacks,
+          undefined,
+          PROVIDER,
+          {
+            idleTimeoutMs: 40,
+            onIdleTimeout: () => {
+              idleFired++;
+            },
+          },
+        ),
+      (err: unknown) => err instanceof TimeoutError,
+    );
+
+    assert.strictEqual(idleFired, 1, "the request must be aborted on stall");
+    assert.deepStrictEqual(recorder.content, ["partial"]);
+  });
+
+  test("does not time out while chunks keep arriving", async () => {
+    const recorder = createRecorder();
+    let idleFired = 0;
+
+    const completed = await consumeChatCompletionStream(
+      streamOf([
+        makeChunk({ content: "a" }),
+        makeChunk({ content: "b" }),
+        makeChunk({ content: "c" }, "stop"),
+      ]),
+      recorder.callbacks,
+      undefined,
+      PROVIDER,
+      {
+        idleTimeoutMs: 5_000,
+        onIdleTimeout: () => {
+          idleFired++;
+        },
+      },
+    );
+
+    assert.strictEqual(completed, true);
+    assert.strictEqual(idleFired, 0);
   });
 });

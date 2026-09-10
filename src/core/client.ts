@@ -22,6 +22,7 @@ import {
   classifyError,
   isRetryableError,
   CancelledError,
+  TimeoutError,
 } from "./errors";
 import { sanitizeForLog, sanitizeUrl } from "./sanitize";
 import {
@@ -165,7 +166,14 @@ export interface ApiClientConfig {
 
 // ── HTTP Utilities ─────────────────────────────────────
 
-/** Send HTTP request and return streaming SSE response */
+/**
+ * Send HTTP request and return streaming SSE response.
+ *
+ * The timeout here only covers connect + response headers — it is cleared as
+ * soon as `fetch` resolves. Guarding the streaming phase is the consumer's
+ * job; see `ConsumeStreamOptions.idleTimeoutMs` in
+ * `consumeChatCompletionStream`.
+ */
 async function fetchStream(
   url: string,
   apiKey: string,
@@ -326,6 +334,10 @@ class ApiClientImpl implements IApiClient {
           callbacks,
           cancellationToken,
           providerName,
+          {
+            idleTimeoutMs: this.timeoutMs,
+            onIdleTimeout: () => controller.abort(),
+          },
         );
       });
 
@@ -355,12 +367,14 @@ class ApiClientImpl implements IApiClient {
     callbacks: StreamCallbacks,
     cancellationToken: CancellationToken | undefined,
     providerName: string,
+    options?: ConsumeStreamOptions,
   ): Promise<boolean> {
     return consumeChatCompletionStream(
       stream,
       callbacks,
       cancellationToken,
       providerName,
+      options,
     );
   }
 
@@ -429,6 +443,65 @@ class ApiClientImpl implements IApiClient {
 }
 
 /**
+ * Options controlling how a streaming response is consumed.
+ */
+export interface ConsumeStreamOptions {
+  /**
+   * Abort the request when no chunk arrives within this window (ms).
+   *
+   * The connect timeout used by `fetchStream` is cleared once response headers
+   * arrive, so without a stall guard a server that stops sending mid-stream
+   * leaves the request hanging until the user cancels manually.
+   */
+  idleTimeoutMs?: number | undefined;
+  /**
+   * Invoked when the idle timeout fires, so the caller can abort the
+   * underlying HTTP request and release the connection.
+   */
+  onIdleTimeout?: (() => void) | undefined;
+}
+
+/**
+ * Await the next iterator result, failing with a `TimeoutError` when nothing
+ * arrives within `idleTimeoutMs`.
+ */
+async function nextChunkWithIdleTimeout<Item>(
+  iterator: AsyncIterator<Item>,
+  providerName: string,
+  options: ConsumeStreamOptions | undefined,
+): Promise<IteratorResult<Item>> {
+  const pending = iterator.next();
+  const idleTimeoutMs = options?.idleTimeoutMs;
+  if (!idleTimeoutMs || idleTimeoutMs <= 0) {
+    return pending;
+  }
+
+  // The aborted request may reject after the timeout already won the race;
+  // swallow that so it does not surface as an unhandled rejection.
+  pending.catch(() => {});
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          logger.api.error(
+            `[${providerName}] Stream stalled: no data for ${idleTimeoutMs}ms, aborting`,
+          );
+          options?.onIdleTimeout?.();
+          reject(new TimeoutError(providerName, idleTimeoutMs));
+        }, idleTimeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+/**
  * Consume an OpenAI-compatible streaming response, dispatching each chunk to
  * the supplied callbacks.
  *
@@ -436,6 +509,7 @@ class ApiClientImpl implements IApiClient {
  * testable without a live HTTP stream:
  * - usage arrives in a trailing chunk with an empty `choices` array, so it
  *   must be handled before the choice guard or it is silently dropped;
+ * - `delta` may be missing entirely on the final chunk of some gateways;
  * - tool call fragments are accumulated across chunks and flushed either on
  *   finish_reason or, defensively, when the stream ends without one.
  *
@@ -446,6 +520,7 @@ export async function consumeChatCompletionStream(
   callbacks: StreamCallbacks,
   cancellationToken: CancellationToken | undefined,
   providerName: string,
+  options?: ConsumeStreamOptions,
 ): Promise<boolean> {
   const pendingToolCalls = new Map<
     number,
@@ -475,7 +550,20 @@ export async function consumeChatCompletionStream(
 
   logger.api.debug(`[${providerName}] Streaming started`);
 
-  for await (const chunk of stream) {
+  const iterator = stream[Symbol.asyncIterator]();
+
+  while (true) {
+    const result = await nextChunkWithIdleTimeout(
+      iterator,
+      providerName,
+      options,
+    );
+    if (result.done) {
+      break;
+    }
+
+    const chunk = result.value;
+
     if (cancellationToken?.isCancellationRequested) {
       logger.api.debug(
         `[${providerName}] Cancellation requested, stopping stream`,
@@ -500,13 +588,9 @@ export async function consumeChatCompletionStream(
       continue;
     }
 
-    const delta = choice.delta;
+    const delta = choice.delta ?? {};
 
-    if (
-      "reasoning_content" in delta &&
-      typeof delta.reasoning_content === "string" &&
-      delta.reasoning_content
-    ) {
+    if (delta.reasoning_content) {
       callbacks.onThinking(delta.reasoning_content);
     }
 

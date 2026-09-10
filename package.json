@@ -139,7 +139,7 @@
           "type": "number",
           "default": 60000,
           "minimum": 5000,
-          "description": "API request timeout in milliseconds (default: 60000)"
+          "description": "API timeout in milliseconds. Covers both connecting and stalls mid-stream; a stream that stops receiving data is aborted (default: 60000)"
         },
         "copilot-models.maxRetries": {
           "type": "number",
