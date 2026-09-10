@@ -26,14 +26,29 @@ export interface TokenPlanConfig {
   updatedAt: number;
 }
 
-export interface TokenPlanConsumption {
-  planId: string;
+/**
+ * One recorded request's token usage.
+ *
+ * Covers every request the extension serves, not only token plan ones:
+ * `planId` is absent when the request used a directly configured API key.
+ */
+export interface TokenConsumption {
+  /** Token plan that paid for the request; absent for direct API-key access. */
+  planId?: string | undefined;
+  /** Provider that served the request. */
+  providerId?: string | undefined;
   modelId: string;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
   timestamp: number;
 }
+
+/**
+ * @deprecated Use {@link TokenConsumption}. Renamed when usage tracking was
+ * extended beyond token plan requests.
+ */
+export type TokenPlanConsumption = TokenConsumption;
 
 export interface ProviderPreset {
   id: string;
@@ -53,7 +68,14 @@ export interface PlanOverride {
 
 const PLANS_STORAGE_KEY = "copilot-models.tokenPlans";
 const CONSUMPTION_STORAGE_KEY = "copilot-models.tokenPlanConsumptions";
-const MAX_CONSUMPTION_RECORDS = 1000;
+/**
+ * Maximum number of usage records kept. Older entries are dropped, so the
+ * all-time figures are a rolling window rather than a lifetime total.
+ *
+ * The key is named after token plans for backward compatibility; the log has
+ * covered every request since usage tracking was generalised.
+ */
+export const MAX_CONSUMPTION_RECORDS = 1000;
 
 // ── TokenPlan Class ──────────────────────────────────
 
@@ -62,6 +84,15 @@ export class TokenPlan {
 
   private readonly context: vscode.ExtensionContext;
   private readonly presets: ProviderPreset[];
+
+  /**
+   * Fired once a usage record is persisted, so the status bar can refresh
+   * without polling.
+   */
+  private readonly onDidRecordUsageEmitter =
+    new vscode.EventEmitter<TokenConsumption>();
+  readonly onDidRecordUsage: vscode.Event<TokenConsumption> =
+    this.onDidRecordUsageEmitter.event;
 
   private constructor(
     context: vscode.ExtensionContext,
@@ -85,9 +116,15 @@ export class TokenPlan {
     return TokenPlan.store.get();
   }
 
-  /** 重置实例（仅测试用） */
+  /** 重置实例并释放资源（测试与扩展停用时使用） */
   static resetInstance(): void {
+    TokenPlan.store.getOptional()?.dispose();
     TokenPlan.store.reset();
+  }
+
+  /** Release resources (event emitter). */
+  dispose(): void {
+    this.onDidRecordUsageEmitter.dispose();
   }
 
   // ── 服务商预设 ───────────────────────────────────
@@ -192,7 +229,7 @@ export class TokenPlan {
    * Kept so read-modify-write cycles do not re-materialize the whole array
    * on every recorded response.
    */
-  private consumptionCache: TokenPlanConsumption[] | undefined;
+  private consumptionCache: TokenConsumption[] | undefined;
 
   /**
    * Serializes consumption writes.
@@ -204,10 +241,10 @@ export class TokenPlan {
    */
   private consumptionWriteChain: Promise<void> = Promise.resolve();
 
-  private getConsumptionRecords(): TokenPlanConsumption[] {
+  private getConsumptionRecords(): TokenConsumption[] {
     if (!this.consumptionCache) {
       this.consumptionCache = [
-        ...this.context.globalState.get<TokenPlanConsumption[]>(
+        ...this.context.globalState.get<TokenConsumption[]>(
           CONSUMPTION_STORAGE_KEY,
           [],
         ),
@@ -216,7 +253,7 @@ export class TokenPlan {
     return this.consumptionCache;
   }
 
-  async recordConsumption(consumption: TokenPlanConsumption): Promise<void> {
+  async recordConsumption(consumption: TokenConsumption): Promise<void> {
     const records = this.getConsumptionRecords();
     records.push(consumption);
     if (records.length > MAX_CONSUMPTION_RECORDS) {
@@ -236,14 +273,30 @@ export class TokenPlan {
       );
 
     await this.consumptionWriteChain;
+    this.onDidRecordUsageEmitter.fire(consumption);
     logger.plan.debug(
-      `Recorded consumption: ${consumption.totalTokens} tokens for plan ${consumption.planId}`,
+      `Recorded consumption: ${consumption.totalTokens} tokens for ${consumption.planId ?? "direct API key"}`,
     );
   }
 
-  getConsumptions(): TokenPlanConsumption[] {
+  getConsumptions(): TokenConsumption[] {
     // Copy so callers cannot mutate the cached log.
     return [...this.getConsumptionRecords()];
+  }
+
+  /** Drop every recorded usage entry, persisting the empty log. */
+  async clearConsumptions(): Promise<void> {
+    const dropped = this.getConsumptionRecords().length;
+    this.consumptionCache = [];
+
+    this.consumptionWriteChain = this.consumptionWriteChain
+      .catch(() => {
+        // Keep the chain alive after a failed write.
+      })
+      .then(() => this.context.globalState.update(CONSUMPTION_STORAGE_KEY, []));
+
+    await this.consumptionWriteChain;
+    logger.plan.info(`Cleared ${dropped} usage record(s)`);
   }
 
   // ── 运行时查询（chat-provider 使用） ─────────────

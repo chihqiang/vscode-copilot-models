@@ -180,6 +180,7 @@ Available in VS Code settings (search `copilot-models`):
 | `maxImageSize` | Max image size in bytes (0 = no limit) | `20971520` (20MB) |
 | `timeoutMs` | Request timeout in milliseconds | `60000` |
 | `maxRetries` | Maximum retry attempts | `1` |
+| `showStatusBar` | Show today's token usage in the status bar | `true` |
 | `debugMode` | Log level: `minimal / metadata / verbose` | `minimal` |
 
 ### Vision Proxy Settings
@@ -199,6 +200,22 @@ Available in VS Code settings (search `copilot-models`):
 > automatically uses its own `maxOutputTokens` as the API's `max_tokens`
 > parameter. See the "Output" column in the Supported Models tables above.
 
+## Token Usage
+
+Every completed request records its token usage locally — including requests
+that use a directly configured API key, not only token plan traffic.
+
+- The status bar shows today's tokens and request count, for example
+  `12.3K tok · 18 req`. Click it to open the report. The item stays hidden
+  until the first request is recorded; set `copilot-models.showStatusBar` to
+  `false` to hide it permanently.
+- Run `Copilot Models: Show Token Usage` for a breakdown by plan and by model.
+- Run `Copilot Models: Clear Token Usage` to drop the recorded history.
+
+> **Note:** Only the most recent 1000 requests are kept, so the "all time"
+> figures are a rolling window rather than a lifetime total. Usage is stored in
+> VS Code global state and never leaves your machine.
+
 ## Commands
 
 | Command | Description |
@@ -210,6 +227,8 @@ Available in VS Code settings (search `copilot-models`):
 | `Copilot Models: Clear Log` | Clear logs |
 | `Copilot Models: Refresh Models` | Refresh model list |
 | `Copilot Models: Show Latency Stats` | Show provider latency statistics |
+| `Copilot Models: Show Token Usage` | Show usage by plan and model |
+| `Copilot Models: Clear Token Usage` | Clear all recorded token usage |
 | `Copilot Models: Set Token Plan` | Configure prepaid token plan |
 | `Copilot Models: Clear Token Plan` | Remove configured token plan |
 | `Copilot Models: Set Vision Model` | Configure vision image proxy |

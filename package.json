@@ -112,6 +112,16 @@
         "description": "Show model routing latency statistics"
       },
       {
+        "command": "copilot-models.showTokenUsage",
+        "title": "Show Token Usage",
+        "description": "Show recorded token usage, grouped by plan and model"
+      },
+      {
+        "command": "copilot-models.clearTokenUsage",
+        "title": "Clear Token Usage",
+        "description": "Clear all recorded token usage"
+      },
+      {
         "command": "copilot-models.setVisionModel",
         "title": "Set Vision Model",
         "description": "Configure vision proxy model for image description"
@@ -162,6 +172,11 @@
           "minimum": 0,
           "maximum": 104857600,
           "description": "Maximum image upload size in bytes (default: 20MB, 0 = no limit)"
+        },
+        "copilot-models.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show today's token usage in the status bar. The item stays hidden until the first request is recorded (default: true)"
         },
         "copilot-models.routingStrategy": {
           "type": "string",

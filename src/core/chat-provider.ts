@@ -1003,33 +1003,35 @@ export abstract class BaseChatProvider
         visionResolution.messages,
         options,
       );
-      const usageCallback = prepared.planOverride
-        ? (usage: {
-            prompt_tokens: number;
-            completion_tokens: number;
-            total_tokens: number;
-          }) => {
-            const rate = prepared.planOverride!.consumptionRate ?? 1;
-            // `recordConsumption` writes to globalState asynchronously. Not
-            // awaiting it is intentional (it must not block or fail the chat
-            // response), but the rejection still needs a handler.
-            TokenPlan.getInstance()
-              .recordConsumption({
-                planId: prepared.planOverride!.planId,
-                modelId: modelInfo.id,
-                promptTokens: Math.round(usage.prompt_tokens * rate),
-                completionTokens: Math.round(usage.completion_tokens * rate),
-                totalTokens: Math.round(usage.total_tokens * rate),
-                timestamp: Date.now(),
-              })
-              .catch((error: unknown) => {
-                logger.plan.error(
-                  `Failed to record token plan consumption for "${prepared.planOverride!.planId}":`,
-                  error,
-                );
-              });
-          }
-        : undefined;
+      // Usage is recorded for every request, not only token plan ones, so the
+      // status bar and the usage report cover direct API-key traffic too.
+      const usageCallback = (usage: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+      }) => {
+        const plan = prepared.planOverride;
+        const rate = plan?.consumptionRate ?? 1;
+        // `recordConsumption` writes to globalState asynchronously. Not
+        // awaiting it is intentional (it must not block or fail the chat
+        // response), but the rejection still needs a handler.
+        TokenPlan.getInstance()
+          .recordConsumption({
+            ...(plan ? { planId: plan.planId } : {}),
+            providerId: this.providerId,
+            modelId: modelInfo.id,
+            promptTokens: Math.round(usage.prompt_tokens * rate),
+            completionTokens: Math.round(usage.completion_tokens * rate),
+            totalTokens: Math.round(usage.total_tokens * rate),
+            timestamp: Date.now(),
+          })
+          .catch((error: unknown) => {
+            logger.plan.error(
+              `Failed to record usage for model "${modelInfo.id}":`,
+              error,
+            );
+          });
+      };
       await this.sendStreamRequest(
         prepared.request,
         progress,

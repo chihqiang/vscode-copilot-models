@@ -3,7 +3,15 @@
  */
 
 import vscode from "vscode";
-import { logger, type ModelRouter } from "../core";
+import {
+  logger,
+  MAX_CONSUMPTION_RECORDS,
+  TokenPlan,
+  buildUsageSummary,
+  formatUsageReport,
+  type ModelRouter,
+} from "../core";
+import { confirmAction } from "../wizard/utils";
 import {
   openSetApiKeyWizard,
   openClearApiKeyWizard,
@@ -128,6 +136,44 @@ export function registerAllCommands(
       { modal: true },
     );
   });
+
+  // ── Token Usage ───────────────────────────────────
+
+  registerCommand(
+    context,
+    "copilot-models.showTokenUsage",
+    safeAsync("showTokenUsage", async () => {
+      logger.core.info("showTokenUsage command invoked");
+      const records = TokenPlan.getInstance().getConsumptions();
+      if (records.length === 0) {
+        vscode.window.showInformationMessage("No token usage recorded yet");
+        return;
+      }
+
+      const summary = buildUsageSummary(records, Date.now());
+      await vscode.window.showInformationMessage(
+        formatUsageReport(summary, MAX_CONSUMPTION_RECORDS),
+        { modal: true },
+      );
+    }),
+  );
+
+  registerCommand(
+    context,
+    "copilot-models.clearTokenUsage",
+    safeAsync("clearTokenUsage", async () => {
+      const confirmed = await confirmAction(
+        "Clear all recorded token usage?",
+        "Clear",
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      await TokenPlan.getInstance().clearConsumptions();
+      vscode.window.showInformationMessage("Token usage cleared");
+    }),
+  );
 
   // ── Vision Model ─────────────────────────────────
 

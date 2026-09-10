@@ -19,6 +19,7 @@ import { Tokenizer } from "./core/tokenizer";
 import { builtInProviders } from "./providers";
 import { builtInPresets } from "./plans";
 import { registerAllCommands } from "./commands";
+import { UsageStatusBar } from "./ui/status-bar";
 
 class CopilotModelsExtension {
   private modelRouter: ModelRouter | undefined;
@@ -60,6 +61,9 @@ class CopilotModelsExtension {
       );
 
       registerAllCommands(context, this.modelRouter);
+
+      // Status bar showing today's token usage; clicking it opens the report.
+      context.subscriptions.push(new UsageStatusBar(TokenPlan.getInstance()));
 
       context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((e) => {
@@ -123,6 +127,8 @@ class CopilotModelsExtension {
         ProviderModels.getInstance().clear();
       }
       Tokenizer.getInstance().dispose();
+      // Disposes the usage event emitter held by the status bar.
+      TokenPlan.resetInstance();
     } catch (error) {
       logger.core.error("Failed to deactivate cleanly:", error);
     } finally {

@@ -158,6 +158,7 @@ API 密钥保存在 VS Code SecretStorage 中。
 | `maxImageSize` | 图片输入最大字节数（0 = 不限制） | `20971520` (20MB) |
 | `timeoutMs` | API 请求超时（毫秒） | `60000` |
 | `maxRetries` | 最大重试次数 | `1` |
+| `showStatusBar` | 在状态栏显示今日 token 消耗 | `true` |
 | `debugMode` | 日志级别：`minimal / metadata / verbose` | `minimal` |
 
 ### 视觉代理设置
@@ -176,6 +177,20 @@ API 密钥保存在 VS Code SecretStorage 中。
 > 每个模型自动使用其自身最大输出上限（`maxOutputTokens`）作为 API 的
 > `max_tokens` 参数。详见上方"支持的模型"表格中的"输出"列。
 
+## Token 消耗统计
+
+每个完成的请求都会在本地记录 token 消耗——包括直连 API 密钥的请求，
+而不只是走令牌套餐的流量。
+
+- 状态栏显示今日 token 数与请求数，例如 `12.3K tok · 18 req`，点击即可打开报表。
+  在记录到第一个请求之前该项保持隐藏；将 `copilot-models.showStatusBar`
+  设为 `false` 可永久隐藏。
+- 运行 `Copilot Models: Show Token Usage` 查看按套餐和按模型的明细。
+- 运行 `Copilot Models: Clear Token Usage` 清空已记录的历史。
+
+> **注意：** 只保留最近 1000 条请求记录，更早的会被丢弃，因此“历史总计”
+> 是滚动窗口而非生命周期总量。数据保存在 VS Code 全局状态中，不会离开本机。
+
 ## 命令
 
 | 命令 | 说明 |
@@ -187,6 +202,8 @@ API 密钥保存在 VS Code SecretStorage 中。
 | `Copilot Models: Clear Log` | 清除日志 |
 | `Copilot Models: Refresh Models` | 刷新模型列表 |
 | `Copilot Models: Show Latency Stats` | 查看 Provider 延迟统计 |
+| `Copilot Models: Show Token Usage` | 查看按套餐/模型统计的 token 消耗 |
+| `Copilot Models: Clear Token Usage` | 清空所有已记录的 token 消耗 |
 | `Copilot Models: Set Token Plan` | 配置预付费令牌套餐 |
 | `Copilot Models: Clear Token Plan` | 删除已配置的令牌套餐 |
 | `Copilot Models: Set Vision Model` | 配置视觉代理用于图片描述 |
