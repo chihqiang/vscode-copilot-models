@@ -220,7 +220,7 @@ that use a directly configured API key, not only token plan traffic.
 
 The usage report also shows your **DeepSeek** account balance, queried from the
 official `GET /user/balance` endpoint. It refreshes each time you run the
-command.
+command, and is shown even before any request has been recorded.
 
 ```text
 Balance:

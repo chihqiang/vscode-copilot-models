@@ -12,12 +12,12 @@ import { CONFIG_SECTION } from "../core/models";
 import type { TokenConsumption, TokenPlan } from "../core/token-plan";
 import { SHOW_STATUS_BAR_SETTING, UsageStatusBar } from "../ui/status-bar";
 
-/** Stand-in for TokenPlan with a controllable usage event. */
+/** Stand-in for TokenPlan with a controllable usage-change event. */
 class FakeTokenPlan {
-  private readonly emitter = new vscode.EventEmitter<TokenConsumption>();
+  private readonly emitter = new vscode.EventEmitter<void>();
   private records: TokenConsumption[] = [];
 
-  readonly onDidRecordUsage = this.emitter.event;
+  readonly onDidChangeUsage = this.emitter.event;
 
   getConsumptions(): TokenConsumption[] {
     return [...this.records];
@@ -26,7 +26,13 @@ class FakeTokenPlan {
   /** Append a record and notify listeners, as a real request would. */
   add(record: TokenConsumption): void {
     this.records.push(record);
-    this.emitter.fire(record);
+    this.emitter.fire();
+  }
+
+  /** Mirror `TokenPlan.clearConsumptions`, including its notification. */
+  clear(): void {
+    this.records = [];
+    this.emitter.fire();
   }
 
   asTokenPlan(): TokenPlan {
@@ -128,6 +134,19 @@ suite("UsageStatusBar Test Suite", () => {
       statusBar.isVisible,
       true,
       "re-enabling the setting must bring the item back",
+    );
+  });
+
+  test("hides again after the usage log is cleared", () => {
+    plan.add(createRecord(Date.now(), 1000));
+    assert.strictEqual(statusBar.isVisible, true);
+
+    plan.clear();
+
+    assert.strictEqual(
+      statusBar.isVisible,
+      false,
+      "clearing the log must not leave stale figures on screen",
     );
   });
 });

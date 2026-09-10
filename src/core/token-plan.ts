@@ -86,13 +86,12 @@ export class TokenPlan {
   private readonly presets: ProviderPreset[];
 
   /**
-   * Fired once a usage record is persisted, so the status bar can refresh
-   * without polling.
+   * Fired whenever the usage log changes — a record was persisted, or the log
+   * was cleared. Lets the status bar refresh without polling.
    */
-  private readonly onDidRecordUsageEmitter =
-    new vscode.EventEmitter<TokenConsumption>();
-  readonly onDidRecordUsage: vscode.Event<TokenConsumption> =
-    this.onDidRecordUsageEmitter.event;
+  private readonly onDidChangeUsageEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeUsage: vscode.Event<void> =
+    this.onDidChangeUsageEmitter.event;
 
   private constructor(
     context: vscode.ExtensionContext,
@@ -124,7 +123,7 @@ export class TokenPlan {
 
   /** Release resources (event emitter). */
   dispose(): void {
-    this.onDidRecordUsageEmitter.dispose();
+    this.onDidChangeUsageEmitter.dispose();
   }
 
   // ── 服务商预设 ───────────────────────────────────
@@ -273,7 +272,7 @@ export class TokenPlan {
       );
 
     await this.consumptionWriteChain;
-    this.onDidRecordUsageEmitter.fire(consumption);
+    this.onDidChangeUsageEmitter.fire();
     logger.plan.debug(
       `Recorded consumption: ${consumption.totalTokens} tokens for ${consumption.planId ?? "direct API key"}`,
     );
@@ -296,6 +295,8 @@ export class TokenPlan {
       .then(() => this.context.globalState.update(CONSUMPTION_STORAGE_KEY, []));
 
     await this.consumptionWriteChain;
+    // Must notify: the status bar still shows the pre-clear figures otherwise.
+    this.onDidChangeUsageEmitter.fire();
     logger.plan.info(`Cleared ${dropped} usage record(s)`);
   }
 

@@ -364,11 +364,11 @@ suite("TokenPlan Test Suite", () => {
       assert.strictEqual(records[0].providerId, "deepseek");
     });
 
-    test("emits onDidRecordUsage once the record is persisted", async () => {
-      const received: TokenConsumption[] = [];
-      const subscription = plan.onDidRecordUsage((entry) =>
-        received.push(entry),
-      );
+    test("emits onDidChangeUsage once the record is persisted", async () => {
+      let changes = 0;
+      const subscription = plan.onDidChangeUsage(() => {
+        changes++;
+      });
 
       try {
         await plan.recordConsumption({
@@ -383,8 +383,31 @@ suite("TokenPlan Test Suite", () => {
         subscription.dispose();
       }
 
-      assert.strictEqual(received.length, 1);
-      assert.strictEqual(received[0].totalTokens, 3);
+      assert.strictEqual(changes, 1);
+    });
+
+    test("emits onDidChangeUsage when the log is cleared", async () => {
+      // Without this the status bar keeps showing the pre-clear figures.
+      let changes = 0;
+      const subscription = plan.onDidChangeUsage(() => {
+        changes++;
+      });
+
+      try {
+        await plan.recordConsumption({
+          planId: "p1",
+          modelId: "m1",
+          promptTokens: 1,
+          completionTokens: 1,
+          totalTokens: 2,
+          timestamp: 1,
+        });
+        await plan.clearConsumptions();
+      } finally {
+        subscription.dispose();
+      }
+
+      assert.strictEqual(changes, 2, "one for the record, one for the clear");
     });
 
     test("clearConsumptions drops every record", async () => {

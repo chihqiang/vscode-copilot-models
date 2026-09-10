@@ -282,4 +282,28 @@ suite("formatUsageReport Test Suite", () => {
     assert.ok(report.includes("Balance:"));
     assert.ok(report.includes("deepseek: ¥110.00"));
   });
+
+  test("renders a report with no usage at all, so a fresh install can see its balance", () => {
+    const report = formatUsageReport(buildUsageSummary([], now), {
+      balances: [
+        {
+          providerId: "deepseek",
+          balance: {
+            providerId: "deepseek",
+            isAvailable: true,
+            entries: [{ currency: "CNY", totalBalance: "42.00" }],
+            fetchedAt: now,
+          },
+        },
+      ],
+    });
+
+    assert.ok(report.includes("Today: 0 tok · 0 req"));
+    assert.ok(report.includes("deepseek: ¥42.00"));
+    assert.ok(
+      !report.includes("By plan:"),
+      "no usage means no plan or model sections",
+    );
+    assert.ok(!report.includes("Window:"));
+  });
 });

@@ -9,6 +9,7 @@ import {
   TokenPlan,
   buildUsageSummary,
   collectProviderBalances,
+  formatBalanceSection,
   formatUsageReport,
   type ModelRouter,
 } from "../core";
@@ -146,15 +147,19 @@ export function registerAllCommands(
     safeAsync("showTokenUsage", async () => {
       logger.core.info("showTokenUsage command invoked");
       const records = TokenPlan.getInstance().getConsumptions();
-      if (records.length === 0) {
+      // Balance is best-effort: providers without a balance API are skipped and
+      // failures degrade to an "unavailable" line inside the report.
+      const balances = await collectProviderBalances();
+      const hasReportableBalance = formatBalanceSection(balances).length > 0;
+
+      // A fresh install has no usage yet, but the balance is still worth
+      // showing — configure the key and this is the first thing to check.
+      if (records.length === 0 && !hasReportableBalance) {
         vscode.window.showInformationMessage("No token usage recorded yet");
         return;
       }
 
       const summary = buildUsageSummary(records, Date.now());
-      // Balance is best-effort: providers without a balance API are skipped and
-      // failures degrade to an "unavailable" line inside the report.
-      const balances = await collectProviderBalances();
       await vscode.window.showInformationMessage(
         formatUsageReport(summary, {
           retentionLimit: MAX_CONSUMPTION_RECORDS,

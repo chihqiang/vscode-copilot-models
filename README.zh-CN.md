@@ -194,7 +194,7 @@ API 密钥保存在 VS Code SecretStorage 中。
 ### 账户余额
 
 报表还会显示 **DeepSeek** 账户余额，来自官方 `GET /user/balance` 接口，
-每次运行命令时刷新。
+每次运行命令时刷新；即使还没产生任何请求记录也会显示。
 
 ```text
 Balance:

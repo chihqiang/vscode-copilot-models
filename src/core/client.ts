@@ -16,12 +16,13 @@
 import type { CancellationToken } from "vscode";
 import { logger } from "./logger";
 import { CircuitBreaker } from "./circuit-breaker";
-import { calculateDelay, delay } from "./retry";
+import { calculateDelay, delay, parseRetryAfter } from "./retry";
 import {
   createApiError,
   classifyError,
   isRetryableError,
   CancelledError,
+  RateLimitError,
   TimeoutError,
 } from "./errors";
 import { sanitizeForLog, sanitizeUrl } from "./sanitize";
@@ -167,6 +168,12 @@ export interface ApiClientConfig {
 // ── HTTP Utilities ─────────────────────────────────────
 
 /**
+ * Upper bound on a server-requested retry delay, so an implausible or
+ * erroneous `Retry-After` cannot leave the request hanging for long.
+ */
+const MAX_RETRY_AFTER_MS = 60_000;
+
+/**
  * Join a base URL and an API path without producing a double slash.
  *
  * A `baseUrl` entered with a trailing slash (e.g. `https://host/v1/`) used to
@@ -245,7 +252,20 @@ async function handleResponseError(
     (parsed.message as string) ||
     errorBody ||
     response.statusText;
-  throw createApiError(response.status, providerName, message, errorBody);
+
+  // Surfaced on RateLimitError and honoured by the retry backoff. Read
+  // defensively: a Response stand-in may not carry headers.
+  const retryAfterMs = parseRetryAfter(
+    response.headers?.get?.("retry-after") ?? null,
+  );
+
+  throw createApiError(
+    response.status,
+    providerName,
+    message,
+    errorBody,
+    retryAfterMs,
+  );
 }
 
 // ── API Client Implementation ───────────────────────────
@@ -398,12 +418,21 @@ class ApiClientImpl implements IApiClient {
     const { providerName, baseUrl, apiKey, timeoutMs, maxRetries, apiPath } =
       this;
 
+    /** Server-requested delay carried over from the previous failed attempt. */
+    let serverRetryAfterMs: number | undefined;
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         if (attempt > 0) {
-          const backoff = calculateDelay(attempt - 1);
+          // Prefer the server's own guidance (Retry-After) over our backoff.
+          // Capped so an implausible header cannot stall the request for a
+          // long time — beyond that, failing fast beats waiting.
+          const backoff =
+            serverRetryAfterMs === undefined
+              ? calculateDelay(attempt - 1)
+              : Math.min(serverRetryAfterMs, MAX_RETRY_AFTER_MS);
           logger.api.warn(
-            `[${providerName}] Retry ${attempt}/${maxRetries} after ${backoff}ms`,
+            `[${providerName}] Retry ${attempt}/${maxRetries} after ${backoff}ms${serverRetryAfterMs !== undefined ? " (server Retry-After)" : ""}`,
           );
           // Pass the signal so a user cancellation aborts the backoff
           // immediately instead of waiting for the full delay.
@@ -442,6 +471,12 @@ class ApiClientImpl implements IApiClient {
           streamController,
         );
       } catch (error) {
+        if (
+          error instanceof RateLimitError &&
+          error.retryAfterMs !== undefined
+        ) {
+          serverRetryAfterMs = error.retryAfterMs;
+        }
         if (!isRetryableError(error) || attempt >= maxRetries) {
           throw error;
         }

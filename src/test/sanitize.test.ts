@@ -33,6 +33,62 @@ suite("Sanitize - object key redaction", () => {
     assert.strictEqual(out.headers["x-model"], "ok");
   });
 
+  test("keeps token counts and limits readable", () => {
+    // Redacting these made the debug log for a token-usage feature useless:
+    // the request body showed max_tokens as [REDACTED] and every usage total
+    // disappeared.
+    for (const key of [
+      "max_tokens",
+      "maxTokens",
+      "prompt_tokens",
+      "completion_tokens",
+      "total_tokens",
+      "promptTokens",
+      "completionTokens",
+      "totalTokens",
+      "maxInputTokens",
+      "maxOutputTokens",
+      "reasoning_tokens",
+    ]) {
+      assert.strictEqual(
+        isSensitiveKey(key),
+        false,
+        `${key} holds a count, not a secret`,
+      );
+    }
+  });
+
+  test("still redacts real token secrets", () => {
+    // The allow-list must not widen into anything that can hold a credential.
+    for (const key of [
+      "access_token",
+      "refresh_token",
+      "authToken",
+      "bearerToken",
+      "apiToken",
+      "id_token",
+      "sessionToken",
+      "token",
+    ]) {
+      assert.strictEqual(isSensitiveKey(key), true, `${key} must be redacted`);
+    }
+  });
+
+  test("does not leak counts in a sanitized object", () => {
+    const out = sanitizeForLog({
+      model: "deepseek-flash",
+      max_tokens: 64000,
+      promptTokens: 900,
+      totalTokens: 1500,
+      apiKey: "sk-secret",
+    }) as Record<string, unknown>;
+
+    assert.strictEqual(out.max_tokens, 64000);
+    assert.strictEqual(out.promptTokens, 900);
+    assert.strictEqual(out.totalTokens, 1500);
+    assert.strictEqual(out.apiKey, "[REDACTED]");
+  });
+
   test("redacts keys with various spellings", () => {
     assert.ok(isSensitiveKey("apiKey"));
     assert.ok(isSensitiveKey("api_key"));

@@ -37,7 +37,9 @@ export class UsageStatusBar implements vscode.Disposable {
 
     this.disposables.push(
       this.item,
-      tokenPlan.onDidRecordUsage(() => this.refresh()),
+      // Fires on both recorded usage and a cleared log, so the item can never
+      // show stale figures.
+      tokenPlan.onDidChangeUsage(() => this.refresh()),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (
           e.affectsConfiguration(`${CONFIG_SECTION}.${SHOW_STATUS_BAR_SETTING}`)

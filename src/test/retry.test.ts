@@ -5,7 +5,7 @@ import {
   CircuitBreakerError,
   CircuitState,
 } from "../core/circuit-breaker";
-import { delay, calculateDelay } from "../core/retry";
+import { delay, calculateDelay, parseRetryAfter } from "../core/retry";
 
 const TEST_PROVIDER = "test-provider";
 
@@ -173,6 +173,56 @@ suite("calculateDelay Test Suite", () => {
     );
     const unique = new Set(delays);
     assert.ok(unique.size > 1, "jitter should produce varying delays");
+  });
+});
+
+suite("parseRetryAfter Test Suite", () => {
+  test("parses the delay-seconds form", () => {
+    assert.strictEqual(parseRetryAfter("5"), 5_000);
+    assert.strictEqual(parseRetryAfter("0"), 0);
+    assert.strictEqual(parseRetryAfter(" 12 "), 12_000);
+  });
+
+  test("parses the HTTP-date form relative to now", () => {
+    const now = Date.parse("2026-09-10T00:00:00Z");
+    const value = new Date(now + 30_000).toUTCString();
+
+    assert.strictEqual(parseRetryAfter(value, now), 30_000);
+  });
+
+  test("treats a past date as retry-now rather than negative", () => {
+    const now = Date.parse("2026-09-10T00:00:00Z");
+    const value = new Date(now - 60_000).toUTCString();
+
+    assert.strictEqual(parseRetryAfter(value, now), 0);
+  });
+
+  test("returns undefined for absent or unparseable values", () => {
+    assert.strictEqual(parseRetryAfter(null), undefined);
+    assert.strictEqual(parseRetryAfter(undefined), undefined);
+    assert.strictEqual(parseRetryAfter(""), undefined);
+    assert.strictEqual(parseRetryAfter("   "), undefined);
+    assert.strictEqual(parseRetryAfter("soon"), undefined);
+    assert.strictEqual(parseRetryAfter("-5"), undefined);
+  });
+
+  test("rejects values Date.parse would leniently accept", () => {
+    // Date.parse reads "-5" as a year and "0.5" as a date. Treating those as
+    // valid would turn a malformed header into "retry now", hammering a server
+    // that asked us to back off. Bare integers are NOT in this list: the spec
+    // defines delay-seconds as any non-negative integer, so "2026" legitimately
+    // means 2026 seconds (the caller caps it).
+    for (const value of ["-5", "0.5", "null", "1e3", "+7"]) {
+      assert.strictEqual(
+        parseRetryAfter(value),
+        undefined,
+        `"${value}" is not a valid Retry-After`,
+      );
+    }
+  });
+
+  test("accepts a large delay-seconds value, leaving capping to the caller", () => {
+    assert.strictEqual(parseRetryAfter("2026"), 2_026_000);
   });
 });
 

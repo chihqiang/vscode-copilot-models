@@ -40,7 +40,40 @@ export function sanitizeForLog(obj: unknown): unknown {
   return result;
 }
 
+/**
+ * Keys that contain "token" but hold a count or limit, not a secret.
+ *
+ * The `/token/i` pattern below is deliberately broad so unknown keys fail safe
+ * (they get redacted). These exact names are known-safe numbers, and redacting
+ * them defeated the debug logging of a token-usage feature: the request body
+ * logged `max_tokens` as `[REDACTED]` and every usage total vanished.
+ *
+ * Compared after lowercasing and stripping non-alphanumerics, so `max_tokens`,
+ * `maxTokens` and `max-tokens` all resolve to a single entry. Anything not
+ * listed here keeps the broad-pattern behaviour.
+ */
+const SAFE_TOKEN_COUNT_KEYS = new Set([
+  "maxtokens",
+  "prompttokens",
+  "completiontokens",
+  "totaltokens",
+  "inputtokens",
+  "outputtokens",
+  "reasoningtokens",
+  "cachedtokens",
+  "maxinputtokens",
+  "maxoutputtokens",
+  "tokencount",
+]);
+
+function normalizeKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 export function isSensitiveKey(key: string): boolean {
+  if (SAFE_TOKEN_COUNT_KEYS.has(normalizeKey(key))) {
+    return false;
+  }
   return SENSITIVE_PATTERNS.some((pattern) => pattern.test(key));
 }
 
