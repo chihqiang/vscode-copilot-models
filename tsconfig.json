@@ -1,10 +1,25 @@
 {
 	"compilerOptions": {
 		"module": "Node16",
-		"target": "ES2022",
+		/*
+		 * ES2024 is the floor, not a guess. Extension code executes in VS Code's
+		 * own Electron runtime, so `engines.vscode` — not the local Node — sets
+		 * the ceiling on usable APIs. VS Code 1.120 (the declared minimum) ships
+		 * Electron 39.8.8, which bundles Node v22.22.1; the current 1.137 ships
+		 * Node 24. ES2024 is therefore fully available at runtime, and this lib
+		 * is what unlocks it for type checking (Promise.withResolvers,
+		 * Object.groupBy, ...).
+		 *
+		 * Do NOT raise this to ES2025/ESNext: that lib declares APIs missing from
+		 * Node v22.22.1 (verified — `Promise.try` and `RegExp.escape` are
+		 * undefined there), so code would type-check and then throw on the
+		 * minimum supported VS Code. Re-check this pairing before raising
+		 * `engines.vscode`.
+		 */
+		"target": "ES2024",
 		"outDir": "out",
 		"lib": [
-			"ES2022","DOM"
+			"ES2024","DOM"
 		],
 		"types": ["node"] ,
 		"sourceMap": true,
