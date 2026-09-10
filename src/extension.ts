@@ -7,12 +7,18 @@
 
 import vscode from "vscode";
 import {
+  CONFIG_SECTION,
   Logger,
   IChatProvider,
   IProviderFactory,
+  ROUTER_VENDOR_ID,
   logger,
   ModelRouter,
   ProviderModels,
+  SETTING_DEBUG_MODE,
+  SETTING_FAILOVER_MODELS,
+  SETTING_ROUTING_STRATEGY,
+  settingKey,
 } from "./core";
 import { TokenPlan } from "./core/token-plan";
 import { Tokenizer } from "./core/tokenizer";
@@ -51,14 +57,11 @@ class CopilotModelsExtension {
       }
 
       const routerDisposable = vscode.lm.registerLanguageModelChatProvider(
-        "copilot-models-router",
+        ROUTER_VENDOR_ID,
         this.modelRouter,
       );
       context.subscriptions.push(routerDisposable);
-      this.registrationDisposables.set(
-        "copilot-models-router",
-        routerDisposable,
-      );
+      this.registrationDisposables.set(ROUTER_VENDOR_ID, routerDisposable);
 
       registerAllCommands(context, this.modelRouter);
 
@@ -67,11 +70,11 @@ class CopilotModelsExtension {
 
       context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((e) => {
-          if (!e.affectsConfiguration("copilot-models")) {
+          if (!e.affectsConfiguration(CONFIG_SECTION)) {
             return;
           }
 
-          if (e.affectsConfiguration("copilot-models.debugMode")) {
+          if (e.affectsConfiguration(settingKey(SETTING_DEBUG_MODE))) {
             logger.applyLogLevelFromConfig();
             logger.core.info(`Log level updated to: ${logger.level}`);
           }
@@ -79,8 +82,8 @@ class CopilotModelsExtension {
           // Invalidate routing config cache so failoverModels /
           // routingStrategy changes take effect immediately
           if (
-            e.affectsConfiguration("copilot-models.failoverModels") ||
-            e.affectsConfiguration("copilot-models.routingStrategy")
+            e.affectsConfiguration(settingKey(SETTING_FAILOVER_MODELS)) ||
+            e.affectsConfiguration(settingKey(SETTING_ROUTING_STRATEGY))
           ) {
             this.modelRouter?.invalidateConfigCache();
           }

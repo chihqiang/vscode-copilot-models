@@ -115,11 +115,53 @@ async function promptToken(): Promise<string | undefined> {
   });
 }
 
-async function selectModels(
-  models: TokenPlanModel[],
-): Promise<TokenPlanModel[] | undefined> {
+/**
+ * Outcome of the model-selection step.
+ *
+ * A plain `undefined` used to mean both "cancelled" and "go back", so the
+ * confirmation's Go Back button cancelled the whole wizard and discarded the
+ * name, URL and token the user had already entered.
+ */
+type ModelSelection =
+  | { action: "confirm"; models: TokenPlanModel[] }
+  | { action: "back" }
+  | { action: "cancel" };
+
+/**
+ * Warn that the plan would cover no models.
+ *
+ * @param offerGoBack whether returning to the picker is useful. It is not when
+ *   the catalog is empty, since that would only re-open an empty list.
+ */
+async function confirmNoModels(
+  offerGoBack: boolean,
+): Promise<"back" | "save" | "cancel"> {
+  const buttons = offerGoBack ? ["Go Back", "Save Anyway"] : ["Save Anyway"];
+  const choice = await vscode.window.showWarningMessage(
+    offerGoBack
+      ? "No models selected. The plan will cover no models."
+      : "No models are available to select, so the plan would cover nothing.",
+    { modal: true },
+    ...buttons,
+    "Cancel",
+  );
+
+  if (choice === "Save Anyway") {
+    return "save";
+  }
+  if (choice === "Go Back") {
+    return "back";
+  }
+  return "cancel";
+}
+
+async function selectModels(models: TokenPlanModel[]): Promise<ModelSelection> {
   if (models.length === 0) {
-    return [];
+    return confirmNoModels(false).then((choice) =>
+      choice === "save"
+        ? { action: "confirm", models: [] }
+        : { action: "cancel" },
+    );
   }
 
   const items = models.map((m) => ({
@@ -134,30 +176,34 @@ async function selectModels(
     ignoreFocusOut: true,
   });
   if (!picked) {
-    return undefined;
+    return { action: "cancel" };
   }
 
   if (picked.length === 0) {
-    const confirm = await vscode.window.showWarningMessage(
-      "No models selected. The plan will cover no models. Continue?",
-      { modal: true },
-      "Go Back",
-      "Save Anyway",
-    );
-    if (confirm !== "Save Anyway") {
-      return undefined;
+    const choice = await confirmNoModels(true);
+    if (choice === "cancel") {
+      return { action: "cancel" };
     }
+    if (choice === "back") {
+      return { action: "back" };
+    }
+    return { action: "confirm", models: [] };
   }
 
-  return models.filter((m) => picked.some((p) => p.label === m.id));
+  return {
+    action: "confirm",
+    models: models.filter((m) => picked.some((p) => p.label === m.id)),
+  };
 }
 
-async function promptEditModelsManually(): Promise<
-  TokenPlanModel[] | undefined
-> {
+async function promptEditModelsManually(): Promise<ModelSelection> {
   const allModels = ProviderModels.getInstance().getAllModels();
   if (allModels.length === 0) {
-    return [];
+    // Nothing to choose from, so Go Back would only re-open an empty picker.
+    const choice = await confirmNoModels(false);
+    return choice === "save"
+      ? { action: "confirm", models: [] }
+      : { action: "cancel" };
   }
   const items = allModels.map((m) => ({
     label: m.id,
@@ -171,20 +217,22 @@ async function promptEditModelsManually(): Promise<
     ignoreFocusOut: true,
   });
   if (!picked) {
-    return undefined;
+    return { action: "cancel" };
   }
   if (picked.length === 0) {
-    const confirm = await vscode.window.showWarningMessage(
-      "No models selected. The plan will cover no models. Continue?",
-      { modal: true },
-      "Go Back",
-      "Save Anyway",
-    );
-    if (confirm !== "Save Anyway") {
-      return undefined;
+    const choice = await confirmNoModels(true);
+    if (choice === "cancel") {
+      return { action: "cancel" };
     }
+    if (choice === "back") {
+      return { action: "back" };
+    }
+    return { action: "confirm", models: [] };
   }
-  return picked.map((p) => ({ id: p.label }));
+  return {
+    action: "confirm",
+    models: picked.map((p) => ({ id: p.label })),
+  };
 }
 
 // ── Wizards ──────────────────────────────────────────
@@ -231,15 +279,23 @@ export async function openSetTokenPlanWizard(): Promise<void> {
 
   // Step 4: Models
   let selectedModels: TokenPlanModel[] | undefined;
+  for (;;) {
+    const selection =
+      detectedPreset && detectedPreset.models.length > 0
+        ? await selectModels(detectedPreset.models)
+        : await promptEditModelsManually();
 
-  if (detectedPreset && detectedPreset.models.length > 0) {
-    selectedModels = await selectModels(detectedPreset.models);
-  } else {
-    selectedModels = await promptEditModelsManually();
-  }
-  if (selectedModels === undefined) {
-    logger.plan.info("Wizard cancelled at model selection step");
-    return;
+    if (selection.action === "cancel") {
+      logger.plan.info("Wizard cancelled at model selection step");
+      return;
+    }
+    if (selection.action === "back") {
+      // "Go Back" in the confirmation returns to this step, so re-prompt
+      // rather than discarding the name, URL and token already collected.
+      continue;
+    }
+    selectedModels = selection.models;
+    break;
   }
 
   // Step 5: Save
@@ -255,8 +311,7 @@ export async function openSetTokenPlanWizard(): Promise<void> {
     updatedAt: Date.now(),
   };
 
-  await tokenPlan.storeToken(planId, token);
-  await tokenPlan.storePlan(plan);
+  await tokenPlan.storePlanForEndpoint(plan, token);
 
   logger.plan.info(
     `Token plan saved: "${plan.planName}" (${plan.models.length} models)`,

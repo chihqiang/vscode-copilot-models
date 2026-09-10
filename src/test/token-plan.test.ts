@@ -1,5 +1,9 @@
 import * as assert from "assert";
-import { TokenPlan, type TokenConsumption } from "../core/token-plan";
+import {
+  TokenPlan,
+  type TokenConsumption,
+  type TokenPlanConfig,
+} from "../core/token-plan";
 import { builtInPresets } from "../plans";
 
 function createMockContext(): Record<string, unknown> {
@@ -130,21 +134,145 @@ suite("TokenPlan Test Suite", () => {
   // ── generatePlanId ───────────────────────────────
 
   suite("generatePlanId", () => {
-    test("generates id with hostname prefix", () => {
-      const id = plan.generatePlanId("https://api.deepseek.com");
-      assert.ok(id.startsWith("plan-api-deepseek-com-"));
+    test("includes the endpoint host and path", () => {
+      assert.strictEqual(
+        plan.generatePlanId("https://api.deepseek.com/v1"),
+        "plan-api-deepseek-com-v1",
+      );
     });
 
-    test("generates unique ids", async () => {
-      const id1 = plan.generatePlanId("https://example.com");
-      await new Promise((r) => setTimeout(r, 5));
-      const id2 = plan.generatePlanId("https://example.com");
-      assert.notStrictEqual(id1, id2);
+    test("is stable for the same endpoint", () => {
+      // Stability is the contract, not an incidental property. It is what makes
+      // re-configuring an endpoint replace its plan: with a timestamp in the id
+      // every configuration created a second plan, and the model lookup took
+      // the first one, so a replaced token never took effect.
+      assert.strictEqual(
+        plan.generatePlanId("https://example.com/v1"),
+        plan.generatePlanId("https://example.com/v1"),
+      );
+    });
+
+    test("treats a trailing slash and case as the same endpoint", () => {
+      assert.strictEqual(
+        plan.generatePlanId("https://Example.com/v1"),
+        plan.generatePlanId("https://example.com/v1/"),
+      );
+    });
+
+    test("keeps two endpoints on one host distinct", () => {
+      assert.notStrictEqual(
+        plan.generatePlanId("https://example.com/v1"),
+        plan.generatePlanId("https://example.com/v2"),
+      );
     });
 
     test("falls back for invalid URL", () => {
       const id = plan.generatePlanId("");
       assert.ok(id.startsWith("plan-"));
+    });
+  });
+
+  // ── storePlanForEndpoint ─────────────────────——
+
+  suite("storePlanForEndpoint", () => {
+    const ENDPOINT = "https://token-plan.example.com/v1";
+
+    function config(
+      planId: string,
+      planName: string,
+      baseUrl = ENDPOINT,
+    ): TokenPlanConfig {
+      return {
+        planId,
+        planName,
+        baseUrl,
+        providerId: "qwen",
+        models: [{ id: "qwen3.8-max" }],
+        createdAt: 1,
+        updatedAt: 1,
+      };
+    }
+
+    test("replaces the plan already configured for the endpoint", async () => {
+      // Re-running the wizard against the same URL is how a user swaps in a
+      // new token. It must not leave the previous plan in place.
+      const firstId = plan.generatePlanId(ENDPOINT);
+      await plan.storePlanForEndpoint(config(firstId, "First"), "old-token");
+
+      await plan.storePlanForEndpoint(config(firstId, "Second"), "new-token");
+
+      const plans = plan.getPlans();
+      assert.strictEqual(plans.length, 1);
+      assert.strictEqual(plans[0].planName, "Second");
+      assert.strictEqual(await plan.getToken(firstId), "new-token");
+    });
+
+    test("drops the superseded plan and its stored token", async () => {
+      // Plans written by earlier versions carry a timestamp-based id, so
+      // matching on planId alone would leave them behind.
+      const legacyId = "plan-token-plan-example-com-1700000000000";
+      await plan.storePlan(config(legacyId, "Legacy"));
+      await plan.storeToken(legacyId, "stale-token");
+
+      const newId = plan.generatePlanId(ENDPOINT);
+      await plan.storePlanForEndpoint(config(newId, "New"), "new-token");
+
+      assert.deepStrictEqual(
+        plan.getPlans().map((p) => p.planId),
+        [newId],
+      );
+      assert.strictEqual(
+        await plan.getToken(legacyId),
+        undefined,
+        "the superseded token must not be left in SecretStorage",
+      );
+    });
+
+    test("keeps plans for other endpoints", async () => {
+      const otherEndpoint = "https://other.example.com/v1";
+      await plan.storePlanForEndpoint(
+        config(plan.generatePlanId(otherEndpoint), "Other", otherEndpoint),
+        "other-token",
+      );
+      await plan.storePlanForEndpoint(
+        config(plan.generatePlanId(ENDPOINT), "Mine"),
+        "my-token",
+      );
+
+      assert.strictEqual(plan.getPlans().length, 2);
+    });
+  });
+
+  // ── resolvePlanOverride precedence ───────────────
+
+  suite("resolvePlanOverride precedence", () => {
+    test("prefers the most recently updated plan covering the model", async () => {
+      // Two endpoints can list the same model. Taking the first match meant an
+      // older plan shadowed a newer one regardless of when it was configured.
+      await plan.storePlan({
+        planId: "older",
+        planName: "Older",
+        baseUrl: "https://old.example.com/v1",
+        providerId: "qwen",
+        models: [{ id: "shared-model" }],
+        createdAt: 1,
+        updatedAt: 100,
+      });
+      await plan.storeToken("older", "old-token");
+      await plan.storePlan({
+        planId: "newer",
+        planName: "Newer",
+        baseUrl: "https://new.example.com/v1",
+        providerId: "qwen",
+        models: [{ id: "shared-model" }],
+        createdAt: 2,
+        updatedAt: 200,
+      });
+      await plan.storeToken("newer", "new-token");
+
+      const chosen = await plan.resolvePlanOverride("shared-model");
+      assert.strictEqual(chosen?.planId, "newer");
+      assert.strictEqual(chosen?.apiKey, "new-token");
     });
   });
 

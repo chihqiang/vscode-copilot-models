@@ -9,7 +9,17 @@ import vscode from "vscode";
 import { logger } from "./logger";
 import { isImageMime, toDataUrl } from "./bytes";
 import { CONFIG_SECTION } from "./models";
-import { getConfig, getMaxImageSize } from "./settings";
+import {
+  getConfig,
+  getMaxImageSize,
+  settingKey,
+  SETTING_VISION_MODEL,
+  SETTING_VISION_PROMPT,
+  SETTING_VISION_PROXY_API_MODEL_ID,
+  SETTING_VISION_PROXY_API_URL,
+  SETTING_VISION_PROXY_MAX_TOKENS,
+  SETTING_VISION_PROXY_TIMEOUT_MS,
+} from "./settings";
 import { sanitizeUrl } from "./sanitize";
 
 // ── Constants ───────────────────────────────────────────────
@@ -34,7 +44,7 @@ If there are multiple images:
 Return one concise factual description suitable for inserting into a text-only chat prompt. Include visible text, objects, UI elements, people, and relevant context. Do not invent details.`;
 
 /** SecretStorage key for vision proxy API key */
-export const VISION_PROXY_API_KEY_SECRET = "copilot-models.visionProxy.apiKey";
+export const VISION_PROXY_API_KEY_SECRET = `${CONFIG_SECTION}.visionProxy.apiKey`;
 
 /**
  * Sentinel stored in `visionModel` when the user picks "Custom API Endpoint".
@@ -185,9 +195,9 @@ export class VSCodeLMVisionDescriber implements VisionDescriber {
 
   constructor() {
     const config = getConfig();
-    this.visionModelId = config.get<string>("visionModel");
+    this.visionModelId = config.get<string>(SETTING_VISION_MODEL);
     this.visionPrompt =
-      config.get<string>("visionPrompt") || DEFAULT_VISION_PROMPT;
+      config.get<string>(SETTING_VISION_PROMPT) || DEFAULT_VISION_PROMPT;
     this.id = this.visionModelId
       ? `vscode-lm:${this.visionModelId}`
       : "vscode-lm:auto";
@@ -399,12 +409,12 @@ export class ApiEndpointVisionDescriber implements VisionDescriber {
  */
 export function visionAffectingConfigKeys(): string[] {
   return [
-    `${CONFIG_SECTION}.visionModel`,
-    `${CONFIG_SECTION}.visionPrompt`,
-    `${CONFIG_SECTION}.visionProxy.apiUrl`,
-    `${CONFIG_SECTION}.visionProxy.apiModelId`,
-    `${CONFIG_SECTION}.visionProxy.timeoutMs`,
-    `${CONFIG_SECTION}.visionProxy.maxTokens`,
+    settingKey(SETTING_VISION_MODEL),
+    settingKey(SETTING_VISION_PROMPT),
+    settingKey(SETTING_VISION_PROXY_API_URL),
+    settingKey(SETTING_VISION_PROXY_API_MODEL_ID),
+    settingKey(SETTING_VISION_PROXY_TIMEOUT_MS),
+    settingKey(SETTING_VISION_PROXY_MAX_TOKENS),
   ];
 }
 
@@ -467,8 +477,8 @@ export class VisionService {
         {
           url: apiUrl,
           modelId: apiModelId,
-          timeoutMs: config.get<number>("visionProxy.timeoutMs"),
-          maxTokens: config.get<number>("visionProxy.maxTokens"),
+          timeoutMs: config.get<number>(SETTING_VISION_PROXY_TIMEOUT_MS),
+          maxTokens: config.get<number>(SETTING_VISION_PROXY_MAX_TOKENS),
         },
         this.context.secrets,
       );
@@ -561,7 +571,7 @@ export async function getVisionLanguageModelOptions(): Promise<
  */
 export function getVisionPrompt(): string {
   const config = getConfig();
-  return config.get<string>("visionPrompt") || DEFAULT_VISION_PROMPT;
+  return config.get<string>(SETTING_VISION_PROMPT) || DEFAULT_VISION_PROMPT;
 }
 
 // ── Image Resolution ────────────────────────────────────────
@@ -851,7 +861,13 @@ function replaceImagesWithPlaceholder(
       : part,
   );
 
-  return new vscode.LanguageModelChatMessage(message.role, replaced);
+  // Keep the original name as well as the role: rebuilding the message must
+  // not drop anything the caller still relies on.
+  return new vscode.LanguageModelChatMessage(
+    message.role,
+    replaced,
+    message.name,
+  );
 }
 
 /** Apply {@link replaceImagesWithPlaceholder} where a message has images. */

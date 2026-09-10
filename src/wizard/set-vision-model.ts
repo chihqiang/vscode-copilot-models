@@ -5,11 +5,15 @@
 import vscode from "vscode";
 import {
   logger,
+  CONFIG_SECTION,
   VISION_API_ENDPOINT_ID,
   getVisionLanguageModelOptions,
   storeVisionProxyApiKey,
   clearVisionProxyApiKey,
   hasVisionProxyApiKey,
+  SETTING_VISION_MODEL,
+  SETTING_VISION_PROXY_API_MODEL_ID,
+  SETTING_VISION_PROXY_API_URL,
 } from "../core";
 import { confirmAction } from "./utils";
 
@@ -74,19 +78,19 @@ export async function openClearVisionModelWizard(
     return;
   }
 
-  const config = vscode.workspace.getConfiguration("copilot-models");
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   await config.update(
-    "visionModel",
+    SETTING_VISION_MODEL,
     undefined,
     vscode.ConfigurationTarget.Global,
   );
   await config.update(
-    "visionProxy.apiUrl",
+    SETTING_VISION_PROXY_API_URL,
     undefined,
     vscode.ConfigurationTarget.Global,
   );
   await config.update(
-    "visionProxy.apiModelId",
+    SETTING_VISION_PROXY_API_MODEL_ID,
     undefined,
     vscode.ConfigurationTarget.Global,
   );
@@ -97,9 +101,9 @@ export async function openClearVisionModelWizard(
 }
 
 async function configureVisionModel(modelId: string): Promise<void> {
-  const config = vscode.workspace.getConfiguration("copilot-models");
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   await config.update(
-    "visionModel",
+    SETTING_VISION_MODEL,
     modelId,
     vscode.ConfigurationTarget.Global,
   );
@@ -170,19 +174,19 @@ async function configureApiEndpoint(
     await storeVisionProxyApiKey(context.secrets, apiKey);
   }
 
-  const config = vscode.workspace.getConfiguration("copilot-models");
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   await config.update(
-    "visionModel",
+    SETTING_VISION_MODEL,
     VISION_API_ENDPOINT_ID,
     vscode.ConfigurationTarget.Global,
   );
   await config.update(
-    "visionProxy.apiUrl",
+    SETTING_VISION_PROXY_API_URL,
     apiUrl,
     vscode.ConfigurationTarget.Global,
   );
   await config.update(
-    "visionProxy.apiModelId",
+    SETTING_VISION_PROXY_API_MODEL_ID,
     apiModelId,
     vscode.ConfigurationTarget.Global,
   );

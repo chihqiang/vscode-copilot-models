@@ -10,19 +10,23 @@
 import vscode from "vscode";
 import { logger } from "../core/logger";
 import { CONFIG_SECTION } from "../core/models";
-import { getConfig } from "../core/settings";
+import {
+  getShowStatusBar,
+  SHOW_STATUS_BAR_SETTING as SHOW_STATUS_BAR_SETTING_KEY,
+} from "../core/settings";
 import type { TokenPlan } from "../core/token-plan";
 import {
   buildStatusBarTooltip,
   buildUsageSummary,
   formatStatusBarText,
 } from "../core/usage-stats";
+import { COMMAND_SHOW_TOKEN_USAGE } from "../commands/command-ids";
 
 /** Setting that controls status bar visibility. */
-export const SHOW_STATUS_BAR_SETTING = "showStatusBar";
+export const SHOW_STATUS_BAR_SETTING = SHOW_STATUS_BAR_SETTING_KEY;
 
 /** Command invoked when the status bar item is clicked. */
-export const SHOW_TOKEN_USAGE_COMMAND = "copilot-models.showTokenUsage";
+export const SHOW_TOKEN_USAGE_COMMAND = COMMAND_SHOW_TOKEN_USAGE;
 
 export class UsageStatusBar implements vscode.Disposable {
   private readonly item: vscode.StatusBarItem;
@@ -55,7 +59,7 @@ export class UsageStatusBar implements vscode.Disposable {
 
   /** Recompute the text and tooltip, applying the visibility setting. */
   refresh(): void {
-    if (!getConfig().get<boolean>(SHOW_STATUS_BAR_SETTING, true)) {
+    if (!getShowStatusBar()) {
       this.setVisible(false);
       return;
     }

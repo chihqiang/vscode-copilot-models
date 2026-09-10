@@ -22,11 +22,20 @@ import {
   StreamCallbacks,
 } from "./client";
 import { CONFIG_SECTION, ModelDefinition } from "./models";
-import { getMaxImageSize } from "./settings";
+import {
+  getMaxImageSize,
+  SETTING_MAX_RETRIES,
+  SETTING_MODEL_ID_OVERRIDES,
+  SETTING_TIMEOUT_MS,
+} from "./settings";
 import { sanitizeUrl } from "./sanitize";
 import { IModelProvider } from "./model-provider";
 import { Tokenizer } from "./tokenizer";
-import { TokenPlan, type PlanOverride } from "./token-plan";
+import {
+  TokenPlan,
+  TOKEN_PLAN_SECRET_PREFIX,
+  type PlanOverride,
+} from "./token-plan";
 import {
   VisionService,
   getVisionService,
@@ -104,10 +113,42 @@ export function clientAffectingConfigKeys(
 ): string[] {
   return [
     `${configSection}.${providerId}.baseUrl`,
-    `${configSection}.modelIdOverrides`,
-    `${configSection}.timeoutMs`,
-    `${configSection}.maxRetries`,
+    `${configSection}.${SETTING_MODEL_ID_OVERRIDES}`,
+    `${configSection}.${SETTING_TIMEOUT_MS}`,
+    `${configSection}.${SETTING_MAX_RETRIES}`,
   ];
+}
+
+/**
+ * The text a tool result contributes to the request.
+ *
+ * Shared by `convertMessages` (which sends it) and `extractTextFromMessage`
+ * (which counts it), so the two cannot drift apart and make the reported token
+ * count disagree with what the provider receives.
+ */
+function toolResultContentString(
+  part: vscode.LanguageModelToolResultPart,
+): string {
+  const textParts: string[] = [];
+  let binaryParts = 0;
+  for (const item of part.content) {
+    if (item instanceof vscode.LanguageModelTextPart) {
+      textParts.push(item.value);
+    } else if (item instanceof vscode.LanguageModelDataPart) {
+      binaryParts++;
+    }
+  }
+
+  const toolText = textParts.join("");
+  if (toolText) {
+    return toolText;
+  }
+  // Never serialize binary data parts into the request — that would bloat the
+  // payload with a huge JSON byte map. Count the placeholder instead, which is
+  // what the provider actually sees.
+  return binaryParts > 0
+    ? `[Tool result contains ${binaryParts} binary data part(s), omitted]`
+    : JSON.stringify(part.content);
 }
 
 /**
@@ -265,7 +306,7 @@ export abstract class BaseChatProvider
       this.clientCache.clear();
       this.onDidChangeLanguageModelChatInformationEmitter.fire();
     }
-    if (this.isActive && e.key.startsWith("copilot-models.tokenPlan.")) {
+    if (this.isActive && e.key.startsWith(TOKEN_PLAN_SECRET_PREFIX)) {
       logger.auth.debug(
         `[${this.providerId}] Token plan secret changed, refreshing...`,
       );
@@ -605,28 +646,9 @@ export abstract class BaseChatProvider
             textBuffer += val;
           }
         } else if (part instanceof vscode.LanguageModelToolResultPart) {
-          const textParts: string[] = [];
-          let binaryParts = 0;
-          for (const item of part.content) {
-            if (item instanceof vscode.LanguageModelTextPart) {
-              textParts.push(item.value);
-            } else if (item instanceof vscode.LanguageModelDataPart) {
-              binaryParts++;
-            }
-          }
-          const toolText = textParts.join("");
-          let toolContent = toolText;
-          if (!toolContent) {
-            // Never serialize binary data parts into the request — that
-            // would bloat the payload with a huge JSON byte map.
-            toolContent =
-              binaryParts > 0
-                ? `[Tool result contains ${binaryParts} binary data part(s), omitted]`
-                : JSON.stringify(part.content);
-          }
           toolResults.push({
             callId: part.callId,
-            content: toolContent,
+            content: toolResultContentString(part),
           });
         }
       }
@@ -1036,16 +1058,38 @@ export abstract class BaseChatProvider
     return Tokenizer.getInstance().countTokens(text);
   }
 
+  /**
+   * The text a message contributes to the request, for token estimation.
+   *
+   * Must cover the same parts `convertMessages` sends, or the reported count
+   * drifts below what the provider actually receives — and this number is what
+   * VS Code uses to decide whether the context still fits. Counting only text
+   * parts made a tool-heavy conversation look far smaller than its request.
+   * Images are deliberately excluded: they are sent as data URLs, whose length
+   * is dominated by base64 rather than by anything a token estimate can model.
+   */
   private extractTextFromMessage(
     message: vscode.LanguageModelChatRequestMessage,
   ): string {
-    let text = "";
+    const chunks: string[] = [];
+
     for (const part of message.content) {
       if (part instanceof vscode.LanguageModelTextPart) {
-        text += part.value;
+        chunks.push(part.value);
+      } else if (part instanceof vscode.LanguageModelToolCallPart) {
+        chunks.push(part.name, JSON.stringify(part.input));
+      } else if (part instanceof vscode.LanguageModelToolResultPart) {
+        chunks.push(toolResultContentString(part));
+      } else if (part instanceof vscode.LanguageModelPromptTsxPart) {
+        chunks.push(
+          typeof part.value === "string"
+            ? part.value
+            : JSON.stringify(part.value),
+        );
       }
     }
-    return text;
+
+    return chunks.join("\n");
   }
 
   /**

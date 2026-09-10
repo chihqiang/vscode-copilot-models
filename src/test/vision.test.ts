@@ -396,6 +396,40 @@ suite("resolveImageMessages placeholder Test Suite", () => {
       "a message without images needs no rebuild",
     );
   });
+
+  test("preserves the message name when rebuilding", async () => {
+    // Rebuilding is only about the image parts; anything else on the message
+    // must survive, including the optional name.
+    const named = vscode.LanguageModelChatMessage.User(
+      [
+        new vscode.LanguageModelTextPart("look at this"),
+        new vscode.LanguageModelDataPart(
+          new Uint8Array([1, 2, 3]),
+          "image/png",
+        ),
+      ],
+      "custom-name",
+    );
+    const messages = [
+      named,
+      vscode.LanguageModelChatMessage.Assistant("it is a graph"),
+      vscode.LanguageModelChatMessage.User("next"),
+    ];
+    const stub = createVisionServiceStub();
+
+    const result = await resolveImageMessages(
+      messages,
+      createToken(),
+      stub.service,
+    );
+
+    assert.strictEqual(containsImagePart(result.messages[0]), false);
+    assert.strictEqual(
+      result.messages[0].name,
+      "custom-name",
+      "the rebuilt message must keep its name",
+    );
+  });
 });
 
 suite("visionAffectingConfigKeys Test Suite", () => {

@@ -8,7 +8,7 @@
 
 import * as assert from "assert";
 import * as vscode from "vscode";
-import { getMaxImageSize } from "../core/settings";
+import { getMaxImageSize, getShowStatusBar } from "../core/settings";
 import { CONFIG_SECTION } from "../core/models";
 
 /** Write (or reset, when `value` is undefined) the setting for this test run. */
@@ -49,5 +49,29 @@ suite("getMaxImageSize Test Suite", () => {
   test("negative values are treated as 'no limit' too", async () => {
     await setMaxImageSize(-1);
     assert.strictEqual(getMaxImageSize(), Infinity);
+  });
+});
+
+suite("getShowStatusBar Test Suite", () => {
+  async function setShowStatusBar(value: boolean | undefined): Promise<void> {
+    await vscode.workspace
+      .getConfiguration(CONFIG_SECTION)
+      .update("showStatusBar", value, vscode.ConfigurationTarget.Global);
+  }
+
+  teardown(async () => {
+    await setShowStatusBar(undefined);
+  });
+
+  test("defaults to true when unset", async () => {
+    await setShowStatusBar(undefined);
+    assert.strictEqual(getShowStatusBar(), true);
+  });
+
+  test("follows the setting", async () => {
+    await setShowStatusBar(false);
+    assert.strictEqual(getShowStatusBar(), false);
+    await setShowStatusBar(true);
+    assert.strictEqual(getShowStatusBar(), true);
   });
 });

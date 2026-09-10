@@ -312,6 +312,14 @@ suite("formatBalanceAmount Test Suite", () => {
     assert.strictEqual(formatBalanceAmount("5.00", "cny"), "¥5.00");
   });
 
+  test("does not render JPY with the renminbi symbol", () => {
+    // Both currencies use the ¥ glyph, so a shared symbol would make a yen
+    // balance read as renminbi.
+    const yen = formatBalanceAmount("1000", "JPY");
+    assert.notStrictEqual(yen, formatBalanceAmount("1000", "CNY"));
+    assert.ok(yen.includes("1000"));
+  });
+
   test("falls back to the currency code", () => {
     assert.strictEqual(formatBalanceAmount("7.00", "SGD"), "7.00 SGD");
   });

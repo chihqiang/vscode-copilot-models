@@ -273,7 +273,9 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
   EUR: "€",
   GBP: "£",
-  JPY: "¥",
+  // Not "¥": that is already CNY's symbol, so a JPY balance would read as
+  // renminbi. The prefix keeps the two distinguishable.
+  JPY: "JP¥",
 };
 
 /** Render an amount with its currency, e.g. `¥110.00`. */

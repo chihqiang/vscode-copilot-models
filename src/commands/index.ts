@@ -5,6 +5,7 @@
 import vscode from "vscode";
 import {
   logger,
+  CONFIG_SECTION,
   MAX_CONSUMPTION_RECORDS,
   TokenPlan,
   buildUsageSummary,
@@ -14,6 +15,21 @@ import {
   type ModelRouter,
 } from "../core";
 import { confirmAction } from "../wizard/utils";
+import {
+  COMMAND_CLEAR_API_KEY,
+  COMMAND_CLEAR_LOG,
+  COMMAND_CLEAR_TOKEN_PLAN,
+  COMMAND_CLEAR_TOKEN_USAGE,
+  COMMAND_CLEAR_VISION_MODEL,
+  COMMAND_OPEN_SETTINGS,
+  COMMAND_REFRESH_MODELS,
+  COMMAND_SET_API_KEY,
+  COMMAND_SET_TOKEN_PLAN,
+  COMMAND_SET_VISION_MODEL,
+  COMMAND_SHOW_LATENCY_STATS,
+  COMMAND_SHOW_LOG,
+  COMMAND_SHOW_TOKEN_USAGE,
+} from "./command-ids";
 import {
   openSetApiKeyWizard,
   openClearApiKeyWizard,
@@ -65,32 +81,32 @@ export function registerAllCommands(
 
   registerCommand(
     context,
-    "copilot-models.setApiKey",
+    COMMAND_SET_API_KEY,
     safeAsync("setApiKey", openSetApiKeyWizard),
   );
 
   registerCommand(
     context,
-    "copilot-models.clearApiKey",
+    COMMAND_CLEAR_API_KEY,
     safeAsync("clearApiKey", openClearApiKeyWizard),
   );
 
   // ── Settings & Logging ────────────────────────────
 
-  registerCommand(context, "copilot-models.openSettings", async () => {
+  registerCommand(context, COMMAND_OPEN_SETTINGS, async () => {
     logger.core.info("openSettings command invoked");
     await vscode.commands.executeCommand(
       "workbench.action.openSettings",
-      "copilot-models",
+      CONFIG_SECTION,
     );
   });
 
-  registerCommand(context, "copilot-models.showLog", () => {
+  registerCommand(context, COMMAND_SHOW_LOG, () => {
     logger.core.info("showLog command invoked");
     logger.show();
   });
 
-  registerCommand(context, "copilot-models.clearLog", () => {
+  registerCommand(context, COMMAND_CLEAR_LOG, () => {
     logger.core.info("clearLog command invoked");
     logger.clear();
   });
@@ -99,7 +115,7 @@ export function registerAllCommands(
 
   registerCommand(
     context,
-    "copilot-models.refreshModels",
+    COMMAND_REFRESH_MODELS,
     safeAsync("refreshModels", async () => {
       logger.core.info("refreshModels command invoked");
       modelRouter.refreshModelPicker();
@@ -111,19 +127,19 @@ export function registerAllCommands(
 
   registerCommand(
     context,
-    "copilot-models.setTokenPlan",
+    COMMAND_SET_TOKEN_PLAN,
     safeAsync("setTokenPlan", openSetTokenPlanWizard),
   );
 
   registerCommand(
     context,
-    "copilot-models.clearTokenPlan",
+    COMMAND_CLEAR_TOKEN_PLAN,
     safeAsync("clearTokenPlan", openClearTokenPlanWizard),
   );
 
   // ── Latency Stats ─────────────────────────────────
 
-  registerCommand(context, "copilot-models.showLatencyStats", () => {
+  registerCommand(context, COMMAND_SHOW_LATENCY_STATS, () => {
     const stats = modelRouter.latencyTracker.getAllStats();
     if (stats.size === 0) {
       vscode.window.showInformationMessage("No latency data available");
@@ -143,7 +159,7 @@ export function registerAllCommands(
 
   registerCommand(
     context,
-    "copilot-models.showTokenUsage",
+    COMMAND_SHOW_TOKEN_USAGE,
     safeAsync("showTokenUsage", async () => {
       logger.core.info("showTokenUsage command invoked");
       const records = TokenPlan.getInstance().getConsumptions();
@@ -172,7 +188,7 @@ export function registerAllCommands(
 
   registerCommand(
     context,
-    "copilot-models.clearTokenUsage",
+    COMMAND_CLEAR_TOKEN_USAGE,
     safeAsync("clearTokenUsage", async () => {
       const confirmed = await confirmAction(
         "Clear all recorded token usage?",
@@ -191,13 +207,13 @@ export function registerAllCommands(
 
   registerCommand(
     context,
-    "copilot-models.setVisionModel",
+    COMMAND_SET_VISION_MODEL,
     safeAsync("setVisionModel", () => openSetVisionModelWizard(context)),
   );
 
   registerCommand(
     context,
-    "copilot-models.clearVisionModel",
+    COMMAND_CLEAR_VISION_MODEL,
     safeAsync("clearVisionModel", () => openClearVisionModelWizard(context)),
   );
 }
