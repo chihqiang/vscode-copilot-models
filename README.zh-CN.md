@@ -153,7 +153,7 @@ API 密钥保存在 VS Code SecretStorage 中。
 | 配置 | 说明 | 默认值 |
 | :--- | :--- | :----- |
 | `routingStrategy` | 路由策略：`failover` 或 `latency` | `"failover"` |
-| `failoverModels` | 主模型→备用模型 ID 映射 | `{}` |
+| `failoverModels` | 主模型→备用模型 ID 映射，支持多级链式（A→B→C） | `{}` |
 | `modelIdOverrides` | 将内部模型 ID 映射为自定义 API 模型名 | `{}` |
 | `maxImageSize` | 图片输入最大字节数（0 = 不限制） | `20971520` (20MB) |
 | `timeoutMs` | API 请求超时（毫秒） | `60000` |

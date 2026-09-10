@@ -175,7 +175,7 @@ Available in VS Code settings (search `copilot-models`):
 | Config | Description | Default |
 | :----- | :---------- | :------ |
 | `routingStrategy` | `"failover"` or `"latency"` routing | `"failover"` |
-| `failoverModels` | Primary model → fallback model ID map | `{}` |
+| `failoverModels` | Primary model → fallback ID map (chained A→B→C) | `{}` |
 | `modelIdOverrides` | Map model IDs to custom API names | `{}` |
 | `maxImageSize` | Max image size in bytes (0 = no limit) | `20971520` (20MB) |
 | `timeoutMs` | Request timeout in milliseconds | `60000` |
