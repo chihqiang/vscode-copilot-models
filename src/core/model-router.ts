@@ -9,7 +9,7 @@
  */
 
 import vscode from "vscode";
-import { IChatProvider } from "./chat-provider";
+import { estimateTokenCount, IChatProvider } from "./chat-provider";
 import { ProviderModels } from "./provider-models";
 import {
   generateRequestId,
@@ -563,7 +563,14 @@ export class ModelRouter implements IChatProvider {
   ): Promise<number> {
     const found = this.findProviderForModel(modelInfo.id);
     if (!found) {
-      return 0;
+      // The provider went away between listing the model and counting a prompt
+      // (its settings were disabled, say). Answer with a real estimate rather
+      // than 0: VS Code reads 0 as "this prompt costs nothing" and may let an
+      // over-long context through, which is worse than being approximate.
+      logger.router.warn(
+        `No provider for model "${modelInfo.id}", estimating the token count locally`,
+      );
+      return estimateTokenCount(text);
     }
     return found.provider.provideTokenCount(modelInfo, text, token);
   }

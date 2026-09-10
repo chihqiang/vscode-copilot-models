@@ -122,7 +122,7 @@ export function clientAffectingConfigKeys(
 /**
  * The text a tool result contributes to the request.
  *
- * Shared by `convertMessages` (which sends it) and `extractTextFromMessage`
+ * Shared by `convertMessages` (which sends it) and `messageTextForTokenCount`
  * (which counts it), so the two cannot drift apart and make the reported token
  * count disagree with what the provider receives.
  */
@@ -149,6 +149,58 @@ function toolResultContentString(
   return binaryParts > 0
     ? `[Tool result contains ${binaryParts} binary data part(s), omitted]`
     : JSON.stringify(part.content);
+}
+
+// ── Token estimation ─────────────────────────────────
+
+/**
+ * The text a message contributes to the request, for token estimation.
+ *
+ * Must cover the same parts `convertMessages` sends, or the reported count
+ * drifts below what the provider actually receives — and this number is what
+ * VS Code uses to decide whether the context still fits. Counting only text
+ * parts made a tool-heavy conversation look far smaller than its request.
+ * Images are deliberately excluded: they are sent as data URLs, whose length
+ * is dominated by base64 rather than by anything a token estimate can model.
+ */
+export function messageTextForTokenCount(
+  message: vscode.LanguageModelChatRequestMessage,
+): string {
+  const chunks: string[] = [];
+
+  for (const part of message.content) {
+    if (part instanceof vscode.LanguageModelTextPart) {
+      chunks.push(part.value);
+    } else if (part instanceof vscode.LanguageModelToolCallPart) {
+      chunks.push(part.name, JSON.stringify(part.input));
+    } else if (part instanceof vscode.LanguageModelToolResultPart) {
+      chunks.push(toolResultContentString(part));
+    } else if (part instanceof vscode.LanguageModelPromptTsxPart) {
+      chunks.push(
+        typeof part.value === "string"
+          ? part.value
+          : JSON.stringify(part.value),
+      );
+    }
+  }
+
+  return chunks.join("\n");
+}
+
+/**
+ * Estimate the token count of a prompt or a message.
+ *
+ * Module-level so the router can reuse it. Its `provideTokenCount` used to
+ * answer 0 for a model it could not resolve, and 0 is not a small estimate but
+ * a wrong one: VS Code treats it as "this prompt costs nothing" and may let an
+ * over-long context through. A rough number is strictly better than none.
+ */
+export function estimateTokenCount(
+  text: string | vscode.LanguageModelChatRequestMessage,
+): number {
+  const content =
+    typeof text === "string" ? text : messageTextForTokenCount(text);
+  return Tokenizer.getInstance().countTokens(content);
 }
 
 /**
@@ -1044,52 +1096,7 @@ export abstract class BaseChatProvider
     text: string | vscode.LanguageModelChatRequestMessage,
     _token: vscode.CancellationToken,
   ): Promise<number> {
-    const content =
-      typeof text === "string" ? text : this.extractTextFromMessage(text);
-    return this.estimateTokenCount(content);
-  }
-
-  /**
-   * Calculate token count accurately
-   * Uses o200k_base encoding (via @dqbd/tiktoken WASM)
-   * Falls back to heuristic estimation when WASM fails to load
-   */
-  private estimateTokenCount(text: string): number {
-    return Tokenizer.getInstance().countTokens(text);
-  }
-
-  /**
-   * The text a message contributes to the request, for token estimation.
-   *
-   * Must cover the same parts `convertMessages` sends, or the reported count
-   * drifts below what the provider actually receives — and this number is what
-   * VS Code uses to decide whether the context still fits. Counting only text
-   * parts made a tool-heavy conversation look far smaller than its request.
-   * Images are deliberately excluded: they are sent as data URLs, whose length
-   * is dominated by base64 rather than by anything a token estimate can model.
-   */
-  private extractTextFromMessage(
-    message: vscode.LanguageModelChatRequestMessage,
-  ): string {
-    const chunks: string[] = [];
-
-    for (const part of message.content) {
-      if (part instanceof vscode.LanguageModelTextPart) {
-        chunks.push(part.value);
-      } else if (part instanceof vscode.LanguageModelToolCallPart) {
-        chunks.push(part.name, JSON.stringify(part.input));
-      } else if (part instanceof vscode.LanguageModelToolResultPart) {
-        chunks.push(toolResultContentString(part));
-      } else if (part instanceof vscode.LanguageModelPromptTsxPart) {
-        chunks.push(
-          typeof part.value === "string"
-            ? part.value
-            : JSON.stringify(part.value),
-        );
-      }
-    }
-
-    return chunks.join("\n");
+    return estimateTokenCount(text);
   }
 
   /**

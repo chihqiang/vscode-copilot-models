@@ -70,8 +70,11 @@ export class Stream<Item> implements AsyncIterable<Item> {
 
     async function* iterator(): AsyncIterator<Item> {
       if (consumed) {
+        // No `.tee()` here, unlike the SDK this was adapted from: the stream
+        // wraps one HTTP response and cannot be split. Suggesting a method
+        // this class does not have sent callers to a TypeError.
         throw new Error(
-          "Cannot iterate over a consumed stream, use `.tee()` to split the stream.",
+          "Cannot iterate over a consumed stream: it wraps a single HTTP response and cannot be replayed",
         );
       }
       consumed = true;

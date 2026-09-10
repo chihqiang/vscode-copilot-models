@@ -9,7 +9,6 @@ export class ApiError extends Error {
     message: string,
     public readonly statusCode: number,
     public readonly providerId: string,
-    public readonly responseBody?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -25,32 +24,30 @@ export class ApiError extends Error {
 }
 
 export class AuthenticationError extends ApiError {
-  constructor(providerId: string, responseBody?: string) {
+  constructor(providerId: string) {
     super(
       `Authentication failed for ${providerId}. Please check your API key.`,
       401,
       providerId,
-      responseBody,
     );
     this.name = "AuthenticationError";
   }
 }
 
 export class PermissionError extends ApiError {
-  constructor(providerId: string, responseBody?: string) {
+  constructor(providerId: string) {
     super(
       `Permission denied for ${providerId}. Please check your API permissions.`,
       403,
       providerId,
-      responseBody,
     );
     this.name = "PermissionError";
   }
 }
 
 export class NotFoundError extends ApiError {
-  constructor(resource: string, providerId: string, responseBody?: string) {
-    super(`Resource not found: ${resource}`, 404, providerId, responseBody);
+  constructor(resource: string, providerId: string) {
+    super(`Resource not found: ${resource}`, 404, providerId);
     this.name = "NotFoundError";
   }
 }
@@ -60,7 +57,6 @@ export class RateLimitError extends ApiError {
     providerId: string,
     /** Server-requested delay from the `Retry-After` header, in milliseconds. */
     public readonly retryAfterMs?: number,
-    responseBody?: string,
   ) {
     const hint =
       retryAfterMs === undefined
@@ -70,7 +66,6 @@ export class RateLimitError extends ApiError {
       `Rate limit exceeded for ${providerId}. Please try again later.${hint}`,
       429,
       providerId,
-      responseBody,
     );
     this.name = "RateLimitError";
   }
@@ -105,69 +100,76 @@ export class CancelledError extends Error {
 }
 
 export class PayloadTooLargeError extends ApiError {
-  constructor(providerId: string, responseBody?: string) {
+  constructor(providerId: string) {
     super(
       `Request payload too large for ${providerId}. Please reduce the input size.`,
       413,
       providerId,
-      responseBody,
     );
     this.name = "PayloadTooLargeError";
   }
 }
 
 export class UnsupportedMediaTypeError extends ApiError {
-  constructor(providerId: string, responseBody?: string) {
+  constructor(providerId: string) {
     super(
       `Unsupported media type for ${providerId}. Please check the request format.`,
       415,
       providerId,
-      responseBody,
     );
     this.name = "UnsupportedMediaTypeError";
   }
 }
 
 export class ServiceUnavailableError extends ApiError {
-  constructor(providerId: string, responseBody?: string) {
+  constructor(providerId: string) {
     super(
       `Service temporarily unavailable for ${providerId}. Please try again later.`,
       503,
       providerId,
-      responseBody,
     );
     this.name = "ServiceUnavailableError";
   }
 }
 
+/**
+ * Build the error for a non-2xx API response.
+ *
+ * `message` is the human-readable text to surface, already extracted from the
+ * body; `rawBody` is the body as received. The two parameters used to be named
+ * `errorBody` and `responseBody` while receiving the opposite of what those
+ * names said, so a future reader adding the raw body to a log or message would
+ * have picked up the wrong variable.
+ */
 export function createApiError(
   statusCode: number,
   providerId: string,
-  errorBody: string,
-  responseBody?: string,
+  message: string,
+  rawBody: string,
   retryAfterMs?: number,
 ): ApiError {
   switch (statusCode) {
     case 401:
-      return new AuthenticationError(providerId, responseBody);
+      return new AuthenticationError(providerId);
     case 403:
-      return new PermissionError(providerId, responseBody);
+      return new PermissionError(providerId);
     case 404:
-      return new NotFoundError("API endpoint", providerId, responseBody);
+      return new NotFoundError("API endpoint", providerId);
     case 413:
-      return new PayloadTooLargeError(providerId, responseBody);
+      return new PayloadTooLargeError(providerId);
     case 415:
-      return new UnsupportedMediaTypeError(providerId, responseBody);
+      return new UnsupportedMediaTypeError(providerId);
     case 429:
-      return new RateLimitError(providerId, retryAfterMs, responseBody);
+      return new RateLimitError(providerId, retryAfterMs);
     case 503:
-      return new ServiceUnavailableError(providerId, responseBody);
+      return new ServiceUnavailableError(providerId);
     default:
+      // The typed errors above carry a fixed, user-facing sentence, so the
+      // server's own explanation is only kept for statuses without one.
       return new ApiError(
-        `${providerId} API error (${statusCode}): ${errorBody}`,
+        `${providerId} API error (${statusCode}): ${message || rawBody}`,
         statusCode,
         providerId,
-        responseBody,
       );
   }
 }

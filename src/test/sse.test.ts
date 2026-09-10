@@ -224,3 +224,57 @@ suite("Stream.fromSSEResponse Test Suite", () => {
     assert.deepStrictEqual(results[0].data, { id: "123" });
   });
 });
+
+suite("Stream single-use Test Suite", () => {
+  function createStream(): Stream<unknown> {
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encodeUTF8("data: {}\n\n"));
+          controller.close();
+        },
+      }),
+    );
+    return Stream.fromSSEResponse(response, new AbortController());
+  }
+
+  /** Iterate once so the stream is marked consumed. */
+  async function consume(stream: Stream<unknown>): Promise<void> {
+    for await (const _item of stream) {
+      // drain
+    }
+  }
+
+  test("rejects a second iteration", async () => {
+    const stream = createStream();
+    await consume(stream);
+
+    await assert.rejects(async () => consume(stream), /consumed stream/);
+  });
+
+  test("does not suggest a method the class does not have", async () => {
+    // The message was copied from the SDK this was adapted from, where
+    // `Stream.tee()` exists. Here it does not, so telling the caller to use it
+    // sent them to a `TypeError: stream.tee is not a function`.
+    const stream = createStream();
+    await consume(stream);
+
+    let message = "";
+    try {
+      await consume(stream);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    assert.ok(message.includes("consumed stream"));
+    assert.ok(
+      !message.includes("tee"),
+      `the message must not promise a method that does not exist: "${message}"`,
+    );
+    assert.strictEqual(
+      typeof (stream as unknown as { tee?: unknown }).tee,
+      "undefined",
+      "if this ever gains a tee() method, the message can mention it again",
+    );
+  });
+});
