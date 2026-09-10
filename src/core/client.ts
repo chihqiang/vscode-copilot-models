@@ -21,6 +21,7 @@ import {
   createApiError,
   classifyError,
   isRetryableError,
+  ApiError,
   CancelledError,
   RateLimitError,
   TimeoutError,
@@ -268,6 +269,45 @@ async function handleResponseError(
   );
 }
 
+/**
+ * Whether a failed request says anything about the provider's health, and so
+ * whether it should count toward opening the circuit breaker.
+ *
+ * The breaker used to count every failure. Because it wraps the whole request
+ * (connect, retry and streaming), a misconfigured extension opened it on
+ * errors that "the provider is down" does not describe — and once open, the
+ * user saw "Circuit breaker OPEN", not the actual problem. A wrong API key was
+ * the worst case: the authentication error was swallowed, and since every
+ * half-open probe failed the same way, the circuit re-opened forever. The user
+ * had a permanent configuration mistake presented as an outage.
+ *
+ * Counted: timeouts, network errors, 5xx and mid-stream stalls — the provider
+ * failing to serve a request it accepted.
+ *
+ * Not counted:
+ * - The caller cancelling. A user pressing stop is not a health signal.
+ * - 4xx responses. The provider answered and rejected the request, which means
+ *   it is up; a bad key, an unknown model or an oversized payload is a
+ *   configuration problem. This includes 429: the retry logic honours the
+ *   server's own `Retry-After`, and the router can fail over, both of which are
+ *   more precise than blocking every request for the whole reset window.
+ */
+export function isCountableProviderFailure(
+  error: unknown,
+  cancellationToken?: CancellationToken,
+): boolean {
+  if (cancellationToken?.isCancellationRequested) {
+    return false;
+  }
+  if (error instanceof CancelledError) {
+    return false;
+  }
+  if (error instanceof ApiError && error.isClientError) {
+    return false;
+  }
+  return true;
+}
+
 // ── API Client Implementation ───────────────────────────
 
 /**
@@ -359,20 +399,33 @@ class ApiClientImpl implements IApiClient {
       // so mid-stream failures count toward opening the circuit. Retrying is
       // deliberately NOT performed here — a partially streamed response must
       // not be replayed; connect-time retries are handled by sendWithRetry.
+      //
+      // Failures that say nothing about provider health (a cancelled request,
+      // a 4xx) are excluded — see isCountableProviderFailure.
       let streamCompleted = false;
-      await circuitBreaker.call(providerName, async () => {
-        const stream = await this.sendWithRetry(requestBody, controller.signal);
-        streamCompleted = await this.consumeStream(
-          stream,
-          callbacks,
-          cancellationToken,
-          providerName,
-          {
-            idleTimeoutMs: this.timeoutMs,
-            onIdleTimeout: () => controller.abort(),
-          },
-        );
-      });
+      await circuitBreaker.call(
+        providerName,
+        async () => {
+          const stream = await this.sendWithRetry(
+            requestBody,
+            controller.signal,
+          );
+          streamCompleted = await this.consumeStream(
+            stream,
+            callbacks,
+            cancellationToken,
+            providerName,
+            {
+              idleTimeoutMs: this.timeoutMs,
+              onIdleTimeout: () => controller.abort(),
+            },
+          );
+        },
+        {
+          isCountableFailure: (error) =>
+            isCountableProviderFailure(error, cancellationToken),
+        },
+      );
 
       if (streamCompleted) {
         callbacks.onDone();

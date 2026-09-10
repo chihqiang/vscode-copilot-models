@@ -1,9 +1,10 @@
 /**
  * Status bar item showing today's token usage.
  *
- * The item is refreshed from the recorded usage log: immediately after a
- * request records its usage (via `TokenPlan.onDidRecordUsage`) and when the
- * visibility setting changes. Clicking it opens the usage report.
+ * The item is refreshed from the recorded usage log: when `TokenPlan` reports a
+ * change (`onDidChangeUsage`, which fires both after a request records its
+ * usage and when the log is cleared) and when the visibility setting changes.
+ * Clicking it opens the usage report.
  */
 
 import vscode from "vscode";

@@ -116,6 +116,148 @@ suite("CircuitBreaker Test Suite", () => {
   });
 });
 
+suite("CircuitBreaker countable-failure Test Suite", () => {
+  const failingFn = async (): Promise<string> => {
+    throw new Error("provider rejected the request");
+  };
+
+  test("does not open on failures the caller excluded", async () => {
+    const cb = new CircuitBreaker({ failureThreshold: 2, resetTimeoutMs: 0 });
+    const excluded = { isCountableFailure: () => false };
+
+    // Well past the threshold: none of these reflect provider health.
+    for (let i = 0; i < 5; i++) {
+      await assert.rejects(() => cb.call(TEST_PROVIDER, failingFn, excluded));
+    }
+
+    assert.strictEqual(
+      cb.getState(),
+      CircuitState.CLOSED,
+      "excluded failures must not open the circuit",
+    );
+  });
+
+  test("rethrows the original error rather than a CircuitBreakerError", async () => {
+    // The point of excluding a failure is that the caller sees the real
+    // problem. If the circuit opened anyway, the actionable error would be
+    // replaced by "Circuit breaker OPEN".
+    const cb = new CircuitBreaker({ failureThreshold: 1, resetTimeoutMs: 0 });
+    const excluded = { isCountableFailure: () => false };
+
+    for (let i = 0; i < 3; i++) {
+      await assert.rejects(
+        () => cb.call(TEST_PROVIDER, failingFn, excluded),
+        (err: unknown) =>
+          err instanceof Error &&
+          err.message === "provider rejected the request",
+      );
+    }
+  });
+
+  test("still opens on failures the caller counts", async () => {
+    // Control for the two tests above: the predicate must not disable the
+    // breaker outright, or "did not open" would prove nothing.
+    const cb = new CircuitBreaker({
+      failureThreshold: 2,
+      resetTimeoutMs: 50_000,
+    });
+    const counted = { isCountableFailure: () => true };
+
+    await assert.rejects(() => cb.call(TEST_PROVIDER, failingFn, counted));
+    assert.strictEqual(cb.getState(), CircuitState.CLOSED);
+
+    await assert.rejects(() => cb.call(TEST_PROVIDER, failingFn, counted));
+    assert.strictEqual(cb.getState(), CircuitState.OPEN);
+
+    await assert.rejects(
+      () => cb.call(TEST_PROVIDER, failingFn, counted),
+      (err: unknown) => err instanceof CircuitBreakerError,
+    );
+  });
+
+  test("counts every failure when no predicate is supplied", async () => {
+    const cb = new CircuitBreaker({
+      failureThreshold: 1,
+      resetTimeoutMs: 50_000,
+    });
+
+    await assert.rejects(() => cb.call(TEST_PROVIDER, failingFn));
+
+    assert.strictEqual(cb.getState(), CircuitState.OPEN);
+  });
+});
+
+suite("CircuitBreaker half-open Test Suite", () => {
+  test("admits exactly one probe at a time", async () => {
+    const cb = new CircuitBreaker({ failureThreshold: 1, resetTimeoutMs: 0 });
+    const failingFn = async (): Promise<string> => {
+      throw new Error("fail");
+    };
+    await assert.rejects(() => cb.call(TEST_PROVIDER, failingFn));
+    assert.strictEqual(cb.getState(), CircuitState.OPEN);
+
+    // resetTimeoutMs is 0, so this request becomes the half-open probe and
+    // stays in flight until released.
+    let releaseProbe!: () => void;
+    const probe = cb.call(
+      TEST_PROVIDER,
+      () =>
+        new Promise<string>((resolve) => {
+          releaseProbe = () => resolve("recovered");
+        }),
+    );
+    assert.strictEqual(cb.getState(), CircuitState.HALF_OPEN);
+
+    // A concurrent request must be rejected while the probe is unresolved,
+    // rather than piling onto a provider that has not proven itself.
+    await assert.rejects(
+      () => cb.call(TEST_PROVIDER, async () => "other"),
+      (err: unknown) => err instanceof CircuitBreakerError,
+    );
+
+    releaseProbe();
+    assert.strictEqual(await probe, "recovered");
+    assert.strictEqual(cb.getState(), CircuitState.CLOSED);
+  });
+
+  test("releases the probe slot once the probe settles", async () => {
+    const cb = new CircuitBreaker({ failureThreshold: 1, resetTimeoutMs: 0 });
+    const failingFn = async (): Promise<string> => {
+      throw new Error("fail");
+    };
+    await assert.rejects(() => cb.call(TEST_PROVIDER, failingFn));
+
+    // A probe that fails must free the slot, so the next attempt can retry
+    // rather than being locked out forever by a stale in-flight marker.
+    await assert.rejects(() => cb.call(TEST_PROVIDER, failingFn));
+    assert.strictEqual(cb.getState(), CircuitState.OPEN);
+
+    const settled = await cb.call(TEST_PROVIDER, async () => "recovered");
+    assert.strictEqual(settled, "recovered");
+    assert.strictEqual(cb.getState(), CircuitState.CLOSED);
+  });
+
+  test("a cancelled probe does not open the circuit", async () => {
+    const cb = new CircuitBreaker({ failureThreshold: 1, resetTimeoutMs: 0 });
+    const failingFn = async (): Promise<string> => {
+      throw new Error("fail");
+    };
+    await assert.rejects(() => cb.call(TEST_PROVIDER, failingFn));
+    assert.strictEqual(cb.getState(), CircuitState.OPEN);
+
+    // The probe proves nothing when the caller walked away, so the circuit
+    // stays half-open and the next request may probe instead.
+    await assert.rejects(() =>
+      cb.call(TEST_PROVIDER, failingFn, { isCountableFailure: () => false }),
+    );
+    assert.strictEqual(cb.getState(), CircuitState.HALF_OPEN);
+
+    const settled = await cb.call(TEST_PROVIDER, async () => "recovered");
+    assert.strictEqual(settled, "recovered");
+    assert.strictEqual(cb.getState(), CircuitState.CLOSED);
+  });
+});
+
 suite("calculateDelay Test Suite", () => {
   test("returns at least base delay for attempt 0", () => {
     const delay1 = calculateDelay(0);
