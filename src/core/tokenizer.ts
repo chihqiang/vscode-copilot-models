@@ -16,7 +16,21 @@ export class Tokenizer implements vscode.Disposable {
     lazyCreate: () => new Tokenizer(),
   });
 
+  /**
+   * Upper bound on retained text, not on entry count alone.
+   *
+   * VS Code asks for a token count per message, and a long conversation sends
+   * the same historical messages on every turn. Without memoisation each turn
+   * re-encodes the entire history through WASM. Entries are bounded by total
+   * retained characters as well as by count, so a session full of large
+   * messages cannot pin unbounded memory.
+   */
+  private static readonly CACHE_MAX_CHARS = 1_000_000;
+  private static readonly CACHE_MAX_ENTRIES = 512;
+
   private encoder: Tiktoken | null = null;
+  private readonly countCache = new Map<string, number>();
+  private cachedChars = 0;
 
   private constructor() {}
 
@@ -32,15 +46,26 @@ export class Tokenizer implements vscode.Disposable {
 
   /** Count tokens in text (accurate, falls back on failure) */
   countTokens(text: string): number {
-    try {
-      return this.getEncoder().encode_ordinary(text).length;
-    } catch {
-      return this.fallbackCountTokens(text);
+    const cached = this.countCache.get(text);
+    if (cached !== undefined) {
+      return cached;
     }
+
+    let count: number;
+    try {
+      count = this.getEncoder().encode_ordinary(text).length;
+    } catch {
+      count = this.fallbackCountTokens(text);
+    }
+
+    this.remember(text, count);
+    return count;
   }
 
   /** Release WASM resources */
   dispose(): void {
+    this.countCache.clear();
+    this.cachedChars = 0;
     if (this.encoder) {
       try {
         this.encoder.free();
@@ -52,6 +77,33 @@ export class Tokenizer implements vscode.Disposable {
   }
 
   // ── Private ──────────────────────────────────────
+
+  /**
+   * Cache a count, evicting oldest entries (insertion order) until both the
+   * character budget and the entry cap are satisfied.
+   */
+  private remember(text: string, count: number): void {
+    // Empty text is trivially counted, and a text larger than the whole budget
+    // would be evicted immediately — retaining it costs memory for nothing.
+    if (text.length === 0 || text.length > Tokenizer.CACHE_MAX_CHARS) {
+      return;
+    }
+
+    this.countCache.set(text, count);
+    this.cachedChars += text.length;
+
+    while (
+      this.cachedChars > Tokenizer.CACHE_MAX_CHARS ||
+      this.countCache.size > Tokenizer.CACHE_MAX_ENTRIES
+    ) {
+      const oldest = this.countCache.keys().next();
+      if (oldest.done) {
+        break;
+      }
+      this.countCache.delete(oldest.value);
+      this.cachedChars -= oldest.value.length;
+    }
+  }
 
   private getEncoder(): Tiktoken {
     if (!this.encoder) {

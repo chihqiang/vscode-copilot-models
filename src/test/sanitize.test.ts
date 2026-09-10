@@ -141,6 +141,64 @@ suite("Sanitize - string value redaction", () => {
     // "token-plan" is not "token:" or "token=" so it must survive
     assert.ok(out.includes("token-plan"));
   });
+
+  /**
+   * Asserting only that the secret is gone cannot detect text the redactor
+   * mangled. These assert the full output, because the previous implementation
+   * ran every pattern through one callback and the patterns differ in capture
+   * count: the offsets were read as capture groups and written into the log,
+   * producing "Bearer 0[REDACTED]" and "key is 6[REDACTED]".
+   */
+  test("leaves surrounding text intact for a prefixed key", () => {
+    assert.strictEqual(
+      redactSensitiveValues("key is sk-1234567890abcdef"),
+      "key is [REDACTED]",
+    );
+    assert.strictEqual(
+      redactSensitiveValues("prefix sk-1234567890abcdef suffix"),
+      "prefix [REDACTED] suffix",
+    );
+  });
+
+  test("keeps the Bearer scheme when it is not a header value", () => {
+    assert.strictEqual(
+      redactSensitiveValues("using Bearer abcdefgh1234567 as header"),
+      "using Bearer [REDACTED] as header",
+    );
+  });
+
+  test("redacts both the Authorization value and the scheme inside it", () => {
+    // Two placeholders, not one: the key/value rule redacts the header's value
+    // ("Bearer ...") and the Bearer rule redacts the token within it. Redundant
+    // but safe, and no offset leaks in as it did before.
+    assert.strictEqual(
+      redactSensitiveValues("Authorization: Bearer abcdef123456"),
+      "Authorization: [REDACTED] [REDACTED]",
+    );
+  });
+
+  test("redacts a prefixed key inside a Bearer header", () => {
+    assert.strictEqual(
+      redactSensitiveValues("Authorization: Bearer sk-abcdefgh12345678"),
+      "Authorization: [REDACTED] [REDACTED]",
+    );
+  });
+
+  test("redacts every occurrence in a longer message", () => {
+    assert.strictEqual(
+      redactSensitiveValues("a sk-aaaaaaaaaaaa b sk-bbbbbbbbbbbb"),
+      "a [REDACTED] b [REDACTED]",
+    );
+  });
+
+  test("is unaffected by how many times it has run", () => {
+    // The rules are module-level regexes with the `g` flag, so a stale
+    // lastIndex would make repeated calls skip matches.
+    const text = "key is sk-1234567890abcdef";
+    for (let i = 0; i < 3; i++) {
+      assert.strictEqual(redactSensitiveValues(text), "key is [REDACTED]");
+    }
+  });
 });
 
 suite("Sanitize - URL redaction", () => {

@@ -137,7 +137,7 @@ export interface IModelProvider {
   /** Delete stored API key */
   deleteApiKey(): Promise<void>;
   /** Get model list for this provider */
-  getModels(): ModelDefinition[];
+  getModels(): readonly ModelDefinition[];
   /** Get API client */
   createClient(apiKey: string, options?: ClientOptions): IApiClient;
 }
@@ -208,7 +208,14 @@ export class BaseModelProvider implements IModelProvider {
     return this._authManager.deleteApiKey();
   }
 
-  getModels(): ModelDefinition[] {
+  /**
+   * Get model list for this provider.
+   *
+   * Returns the catalog by reference — it is the shared array from the
+   * provider definition — so the return type is readonly to keep callers from
+   * mutating the global model list.
+   */
+  getModels(): readonly ModelDefinition[] {
     logger.provider.debug(
       `[${this.id}] Returning ${this._models.length} models`,
     );

@@ -6,8 +6,19 @@
 
 import vscode from "vscode";
 import { logger } from "./logger";
+import { CONFIG_SECTION } from "./models";
 import { sanitizeUrl } from "./sanitize";
 import { createSingletonStore } from "./singleton";
+
+/**
+ * Prefix shared by every token-plan secret key in SecretStorage.
+ *
+ * Exported because another module has to recognise these keys on a secret
+ * change. Repeating the literal there meant renaming the scheme in one place
+ * left the listener matching nothing — silently, since a prefix that never
+ * matches raises no error.
+ */
+export const TOKEN_PLAN_SECRET_PREFIX = `${CONFIG_SECTION}.tokenPlan.`;
 
 // ── Types ────────────────────────────────────────────
 
@@ -44,12 +55,6 @@ export interface TokenConsumption {
   timestamp: number;
 }
 
-/**
- * @deprecated Use {@link TokenConsumption}. Renamed when usage tracking was
- * extended beyond token plan requests.
- */
-export type TokenPlanConsumption = TokenConsumption;
-
 export interface ProviderPreset {
   id: string;
   defaultBaseUrl: string;
@@ -66,8 +71,8 @@ export interface PlanOverride {
 
 // ── Constants ────────────────────────────────────────
 
-const PLANS_STORAGE_KEY = "copilot-models.tokenPlans";
-const CONSUMPTION_STORAGE_KEY = "copilot-models.tokenPlanConsumptions";
+const PLANS_STORAGE_KEY = `${CONFIG_SECTION}.tokenPlans`;
+const CONSUMPTION_STORAGE_KEY = `${CONFIG_SECTION}.tokenPlanConsumptions`;
 /**
  * Maximum number of usage records kept. Older entries are dropped, so the
  * all-time figures are a rolling window rather than a lifetime total.
@@ -76,6 +81,28 @@ const CONSUMPTION_STORAGE_KEY = "copilot-models.tokenPlanConsumptions";
  * covered every request since usage tracking was generalised.
  */
 export const MAX_CONSUMPTION_RECORDS = 1000;
+
+/**
+ * A stable, URL-safe identifier for an endpoint.
+ *
+ * Includes the path, not just the host, so two endpoints on one host stay
+ * distinct. Trailing slashes and case are normalized so the same endpoint
+ * always yields the same slug — that is what makes plan IDs deterministic.
+ */
+function planIdSlug(baseUrl: string): string {
+  const raw = baseUrl.trim().replace(/\/+$/, "");
+  let subject = raw;
+  try {
+    const url = new URL(raw);
+    subject = `${url.hostname}${url.pathname}`;
+  } catch {
+    // Not a parseable URL — fall back to sanitizing the raw string.
+  }
+  return subject
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 // ── TokenPlan Class ──────────────────────────────────
 
@@ -179,13 +206,58 @@ export class TokenPlan {
     await this.context.globalState.update(PLANS_STORAGE_KEY, plans);
   }
 
+  /**
+   * Derive the plan ID for an endpoint.
+   *
+   * Deterministic, so configuring the same endpoint again *replaces* its plan
+   * rather than adding a second one. It used to append `Date.now()`, which made
+   * every configuration a new plan — and because the model lookup takes the
+   * first plan covering a model, re-running the wizard to replace an expired
+   * token left the old plan (and its old token) in effect. Determinism also
+   * makes the id unique by construction, which a timestamp is not: two calls in
+   * the same millisecond produced the same id and silently overwrote each
+   * other.
+   */
   generatePlanId(baseUrl: string): string {
-    try {
-      const hostname = new URL(baseUrl).hostname.replace(/[^a-z0-9]/g, "-");
-      return `plan-${hostname}-${Date.now()}`;
-    } catch {
-      return `plan-${Date.now()}`;
+    const slug = planIdSlug(baseUrl);
+    return `plan-${slug || "endpoint"}`;
+  }
+
+  /**
+   * Store a plan and its token, replacing any plan for the same endpoint.
+   *
+   * A plan is identified by its endpoint: re-running the wizard against the
+   * same URL is how a user replaces an expired token or changes the covered
+   * models. Matching on the endpoint rather than the plan ID also migrates
+   * plans written by earlier versions, whose IDs carried a timestamp.
+   */
+  async storePlanForEndpoint(
+    plan: TokenPlanConfig,
+    token: string,
+  ): Promise<void> {
+    const endpoint = planIdSlug(plan.baseUrl);
+    const stale = this.getPlans().filter(
+      (existing) =>
+        existing.planId !== plan.planId &&
+        planIdSlug(existing.baseUrl) === endpoint,
+    );
+
+    for (const old of stale) {
+      logger.plan.info(
+        `Replacing plan "${old.planName}" (${old.planId}) for ${plan.baseUrl}`,
+      );
+      await this.removeToken(old.planId);
     }
+    if (stale.length > 0) {
+      const staleIds = new Set(stale.map((p) => p.planId));
+      await this.context.globalState.update(
+        PLANS_STORAGE_KEY,
+        this.getPlans().filter((p) => !staleIds.has(p.planId)),
+      );
+    }
+
+    await this.storeToken(plan.planId, token);
+    await this.storePlan(plan);
   }
 
   /** 获取所有 plan 覆盖的 model ID 集合 */
@@ -202,7 +274,7 @@ export class TokenPlan {
   // ── Token 管理 ───────────────────────────────────
 
   private buildSecretKey(planId: string): string {
-    return `copilot-models.tokenPlan.${planId}.token`;
+    return `${TOKEN_PLAN_SECRET_PREFIX}${planId}.token`;
   }
 
   async getToken(planId: string): Promise<string | undefined> {
@@ -240,6 +312,16 @@ export class TokenPlan {
    */
   private consumptionWriteChain: Promise<void> = Promise.resolve();
 
+  /**
+   * True while a write is queued but has not started.
+   *
+   * Records that arrive during that window have nothing to add: the pending
+   * write snapshots the live log when it runs, so it already includes them.
+   * Queueing one write per record turned a burst of N records into N writes of
+   * a growing array — O(N²) copying — for a single resulting log.
+   */
+  private consumptionWriteQueued = false;
+
   private getConsumptionRecords(): TokenConsumption[] {
     if (!this.consumptionCache) {
       this.consumptionCache = [
@@ -252,6 +334,35 @@ export class TokenPlan {
     return this.consumptionCache;
   }
 
+  /**
+   * Persist the current log once, behind any in-flight write.
+   *
+   * The snapshot is taken when the write actually runs, so the final write
+   * always persists the complete log. `force` queues a write even when one is
+   * already pending, which `clearConsumptions` needs so that an emptying of
+   * the log is never left unpersisted behind an earlier queued write.
+   */
+  private flushConsumptionWrites(force = false): Promise<void> {
+    if (this.consumptionWriteQueued && !force) {
+      return this.consumptionWriteChain;
+    }
+
+    this.consumptionWriteQueued = true;
+    this.consumptionWriteChain = this.consumptionWriteChain
+      .catch(() => {
+        // A previous write failed; keep the chain alive so later records
+        // are still persisted.
+      })
+      .then(() => {
+        this.consumptionWriteQueued = false;
+        return this.context.globalState.update(CONSUMPTION_STORAGE_KEY, [
+          ...this.getConsumptionRecords(),
+        ]);
+      });
+
+    return this.consumptionWriteChain;
+  }
+
   async recordConsumption(consumption: TokenConsumption): Promise<void> {
     const records = this.getConsumptionRecords();
     records.push(consumption);
@@ -259,19 +370,7 @@ export class TokenPlan {
       records.splice(0, records.length - MAX_CONSUMPTION_RECORDS);
     }
 
-    // Queue the write behind any in-flight one so no update is lost. The
-    // snapshot is taken when the write actually runs, so the final write
-    // always persists the complete log.
-    this.consumptionWriteChain = this.consumptionWriteChain
-      .catch(() => {
-        // A previous write failed; keep the chain alive so later records
-        // are still persisted.
-      })
-      .then(() =>
-        this.context.globalState.update(CONSUMPTION_STORAGE_KEY, [...records]),
-      );
-
-    await this.consumptionWriteChain;
+    await this.flushConsumptionWrites();
     this.onDidChangeUsageEmitter.fire();
     logger.plan.debug(
       `Recorded consumption: ${consumption.totalTokens} tokens for ${consumption.planId ?? "direct API key"}`,
@@ -288,13 +387,10 @@ export class TokenPlan {
     const dropped = this.getConsumptionRecords().length;
     this.consumptionCache = [];
 
-    this.consumptionWriteChain = this.consumptionWriteChain
-      .catch(() => {
-        // Keep the chain alive after a failed write.
-      })
-      .then(() => this.context.globalState.update(CONSUMPTION_STORAGE_KEY, []));
-
-    await this.consumptionWriteChain;
+    // Forced: a write queued before the clear has already run (or will run)
+    // against the now-empty cache, but forcing one of its own guarantees the
+    // emptied log is persisted after it rather than depending on that timing.
+    await this.flushConsumptionWrites(true);
     // Must notify: the status bar still shows the pre-clear figures otherwise.
     this.onDidChangeUsageEmitter.fire();
     logger.plan.info(`Cleared ${dropped} usage record(s)`);
@@ -321,9 +417,18 @@ export class TokenPlan {
       }
     }
 
-    const matchingPlan = plans.find((p) =>
-      p.models.some((m) => m.id === modelId),
-    );
+    // When several plans cover the same model, the most recently updated one
+    // wins: that is the user's latest configuration intent. Taking the first
+    // match instead let an older plan shadow a newer one indefinitely.
+    let matchingPlan: TokenPlanConfig | undefined;
+    for (const p of plans) {
+      if (!p.models.some((m) => m.id === modelId)) {
+        continue;
+      }
+      if (matchingPlan === undefined || p.updatedAt > matchingPlan.updatedAt) {
+        matchingPlan = p;
+      }
+    }
     if (!matchingPlan) {
       logger.plan.debug(`  → no matching plan for "${modelId}"`);
       return undefined;

@@ -11,8 +11,7 @@
       "toolCalling": true,
       "imageInput": false,
       "thinking": true
-    },
-    "requiresThinkingParam": true
+    }
   },
   {
     "id": "glm-5.3-flash",
@@ -26,8 +25,7 @@
       "toolCalling": true,
       "imageInput": true,
       "thinking": true
-    },
-    "requiresThinkingParam": true
+    }
   },
   {
     "id": "glm-5.2",
@@ -41,8 +39,7 @@
       "toolCalling": true,
       "imageInput": false,
       "thinking": true
-    },
-    "requiresThinkingParam": true
+    }
   },
   {
     "id": "glm-5.1",
@@ -56,8 +53,7 @@
       "toolCalling": true,
       "imageInput": false,
       "thinking": true
-    },
-    "requiresThinkingParam": true
+    }
   },
   {
     "id": "glm-5-turbo",
@@ -71,8 +67,7 @@
       "toolCalling": true,
       "imageInput": false,
       "thinking": true
-    },
-    "requiresThinkingParam": true
+    }
   },
   {
     "id": "glm-5",
@@ -86,8 +81,7 @@
       "toolCalling": true,
       "imageInput": false,
       "thinking": true
-    },
-    "requiresThinkingParam": true
+    }
   },
   {
     "id": "glm-4.7-flash",
@@ -101,7 +95,6 @@
       "toolCalling": true,
       "imageInput": false,
       "thinking": false
-    },
-    "requiresThinkingParam": false
+    }
   }
 ]

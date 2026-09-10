@@ -8,7 +8,8 @@
  */
 
 import * as assert from "assert";
-import { isTransientError } from "../core/model-router";
+import * as vscode from "vscode";
+import { isTransientError, ModelRouter } from "../core/model-router";
 import { CircuitBreakerError } from "../core/circuit-breaker";
 import {
   AuthenticationError,
@@ -66,5 +67,63 @@ suite("isTransientError Test Suite", () => {
     assert.strictEqual(isTransientError(new Error("invalid model id")), false);
     assert.strictEqual(isTransientError("not an error"), false);
     assert.strictEqual(isTransientError(undefined), false);
+  });
+});
+
+suite("ModelRouter token count fallback Test Suite", () => {
+  function modelInfo(id: string): vscode.LanguageModelChatInformation {
+    return {
+      id,
+      name: id,
+      family: "test",
+      version: "1",
+      maxInputTokens: 1000,
+      maxOutputTokens: 100,
+    } as vscode.LanguageModelChatInformation;
+  }
+
+  function createToken(): vscode.CancellationToken {
+    return new vscode.CancellationTokenSource().token;
+  }
+
+  test("estimates rather than reporting zero for an unknown model", async () => {
+    // The router is the provider VS Code talks to, so its answer is the one
+    // that decides whether a context still fits. It used to answer 0 when it
+    // could not resolve the model — which reads as "this prompt costs nothing"
+    // and can let an over-long context through.
+    const router = new ModelRouter();
+    try {
+      const text = "the quick brown fox ".repeat(200);
+      const count = await router.provideTokenCount(
+        modelInfo("model-that-is-not-registered"),
+        text,
+        createToken(),
+      );
+
+      assert.ok(
+        count > 0,
+        `an unresolvable model must still get an estimate, got ${count}`,
+      );
+    } finally {
+      router.dispose();
+    }
+  });
+
+  test("estimates a message, not just a string", async () => {
+    const router = new ModelRouter();
+    try {
+      const message = vscode.LanguageModelChatMessage.User(
+        "the quick brown fox ".repeat(200),
+      );
+      const count = await router.provideTokenCount(
+        modelInfo("model-that-is-not-registered"),
+        message,
+        createToken(),
+      );
+
+      assert.ok(count > 0, `expected a positive estimate, got ${count}`);
+    } finally {
+      router.dispose();
+    }
   });
 });

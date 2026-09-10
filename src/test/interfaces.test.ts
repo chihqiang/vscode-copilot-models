@@ -33,26 +33,6 @@ suite("Interfaces Test Suite", () => {
       assert.strictEqual(model.family, "test");
       assert.strictEqual(model.capabilities.toolCalling, true);
     });
-
-    test("should support optional requiresThinkingParam", () => {
-      const model: ModelDefinition = {
-        id: "test-model",
-        name: "Test Model",
-        family: "test",
-        version: "1.0",
-        detail: "A test model",
-        maxInputTokens: 1000,
-        maxOutputTokens: 500,
-        capabilities: {
-          toolCalling: true,
-          imageInput: false,
-          thinking: false,
-        },
-        requiresThinkingParam: true,
-      };
-
-      assert.strictEqual(model.requiresThinkingParam, true);
-    });
   });
 
   suite("ModelCapabilities", () => {

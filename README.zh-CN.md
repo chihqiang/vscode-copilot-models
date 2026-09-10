@@ -72,6 +72,10 @@ API 密钥保存在 VS Code SecretStorage 中。
 
 > **注意：** 视觉代理只对无法原生接收图片的模型生效。支持图片输入的模型
 > 会直接收到原始图片，不会经过代理。
+>
+> 仅最新一条消息中的图片会被描述。历史消息中的图片、以及描述失败或返回为
+> 空的图片，都会被替换为 `[Image: description unavailable]`，确保不会把
+> 图片内容发给无法接收图片的模型。
 
 运行 `Copilot Models: Clear Vision Model` 可清除配置。
 

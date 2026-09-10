@@ -22,12 +22,25 @@ import {
   StreamCallbacks,
 } from "./client";
 import { CONFIG_SECTION, ModelDefinition } from "./models";
-import { getMaxImageSize } from "./settings";
+import {
+  getMaxImageSize,
+  SETTING_MAX_RETRIES,
+  SETTING_MODEL_ID_OVERRIDES,
+  SETTING_TIMEOUT_MS,
+} from "./settings";
 import { sanitizeUrl } from "./sanitize";
 import { IModelProvider } from "./model-provider";
 import { Tokenizer } from "./tokenizer";
-import { TokenPlan, type PlanOverride } from "./token-plan";
-import { VisionService, resolveImageMessages } from "./vision";
+import {
+  TokenPlan,
+  TOKEN_PLAN_SECRET_PREFIX,
+  type PlanOverride,
+} from "./token-plan";
+import {
+  VisionService,
+  getVisionService,
+  resolveImageMessages,
+} from "./vision";
 
 /**
  * Chat Provider interface (simplified, for type checking)
@@ -70,15 +83,6 @@ export type ModelPickerChatInformation = vscode.LanguageModelChatInformation & {
   };
 };
 
-/**
- * Conversation segment info
- */
-export interface ConversationSegment {
-  index: number;
-  id: string;
-  timestamp: number;
-}
-
 // Re-export PlanOverride for backward compatibility
 export type { PlanOverride } from "./token-plan";
 
@@ -109,10 +113,94 @@ export function clientAffectingConfigKeys(
 ): string[] {
   return [
     `${configSection}.${providerId}.baseUrl`,
-    `${configSection}.modelIdOverrides`,
-    `${configSection}.timeoutMs`,
-    `${configSection}.maxRetries`,
+    `${configSection}.${SETTING_MODEL_ID_OVERRIDES}`,
+    `${configSection}.${SETTING_TIMEOUT_MS}`,
+    `${configSection}.${SETTING_MAX_RETRIES}`,
   ];
+}
+
+/**
+ * The text a tool result contributes to the request.
+ *
+ * Shared by `convertMessages` (which sends it) and `messageTextForTokenCount`
+ * (which counts it), so the two cannot drift apart and make the reported token
+ * count disagree with what the provider receives.
+ */
+function toolResultContentString(
+  part: vscode.LanguageModelToolResultPart,
+): string {
+  const textParts: string[] = [];
+  let binaryParts = 0;
+  for (const item of part.content) {
+    if (item instanceof vscode.LanguageModelTextPart) {
+      textParts.push(item.value);
+    } else if (item instanceof vscode.LanguageModelDataPart) {
+      binaryParts++;
+    }
+  }
+
+  const toolText = textParts.join("");
+  if (toolText) {
+    return toolText;
+  }
+  // Never serialize binary data parts into the request — that would bloat the
+  // payload with a huge JSON byte map. Count the placeholder instead, which is
+  // what the provider actually sees.
+  return binaryParts > 0
+    ? `[Tool result contains ${binaryParts} binary data part(s), omitted]`
+    : JSON.stringify(part.content);
+}
+
+// ── Token estimation ─────────────────────────────────
+
+/**
+ * The text a message contributes to the request, for token estimation.
+ *
+ * Must cover the same parts `convertMessages` sends, or the reported count
+ * drifts below what the provider actually receives — and this number is what
+ * VS Code uses to decide whether the context still fits. Counting only text
+ * parts made a tool-heavy conversation look far smaller than its request.
+ * Images are deliberately excluded: they are sent as data URLs, whose length
+ * is dominated by base64 rather than by anything a token estimate can model.
+ */
+export function messageTextForTokenCount(
+  message: vscode.LanguageModelChatRequestMessage,
+): string {
+  const chunks: string[] = [];
+
+  for (const part of message.content) {
+    if (part instanceof vscode.LanguageModelTextPart) {
+      chunks.push(part.value);
+    } else if (part instanceof vscode.LanguageModelToolCallPart) {
+      chunks.push(part.name, JSON.stringify(part.input));
+    } else if (part instanceof vscode.LanguageModelToolResultPart) {
+      chunks.push(toolResultContentString(part));
+    } else if (part instanceof vscode.LanguageModelPromptTsxPart) {
+      chunks.push(
+        typeof part.value === "string"
+          ? part.value
+          : JSON.stringify(part.value),
+      );
+    }
+  }
+
+  return chunks.join("\n");
+}
+
+/**
+ * Estimate the token count of a prompt or a message.
+ *
+ * Module-level so the router can reuse it. Its `provideTokenCount` used to
+ * answer 0 for a model it could not resolve, and 0 is not a small estimate but
+ * a wrong one: VS Code treats it as "this prompt costs nothing" and may let an
+ * over-long context through. A rough number is strictly better than none.
+ */
+export function estimateTokenCount(
+  text: string | vscode.LanguageModelChatRequestMessage,
+): number {
+  const content =
+    typeof text === "string" ? text : messageTextForTokenCount(text);
+  return Tokenizer.getInstance().countTokens(content);
 }
 
 /**
@@ -133,7 +221,12 @@ export abstract class BaseChatProvider
   protected readonly visionService: VisionService;
   protected isActive = true;
   private disposables: vscode.Disposable[] = [];
-  private clientCache = new Map<string, IApiClient>();
+
+  /**
+   * Cached API clients, keyed by `baseUrl::apiKey`. Exposed to subclasses and
+   * tests so cache invalidation (config / secret changes) is verifiable.
+   */
+  protected readonly clientCache = new Map<string, IApiClient>();
 
   /** Cached API key presence, invalidated on secret change */
   private hasApiKeyCache: boolean | undefined;
@@ -142,14 +235,6 @@ export abstract class BaseChatProvider
     this.onDidChangeLanguageModelChatInformationEmitter.event;
 
   // ── Static helpers ───────────────────────────────
-
-  private static hasTimestamp(msg: unknown): msg is { timestamp: number } {
-    if (typeof msg !== "object" || msg === null) {
-      return false;
-    }
-    const timestamp = Reflect.get(msg, "timestamp");
-    return typeof timestamp === "number";
-  }
 
   private static isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
@@ -192,13 +277,15 @@ export abstract class BaseChatProvider
     this.providerName = modelProvider.config.vendorName;
     this.configSection = this.getConfigSection();
     this.supportsThinking = this.getSupportsThinking();
-    this.visionService = new VisionService(context);
+    this.visionService = getVisionService(context);
 
     logger.provider.debug(`[${this.providerId}] ChatProvider initialized`);
 
+    // The vision service is intentionally absent here: it is shared across
+    // providers and owned by the extension context, so disposing this provider
+    // must not dispose it.
     this.disposables.push(
       this.onDidChangeLanguageModelChatInformationEmitter,
-      this.visionService,
       vscode.workspace.onDidChangeConfiguration((e) => {
         this.onConfigurationChanged(e);
       }),
@@ -265,9 +352,13 @@ export abstract class BaseChatProvider
         `[${this.providerId}] Secret affects this provider, refreshing...`,
       );
       this.hasApiKeyCache = undefined;
+      // The cache key embeds the API key, so a rotated key would otherwise
+      // leave the previous client — and its plaintext key — cached for the
+      // lifetime of the provider.
+      this.clientCache.clear();
       this.onDidChangeLanguageModelChatInformationEmitter.fire();
     }
-    if (this.isActive && e.key.startsWith("copilot-models.tokenPlan.")) {
+    if (this.isActive && e.key.startsWith(TOKEN_PLAN_SECRET_PREFIX)) {
       logger.auth.debug(
         `[${this.providerId}] Token plan secret changed, refreshing...`,
       );
@@ -351,39 +442,6 @@ export abstract class BaseChatProvider
         ? { configurationSchema: BaseChatProvider.buildThinkingEffortSchema() }
         : {}),
     };
-  }
-
-  /**
-   * Get conversation segment info
-   */
-  protected resolveConversationSegment(
-    messages: readonly vscode.LanguageModelChatRequestMessage[],
-  ): ConversationSegment {
-    if (messages.length === 0) {
-      logger.chat.debug("No messages, creating new segment");
-      return { index: 0, id: `seg-${Date.now()}`, timestamp: Date.now() };
-    }
-
-    let latestTimestamp = 0;
-    let index = 0;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (BaseChatProvider.hasTimestamp(msg)) {
-        latestTimestamp = msg.timestamp;
-        index = i;
-        break;
-      }
-    }
-
-    const segment = {
-      index,
-      id: `seg-${latestTimestamp || Date.now()}`,
-      timestamp: latestTimestamp || Date.now(),
-    };
-    logger.chat.debug(
-      `Resolved segment: ${segment.id}, index: ${segment.index}`,
-    );
-    return segment;
   }
 
   /**
@@ -640,28 +698,9 @@ export abstract class BaseChatProvider
             textBuffer += val;
           }
         } else if (part instanceof vscode.LanguageModelToolResultPart) {
-          const textParts: string[] = [];
-          let binaryParts = 0;
-          for (const item of part.content) {
-            if (item instanceof vscode.LanguageModelTextPart) {
-              textParts.push(item.value);
-            } else if (item instanceof vscode.LanguageModelDataPart) {
-              binaryParts++;
-            }
-          }
-          const toolText = textParts.join("");
-          let toolContent = toolText;
-          if (!toolContent) {
-            // Never serialize binary data parts into the request — that
-            // would bloat the payload with a huge JSON byte map.
-            toolContent =
-              binaryParts > 0
-                ? `[Tool result contains ${binaryParts} binary data part(s), omitted]`
-                : JSON.stringify(part.content);
-          }
           toolResults.push({
             callId: part.callId,
-            content: toolContent,
+            content: toolResultContentString(part),
           });
         }
       }
@@ -1057,30 +1096,7 @@ export abstract class BaseChatProvider
     text: string | vscode.LanguageModelChatRequestMessage,
     _token: vscode.CancellationToken,
   ): Promise<number> {
-    const content =
-      typeof text === "string" ? text : this.extractTextFromMessage(text);
-    return this.estimateTokenCount(content);
-  }
-
-  /**
-   * Calculate token count accurately
-   * Uses o200k_base encoding (via @dqbd/tiktoken WASM)
-   * Falls back to heuristic estimation when WASM fails to load
-   */
-  private estimateTokenCount(text: string): number {
-    return Tokenizer.getInstance().countTokens(text);
-  }
-
-  private extractTextFromMessage(
-    message: vscode.LanguageModelChatRequestMessage,
-  ): string {
-    let text = "";
-    for (const part of message.content) {
-      if (part instanceof vscode.LanguageModelTextPart) {
-        text += part.value;
-      }
-    }
-    return text;
+    return estimateTokenCount(text);
   }
 
   /**

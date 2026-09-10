@@ -1,6 +1,15 @@
 /** VS Code configuration section prefix */
 export const CONFIG_SECTION = "copilot-models";
 
+/**
+ * Vendor ID of the router entry point registered with VS Code.
+ *
+ * It is a second language model provider, and the ID has to match the
+ * `contributes.languageModelChatProviders` entry in package.json — which
+ * cannot import this file. `identifiers.test.ts` compares the two.
+ */
+export const ROUTER_VENDOR_ID = "copilot-models-router";
+
 /** Routing strategy */
 export type RoutingStrategy = "failover" | "latency";
 
@@ -36,8 +45,6 @@ export interface ModelDefinition {
   maxOutputTokens: number;
   /** Model capabilities */
   capabilities: ModelCapabilities;
-  /** Whether thinking parameter is required */
-  requiresThinkingParam?: boolean;
 }
 
 /**

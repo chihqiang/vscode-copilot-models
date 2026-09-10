@@ -1,5 +1,9 @@
 import * as assert from "assert";
-import { TokenPlan, type TokenConsumption } from "../core/token-plan";
+import {
+  TokenPlan,
+  type TokenConsumption,
+  type TokenPlanConfig,
+} from "../core/token-plan";
 import { builtInPresets } from "../plans";
 
 function createMockContext(): Record<string, unknown> {
@@ -130,21 +134,145 @@ suite("TokenPlan Test Suite", () => {
   // ── generatePlanId ───────────────────────────────
 
   suite("generatePlanId", () => {
-    test("generates id with hostname prefix", () => {
-      const id = plan.generatePlanId("https://api.deepseek.com");
-      assert.ok(id.startsWith("plan-api-deepseek-com-"));
+    test("includes the endpoint host and path", () => {
+      assert.strictEqual(
+        plan.generatePlanId("https://api.deepseek.com/v1"),
+        "plan-api-deepseek-com-v1",
+      );
     });
 
-    test("generates unique ids", async () => {
-      const id1 = plan.generatePlanId("https://example.com");
-      await new Promise((r) => setTimeout(r, 5));
-      const id2 = plan.generatePlanId("https://example.com");
-      assert.notStrictEqual(id1, id2);
+    test("is stable for the same endpoint", () => {
+      // Stability is the contract, not an incidental property. It is what makes
+      // re-configuring an endpoint replace its plan: with a timestamp in the id
+      // every configuration created a second plan, and the model lookup took
+      // the first one, so a replaced token never took effect.
+      assert.strictEqual(
+        plan.generatePlanId("https://example.com/v1"),
+        plan.generatePlanId("https://example.com/v1"),
+      );
+    });
+
+    test("treats a trailing slash and case as the same endpoint", () => {
+      assert.strictEqual(
+        plan.generatePlanId("https://Example.com/v1"),
+        plan.generatePlanId("https://example.com/v1/"),
+      );
+    });
+
+    test("keeps two endpoints on one host distinct", () => {
+      assert.notStrictEqual(
+        plan.generatePlanId("https://example.com/v1"),
+        plan.generatePlanId("https://example.com/v2"),
+      );
     });
 
     test("falls back for invalid URL", () => {
       const id = plan.generatePlanId("");
       assert.ok(id.startsWith("plan-"));
+    });
+  });
+
+  // ── storePlanForEndpoint ─────────────────────——
+
+  suite("storePlanForEndpoint", () => {
+    const ENDPOINT = "https://token-plan.example.com/v1";
+
+    function config(
+      planId: string,
+      planName: string,
+      baseUrl = ENDPOINT,
+    ): TokenPlanConfig {
+      return {
+        planId,
+        planName,
+        baseUrl,
+        providerId: "qwen",
+        models: [{ id: "qwen3.8-max" }],
+        createdAt: 1,
+        updatedAt: 1,
+      };
+    }
+
+    test("replaces the plan already configured for the endpoint", async () => {
+      // Re-running the wizard against the same URL is how a user swaps in a
+      // new token. It must not leave the previous plan in place.
+      const firstId = plan.generatePlanId(ENDPOINT);
+      await plan.storePlanForEndpoint(config(firstId, "First"), "old-token");
+
+      await plan.storePlanForEndpoint(config(firstId, "Second"), "new-token");
+
+      const plans = plan.getPlans();
+      assert.strictEqual(plans.length, 1);
+      assert.strictEqual(plans[0].planName, "Second");
+      assert.strictEqual(await plan.getToken(firstId), "new-token");
+    });
+
+    test("drops the superseded plan and its stored token", async () => {
+      // Plans written by earlier versions carry a timestamp-based id, so
+      // matching on planId alone would leave them behind.
+      const legacyId = "plan-token-plan-example-com-1700000000000";
+      await plan.storePlan(config(legacyId, "Legacy"));
+      await plan.storeToken(legacyId, "stale-token");
+
+      const newId = plan.generatePlanId(ENDPOINT);
+      await plan.storePlanForEndpoint(config(newId, "New"), "new-token");
+
+      assert.deepStrictEqual(
+        plan.getPlans().map((p) => p.planId),
+        [newId],
+      );
+      assert.strictEqual(
+        await plan.getToken(legacyId),
+        undefined,
+        "the superseded token must not be left in SecretStorage",
+      );
+    });
+
+    test("keeps plans for other endpoints", async () => {
+      const otherEndpoint = "https://other.example.com/v1";
+      await plan.storePlanForEndpoint(
+        config(plan.generatePlanId(otherEndpoint), "Other", otherEndpoint),
+        "other-token",
+      );
+      await plan.storePlanForEndpoint(
+        config(plan.generatePlanId(ENDPOINT), "Mine"),
+        "my-token",
+      );
+
+      assert.strictEqual(plan.getPlans().length, 2);
+    });
+  });
+
+  // ── resolvePlanOverride precedence ───────────────
+
+  suite("resolvePlanOverride precedence", () => {
+    test("prefers the most recently updated plan covering the model", async () => {
+      // Two endpoints can list the same model. Taking the first match meant an
+      // older plan shadowed a newer one regardless of when it was configured.
+      await plan.storePlan({
+        planId: "older",
+        planName: "Older",
+        baseUrl: "https://old.example.com/v1",
+        providerId: "qwen",
+        models: [{ id: "shared-model" }],
+        createdAt: 1,
+        updatedAt: 100,
+      });
+      await plan.storeToken("older", "old-token");
+      await plan.storePlan({
+        planId: "newer",
+        planName: "Newer",
+        baseUrl: "https://new.example.com/v1",
+        providerId: "qwen",
+        models: [{ id: "shared-model" }],
+        createdAt: 2,
+        updatedAt: 200,
+      });
+      await plan.storeToken("newer", "new-token");
+
+      const chosen = await plan.resolvePlanOverride("shared-model");
+      assert.strictEqual(chosen?.planId, "newer");
+      assert.strictEqual(chosen?.apiKey, "new-token");
     });
   });
 
@@ -337,6 +465,146 @@ suite("TokenPlan Test Suite", () => {
         concurrentPlan.getConsumptions().length,
         COUNT,
         "every concurrent record must survive",
+      );
+    });
+  });
+
+  // ── 写入合并 ─────────────────────────────────────
+
+  suite("Consumption write coalescing", () => {
+    /**
+     * A context whose writes are counted and take a turn of the event loop,
+     * like the real disk-backed storage does.
+     */
+    function createCountingContext(): {
+      context: Record<string, unknown>;
+      updates: () => number;
+      persisted: () => TokenConsumption[] | undefined;
+    } {
+      const state = new Map<string, unknown>();
+      let updates = 0;
+      const context = {
+        globalState: {
+          get: (key: string, defaultValue?: unknown) =>
+            state.has(key) ? state.get(key) : defaultValue,
+          update: async (key: string, value: unknown) => {
+            updates++;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            state.set(key, value);
+          },
+        },
+        secrets: {
+          store: async () => {},
+          get: async () => undefined,
+          delete: async () => {},
+        },
+      };
+
+      return {
+        context,
+        updates: () => updates,
+        // The key is private to TokenPlan, so pick the stored array instead of
+        // duplicating the literal here.
+        persisted: () =>
+          [...state.values()].find((v) => Array.isArray(v)) as
+            | TokenConsumption[]
+            | undefined,
+      };
+    }
+
+    function consumption(index: number): TokenConsumption {
+      return {
+        planId: "p1",
+        modelId: `m${index}`,
+        promptTokens: 1,
+        completionTokens: 1,
+        totalTokens: 2,
+        timestamp: index,
+      };
+    }
+
+    test("coalesces a burst into a single write without losing records", async () => {
+      const { context, updates, persisted } = createCountingContext();
+      const burstPlan = TokenPlan.init(context as never, builtInPresets);
+
+      const COUNT = 10;
+      await Promise.all(
+        Array.from({ length: COUNT }, (_, i) =>
+          burstPlan.recordConsumption(consumption(i)),
+        ),
+      );
+
+      // Records queued while a write is pending add nothing to it: the pending
+      // write snapshots the live log when it runs. One write per record made a
+      // burst of N cost N writes of a growing array.
+      assert.strictEqual(
+        updates(),
+        1,
+        `expected one coalesced write, got ${updates()}`,
+      );
+      assert.strictEqual(
+        persisted()?.length,
+        COUNT,
+        "the coalesced write must still contain every record",
+      );
+    });
+
+    test("a record written on its own is still persisted immediately", async () => {
+      const { context, updates, persisted } = createCountingContext();
+      const singlePlan = TokenPlan.init(context as never, builtInPresets);
+
+      await singlePlan.recordConsumption(consumption(1));
+
+      assert.strictEqual(updates(), 1);
+      assert.strictEqual(persisted()?.length, 1);
+    });
+
+    test("clearing while a write is queued still persists the empty log", async () => {
+      const { context, persisted } = createCountingContext();
+      const burstPlan = TokenPlan.init(context as never, builtInPresets);
+
+      // Not awaited: the clear must be safe while the record's write is still
+      // queued, otherwise a stale snapshot could resurrect the records.
+      const recording = burstPlan.recordConsumption(consumption(1));
+      const clearing = burstPlan.clearConsumptions();
+      await Promise.all([recording, clearing]);
+
+      assert.deepStrictEqual(persisted(), []);
+      assert.strictEqual(burstPlan.getConsumptions().length, 0);
+    });
+
+    test("keeps persisting after a failed write", async () => {
+      let failNext = true;
+      let stored: unknown;
+      const context = {
+        globalState: {
+          get: () => [],
+          update: async (_key: string, value: unknown) => {
+            if (failNext) {
+              failNext = false;
+              throw new Error("disk full");
+            }
+            stored = value;
+          },
+        },
+        secrets: {
+          store: async () => {},
+          get: async () => undefined,
+          delete: async () => {},
+        },
+      };
+      const flakyPlan = TokenPlan.init(context as never, builtInPresets);
+
+      await assert.rejects(
+        () => flakyPlan.recordConsumption(consumption(1)),
+        /disk full/,
+      );
+      await flakyPlan.recordConsumption(consumption(2));
+
+      assert.strictEqual(
+        (stored as TokenConsumption[] | undefined)?.length,
+        2,
+        "a failed write must not break the chain",
       );
     });
   });

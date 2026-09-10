@@ -60,7 +60,7 @@ export class ProviderModels {
 
   private factories = new Map<string, IProviderFactory>();
   private providers = new Map<string, IModelProvider>();
-  private models = new Map<string, ModelDefinition[]>();
+  private models = new Map<string, readonly ModelDefinition[]>();
   private modelIdToProviderId = new Map<string, string>();
 
   private constructor(definitions: ProviderDefinition[]) {
@@ -176,26 +176,12 @@ export class ProviderModels {
     return Array.from(this.providers.values());
   }
 
-  getModelsForProvider(providerId: string): ModelDefinition[] {
-    return this.models.get(providerId) || [];
-  }
-
   getAllModels(): ModelDefinition[] {
     const allModels: ModelDefinition[] = [];
     for (const models of this.models.values()) {
       allModels.push(...models);
     }
     return allModels;
-  }
-
-  findModelById(modelId: string): ModelDefinition | undefined {
-    for (const models of this.models.values()) {
-      const found = models.find((m) => m.id === modelId);
-      if (found) {
-        return found;
-      }
-    }
-    return undefined;
   }
 
   findProviderByModelId(modelId: string): IModelProvider | undefined {

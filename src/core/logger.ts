@@ -137,6 +137,35 @@ const ALL_CATEGORIES: LogCategory[] = [
   "vision",
 ];
 
+/**
+ * Render log arguments into a single line.
+ *
+ * Exported so the one-line-per-entry property can be tested: it is what makes
+ * the log greppable, and it is easy to lose. An `Error`'s stack is multi-line,
+ * so logging one used to emit a line per stack frame and break that property.
+ */
+export function formatLogArguments(args: readonly unknown[]): string {
+  return args
+    .map((arg) => {
+      if (typeof arg === "string") {
+        return arg;
+      }
+      if (arg instanceof Error) {
+        // Collapse the stack rather than dropping it: the frames are still
+        // worth having, just not one log line each.
+        return (arg.stack ?? arg.message).replace(/\s*\n\s*/g, " <- ");
+      }
+      try {
+        // Single-line compact JSON keeps one log entry per line for easy
+        // grepping.
+        return JSON.stringify(arg);
+      } catch {
+        return String(arg);
+      }
+    })
+    .join(" ");
+}
+
 // ── Logger Class ───────────────────────────────
 
 export class Logger implements vscode.Disposable {
@@ -145,7 +174,6 @@ export class Logger implements vscode.Disposable {
   });
 
   private channel: vscode.OutputChannel | undefined;
-  private showCategory = true;
   private currentLogLevel: LogLevel = "info";
   private developmentMode = false;
   private testMode = false;
@@ -344,9 +372,7 @@ export class Logger implements vscode.Disposable {
   ): string {
     const ts = new Date().toISOString().slice(11, 23);
     const levelStr = level.toUpperCase().padEnd(5);
-    const categoryText = this.showCategory
-      ? `[${CATEGORY_NAMES[category as LogCategory] ?? category}] `
-      : "";
+    const categoryText = `[${CATEGORY_NAMES[category as LogCategory] ?? category}] `;
 
     // Structured per-request context, e.g.
     //   req=a1b2c3 provider=deepseek model=deepseek-flash
@@ -356,23 +382,7 @@ export class Logger implements vscode.Disposable {
       : "";
     const prefix = `[${ts}] [${levelStr}] ${categoryText}${ctxText}`;
 
-    const text = args
-      .map((a) => {
-        if (typeof a === "string") {
-          return a;
-        }
-        if (a instanceof Error) {
-          return a.stack ?? a.message;
-        }
-        try {
-          // Single-line compact JSON keeps one log entry per line for easy
-          // grepping.
-          return JSON.stringify(a);
-        } catch {
-          return String(a);
-        }
-      })
-      .join(" ");
+    const text = formatLogArguments(args);
 
     // Final safety net: redact any sensitive values (API keys, tokens,
     // Bearer headers, key=value pairs) that slipped into the message.

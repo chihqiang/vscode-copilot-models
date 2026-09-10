@@ -188,10 +188,14 @@ export async function fetchProviderBalance(
   const baseUrl = getProviderBaseUrl(providerId, provider.config.baseUrl);
   const url = joinApiUrl(baseUrl, path);
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), BALANCE_TIMEOUT_MS);
-  const abortFromCaller = () => controller.abort();
-  signal?.addEventListener("abort", abortFromCaller, { once: true });
+  // Combine the lookup timeout with the caller's signal. `AbortSignal.any`
+  // covers a signal that was already aborted before this call, which a
+  // listener added here would never see, and it needs no timer or listener
+  // teardown of its own.
+  const timeoutSignal = AbortSignal.timeout(BALANCE_TIMEOUT_MS);
+  const requestSignal = signal
+    ? AbortSignal.any([signal, timeoutSignal])
+    : timeoutSignal;
 
   try {
     const response = await fetch(url, {
@@ -200,7 +204,7 @@ export async function fetchProviderBalance(
         Accept: "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      signal: controller.signal,
+      signal: requestSignal,
     });
 
     if (!response.ok) {
@@ -231,15 +235,19 @@ export async function fetchProviderBalance(
       `[${providerId}] Balance lookup failed: ${error instanceof Error ? error.message : String(error)}`,
     );
     return { providerId, reason: "request-failed" };
-  } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener("abort", abortFromCaller);
   }
 }
 
 /**
  * Look up the balance of every registered provider that supports it.
  * Providers without a balance API are not included.
+ *
+ * Queries run concurrently: each one is bounded by its own timeout, so
+ * awaiting them in turn made the caller wait for the sum. Results keep the
+ * order of {@link balanceProviderIds}.
+ *
+ * `fetchProviderBalance` never throws, so `Promise.all` cannot reject and no
+ * single provider can fail the whole report.
  */
 export async function collectProviderBalances(
   signal?: AbortSignal,
@@ -249,15 +257,13 @@ export async function collectProviderBalances(
   }
 
   const registry = ProviderModels.getInstance();
-  const results: ProviderBalanceResult[] = [];
-  for (const providerId of balanceProviderIds()) {
-    const provider = registry.getProvider(providerId);
-    if (!provider) {
-      continue;
-    }
-    results.push(await fetchProviderBalance(provider, signal));
-  }
-  return results;
+  const providers = balanceProviderIds()
+    .map((providerId) => registry.getProvider(providerId))
+    .filter((provider): provider is IModelProvider => provider !== undefined);
+
+  return Promise.all(
+    providers.map((provider) => fetchProviderBalance(provider, signal)),
+  );
 }
 
 // ── Formatting ───────────────────────────────────────
@@ -267,7 +273,9 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
   EUR: "€",
   GBP: "£",
-  JPY: "¥",
+  // Not "¥": that is already CNY's symbol, so a JPY balance would read as
+  // renminbi. The prefix keeps the two distinguishable.
+  JPY: "JP¥",
 };
 
 /** Render an amount with its currency, e.g. `¥110.00`. */

@@ -9,7 +9,17 @@ import vscode from "vscode";
 import { logger } from "./logger";
 import { isImageMime, toDataUrl } from "./bytes";
 import { CONFIG_SECTION } from "./models";
-import { getConfig, getMaxImageSize } from "./settings";
+import {
+  getConfig,
+  getMaxImageSize,
+  settingKey,
+  SETTING_VISION_MODEL,
+  SETTING_VISION_PROMPT,
+  SETTING_VISION_PROXY_API_MODEL_ID,
+  SETTING_VISION_PROXY_API_URL,
+  SETTING_VISION_PROXY_MAX_TOKENS,
+  SETTING_VISION_PROXY_TIMEOUT_MS,
+} from "./settings";
 import { sanitizeUrl } from "./sanitize";
 
 // ── Constants ───────────────────────────────────────────────
@@ -34,7 +44,13 @@ If there are multiple images:
 Return one concise factual description suitable for inserting into a text-only chat prompt. Include visible text, objects, UI elements, people, and relevant context. Do not invent details.`;
 
 /** SecretStorage key for vision proxy API key */
-export const VISION_PROXY_API_KEY_SECRET = "copilot-models.visionProxy.apiKey";
+export const VISION_PROXY_API_KEY_SECRET = `${CONFIG_SECTION}.visionProxy.apiKey`;
+
+/**
+ * Sentinel stored in `visionModel` when the user picks "Custom API Endpoint".
+ * Shared with the wizard so the value is not duplicated as a bare literal.
+ */
+export const VISION_API_ENDPOINT_ID = "api:endpoint";
 
 /**
  * Store the vision proxy API key.
@@ -179,9 +195,9 @@ export class VSCodeLMVisionDescriber implements VisionDescriber {
 
   constructor() {
     const config = getConfig();
-    this.visionModelId = config.get<string>("visionModel");
+    this.visionModelId = config.get<string>(SETTING_VISION_MODEL);
     this.visionPrompt =
-      config.get<string>("visionPrompt") || DEFAULT_VISION_PROMPT;
+      config.get<string>(SETTING_VISION_PROMPT) || DEFAULT_VISION_PROMPT;
     this.id = this.visionModelId
       ? `vscode-lm:${this.visionModelId}`
       : "vscode-lm:auto";
@@ -384,6 +400,25 @@ export class ApiEndpointVisionDescriber implements VisionDescriber {
 // ── Vision Service ──────────────────────────────────────────
 
 /**
+ * Vision settings that are captured when a describer is constructed.
+ *
+ * `VisionService` caches the describer it builds, so a change to any of these
+ * must reset that cache. `visionProxy.timeoutMs` / `visionProxy.maxTokens`
+ * used to be missing from this list, which made editing them a no-op until
+ * the window was reloaded.
+ */
+export function visionAffectingConfigKeys(): string[] {
+  return [
+    settingKey(SETTING_VISION_MODEL),
+    settingKey(SETTING_VISION_PROMPT),
+    settingKey(SETTING_VISION_PROXY_API_URL),
+    settingKey(SETTING_VISION_PROXY_API_MODEL_ID),
+    settingKey(SETTING_VISION_PROXY_TIMEOUT_MS),
+    settingKey(SETTING_VISION_PROXY_MAX_TOKENS),
+  ];
+}
+
+/**
  * Vision proxy service
  */
 export class VisionService {
@@ -394,10 +429,7 @@ export class VisionService {
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (
-          e.affectsConfiguration(`${CONFIG_SECTION}.visionModel`) ||
-          e.affectsConfiguration(`${CONFIG_SECTION}.visionPrompt`) ||
-          e.affectsConfiguration(`${CONFIG_SECTION}.visionProxy.apiUrl`) ||
-          e.affectsConfiguration(`${CONFIG_SECTION}.visionProxy.apiModelId`)
+          visionAffectingConfigKeys().some((key) => e.affectsConfiguration(key))
         ) {
           this.reset();
         }
@@ -411,7 +443,14 @@ export class VisionService {
   }
 
   /**
-   * Get the current vision describer
+   * Get the current vision describer, or `undefined` when the configured proxy
+   * cannot be built.
+   *
+   * The `undefined` return is reserved for an incomplete custom endpoint.
+   * Previously that case fell through to VS Code LM auto-detect, so a user who
+   * selected "Custom API Endpoint" without filling in the URL or model ID
+   * silently got auto-detected descriptions while believing their own endpoint
+   * was in use — and the caller's "not configured" notice was unreachable.
    */
   async get(): Promise<VisionDescriber | undefined> {
     if (this.describer) {
@@ -421,31 +460,32 @@ export class VisionService {
     const config = getConfig();
     const visionModelId = config.get<string>("visionModel");
 
-    if (visionModelId) {
-      if (visionModelId === "api:endpoint") {
-        const apiUrl = config.get<string>("visionProxy.apiUrl");
-        const apiModelId = config.get<string>("visionProxy.apiModelId");
-        const apiTimeoutMs = config.get<number>("visionProxy.timeoutMs");
-        const apiMaxTokens = config.get<number>("visionProxy.maxTokens");
+    if (visionModelId === VISION_API_ENDPOINT_ID) {
+      const apiUrl = config.get<string>("visionProxy.apiUrl");
+      const apiModelId = config.get<string>("visionProxy.apiModelId");
 
-        if (apiUrl && apiModelId) {
-          this.describer = new ApiEndpointVisionDescriber(
-            {
-              url: apiUrl,
-              modelId: apiModelId,
-              timeoutMs: apiTimeoutMs,
-              maxTokens: apiMaxTokens,
-            },
-            this.context.secrets,
-          );
-          return this.describer;
-        }
-      } else {
-        this.describer = new VSCodeLMVisionDescriber();
-        return this.describer;
+      if (!apiUrl || !apiModelId) {
+        logger.vision.warn(
+          `Vision proxy is set to a custom endpoint but its configuration is incomplete ` +
+            `(apiUrl=${apiUrl ? "set" : "missing"}, apiModelId=${apiModelId ? "set" : "missing"}); ` +
+            `image descriptions are disabled`,
+        );
+        return undefined;
       }
+
+      this.describer = new ApiEndpointVisionDescriber(
+        {
+          url: apiUrl,
+          modelId: apiModelId,
+          timeoutMs: config.get<number>(SETTING_VISION_PROXY_TIMEOUT_MS),
+          maxTokens: config.get<number>(SETTING_VISION_PROXY_MAX_TOKENS),
+        },
+        this.context.secrets,
+      );
+      return this.describer;
     }
 
+    // No explicit model id means "auto-detect" (the documented default).
     this.describer = new VSCodeLMVisionDescriber();
     return this.describer;
   }
@@ -464,6 +504,40 @@ export class VisionService {
     this.disposables.forEach((d) => d.dispose());
     this.disposables.length = 0;
   }
+}
+
+/**
+ * Shared vision services, one per extension context.
+ *
+ * Every chat provider needs a `VisionService`, but the service only reads
+ * global settings — building one per provider registered the same two
+ * configuration/secret listeners three times over and kept a separate
+ * describer cache in each. Keyed by context so a test that uses its own
+ * context still gets an isolated instance.
+ */
+const sharedVisionServices = new WeakMap<
+  vscode.ExtensionContext,
+  VisionService
+>();
+
+/**
+ * Get the `VisionService` for an extension context, creating it on first use.
+ *
+ * The service is owned by the extension (`context.subscriptions`), not by the
+ * provider that happened to request it first: disposing a single provider —
+ * which happens whenever a provider is disabled — must not tear down state the
+ * other providers still use.
+ */
+export function getVisionService(
+  context: vscode.ExtensionContext,
+): VisionService {
+  let service = sharedVisionServices.get(context);
+  if (!service) {
+    service = new VisionService(context);
+    sharedVisionServices.set(context, service);
+    context.subscriptions?.push(service);
+  }
+  return service;
 }
 
 // ── Helper Functions ────────────────────────────────────────
@@ -497,7 +571,7 @@ export async function getVisionLanguageModelOptions(): Promise<
  */
 export function getVisionPrompt(): string {
   const config = getConfig();
-  return config.get<string>("visionPrompt") || DEFAULT_VISION_PROMPT;
+  return config.get<string>(SETTING_VISION_PROMPT) || DEFAULT_VISION_PROMPT;
 }
 
 // ── Image Resolution ────────────────────────────────────────
@@ -609,15 +683,21 @@ export async function resolveImageMessages(
 
   const currentImageMessageIndex =
     findCurrentImageMessageIndexFromResolved(resolved);
-  if (currentImageMessageIndex === undefined) {
-    return { messages, stats };
-  }
 
-  const describer = await visionService.get();
-  if (!describer) {
+  // Only the current turn's images are described, so the describer is only
+  // needed when there is one to describe. This used to return early when the
+  // images all belonged to earlier turns, which sent those images through
+  // untouched — to a model the proxy exists to keep them away from.
+  const describer =
+    currentImageMessageIndex === undefined
+      ? undefined
+      : await visionService.get();
+
+  if (currentImageMessageIndex !== undefined && !describer) {
     stats.unavailableImageMessages += 1;
     return {
-      messages,
+      // Nothing could be described, so nothing may be forwarded either.
+      messages: replaceImagesInAllMessages(resolved),
       stats,
       initialResponseNotice:
         "Vision proxy not configured. Image descriptions will be unavailable.",
@@ -641,7 +721,7 @@ export async function resolveImageMessages(
       continue;
     }
 
-    if (index === currentImageMessageIndex) {
+    if (describer && index === currentImageMessageIndex) {
       stats.currentImageMessages += 1;
 
       try {
@@ -671,19 +751,19 @@ export async function resolveImageMessages(
         } else {
           stats.failedImageMessages += 1;
           initialResponseNotice = "Vision proxy returned empty description.";
-          result.push(message);
+          result.push(replaceImagesWithPlaceholder(message));
         }
       } catch (error) {
         stats.failedImageMessages += 1;
         initialResponseNotice = `Vision proxy failed: ${error instanceof Error ? error.message : String(error)}`;
-        result.push(message);
+        result.push(replaceImagesWithPlaceholder(message));
       }
 
       stats.droppedImageParts += parts.imageParts.length;
     } else {
       stats.omittedImageMessages += 1;
       stats.droppedImageParts += parts.imageParts.length;
-      result.push(message);
+      result.push(replaceImagesWithPlaceholder(message));
     }
   }
 
@@ -746,4 +826,57 @@ function toVisionImagePart(
 
 function createImageDescriptionText(description: string): string {
   return IMAGE_DESCRIPTION_PREFIX + description + IMAGE_DESCRIPTION_SUFFIX;
+}
+
+/**
+ * Rebuild a message with its image parts replaced by a placeholder.
+ *
+ * A model without image input must never receive image parts — that is the
+ * whole point of the proxy. This covers the images it did not describe: an
+ * empty description, a describer that threw, a describer that is not
+ * configured, and images from earlier turns, which are not described again.
+ *
+ * The role is preserved and every non-image part is kept, so surrounding text
+ * and tool calls survive. Callers must have established that the message holds
+ * at least one image part; otherwise the message is returned unchanged, since
+ * rebuilding it would only risk dropping parts for no reason.
+ */
+function replaceImagesWithPlaceholder(
+  message: vscode.LanguageModelChatRequestMessage,
+): vscode.LanguageModelChatRequestMessage {
+  const content = message.content as readonly vscode.LanguageModelInputPart[];
+
+  const hasImage = content.some(
+    (part) =>
+      part instanceof vscode.LanguageModelDataPart &&
+      isImageMime(part.mimeType),
+  );
+  if (!hasImage) {
+    return message;
+  }
+
+  const replaced = content.map((part) =>
+    part instanceof vscode.LanguageModelDataPart && isImageMime(part.mimeType)
+      ? new vscode.LanguageModelTextPart(IMAGE_DESCRIPTION_UNAVAILABLE)
+      : part,
+  );
+
+  // Keep the original name as well as the role: rebuilding the message must
+  // not drop anything the caller still relies on.
+  return new vscode.LanguageModelChatMessage(
+    message.role,
+    replaced,
+    message.name,
+  );
+}
+
+/** Apply {@link replaceImagesWithPlaceholder} where a message has images. */
+function replaceImagesInAllMessages(
+  resolved: readonly ResolvedMessage[],
+): vscode.LanguageModelChatRequestMessage[] {
+  return resolved.map((entry) =>
+    entry.parts.imageParts.length > 0
+      ? replaceImagesWithPlaceholder(entry.message)
+      : entry.message,
+  );
 }

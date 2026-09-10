@@ -8,15 +8,19 @@
 
 import * as assert from "assert";
 import * as vscode from "vscode";
+import { CONFIG_SECTION } from "../core/models";
 import {
+  IMAGE_DESCRIPTION_UNAVAILABLE,
+  VISION_API_ENDPOINT_ID,
   VISION_PROXY_API_KEY_SECRET,
+  VisionService,
   clearVisionProxyApiKey,
   hasVisionProxyApiKey,
   resolveImageMessages,
   resolveVisionCompletionUrl,
   storeVisionProxyApiKey,
+  visionAffectingConfigKeys,
   type VisionDescriber,
-  type VisionService,
 } from "../core/vision";
 
 interface Stub {
@@ -218,5 +222,329 @@ suite("vision proxy API key storage Test Suite", () => {
     // Clearing again must not throw.
     await clearVisionProxyApiKey(secrets);
     assert.strictEqual(await hasVisionProxyApiKey(secrets), false);
+  });
+});
+
+suite("resolveImageMessages without a describer Test Suite", () => {
+  test("replaces the image with a placeholder and reports a notice", async () => {
+    // VisionService.get() returns undefined for an incomplete custom endpoint.
+    const service = {
+      get: async () => undefined,
+    } as unknown as VisionService;
+    const message = createImageMessage();
+
+    const result = await resolveImageMessages(
+      [message],
+      createToken(),
+      service,
+    );
+
+    assert.strictEqual(
+      containsImagePart(result.messages[0]),
+      false,
+      "an undescribable image must not be forwarded to a model without image input",
+    );
+    assert.strictEqual(containsPlaceholder(result.messages[0]), true);
+    assert.ok(
+      result.initialResponseNotice?.includes("not configured"),
+      `expected a configuration notice, got "${result.initialResponseNotice}"`,
+    );
+  });
+});
+
+/** Whether any text part of the message carries the placeholder. */
+function containsPlaceholder(
+  message: vscode.LanguageModelChatRequestMessage | undefined,
+): boolean {
+  return (
+    message?.content.some(
+      (part) =>
+        part instanceof vscode.LanguageModelTextPart &&
+        part.value.includes(IMAGE_DESCRIPTION_UNAVAILABLE),
+    ) ?? false
+  );
+}
+
+suite("resolveImageMessages placeholder Test Suite", () => {
+  /** The message text joined back together, for assertions. */
+  function textOf(
+    message: vscode.LanguageModelChatRequestMessage | undefined,
+  ): string {
+    return (message?.content ?? [])
+      .map((part) =>
+        part instanceof vscode.LanguageModelTextPart ? part.value : "",
+      )
+      .join("");
+  }
+
+  test("replaces an older, un-described image with a placeholder", async () => {
+    // Image in an earlier turn, then an assistant reply and a follow-up. The
+    // proxy only describes the current turn, and this used to return early
+    // with every message intact — forwarding the old image to a model that
+    // cannot accept one.
+    const messages = [
+      createImageMessage(),
+      vscode.LanguageModelChatMessage.Assistant("it is a red square"),
+      vscode.LanguageModelChatMessage.User("and now?"),
+    ];
+    const stub = createVisionServiceStub();
+
+    const result = await resolveImageMessages(
+      messages,
+      createToken(),
+      stub.service,
+    );
+
+    assert.strictEqual(
+      stub.describeCalls(),
+      0,
+      "an older image is not described again",
+    );
+    assert.strictEqual(
+      containsImagePart(result.messages[0]),
+      false,
+      "the old image must not reach the model",
+    );
+    assert.strictEqual(containsPlaceholder(result.messages[0]), true);
+  });
+
+  test("replaces the image with a placeholder when the describer throws", async () => {
+    const failing = {
+      get: async () => ({
+        id: "failing",
+        source: "vscode-lm",
+        describe: async () => {
+          throw new Error("vision endpoint down");
+        },
+      }),
+    } as unknown as VisionService;
+
+    const result = await resolveImageMessages(
+      [createImageMessage()],
+      createToken(),
+      failing,
+    );
+
+    assert.strictEqual(
+      containsImagePart(result.messages[0]),
+      false,
+      "a failed description must not leave the image in the request",
+    );
+    assert.strictEqual(containsPlaceholder(result.messages[0]), true);
+    assert.ok(
+      result.initialResponseNotice?.includes("vision endpoint down"),
+      `expected the failure to be reported, got "${result.initialResponseNotice}"`,
+    );
+  });
+
+  test("replaces the image with a placeholder when the description is empty", async () => {
+    const stub = createVisionServiceStub("");
+
+    const result = await resolveImageMessages(
+      [createImageMessage()],
+      createToken(),
+      stub.service,
+    );
+
+    assert.strictEqual(containsImagePart(result.messages[0]), false);
+    assert.strictEqual(containsPlaceholder(result.messages[0]), true);
+    assert.ok(result.initialResponseNotice?.includes("empty"));
+  });
+
+  test("keeps the role and the surrounding text", async () => {
+    const messages = [
+      createImageMessage(),
+      vscode.LanguageModelChatMessage.Assistant("it is a red square"),
+      vscode.LanguageModelChatMessage.User("and now?"),
+    ];
+    const stub = createVisionServiceStub();
+
+    const result = await resolveImageMessages(
+      messages,
+      createToken(),
+      stub.service,
+    );
+
+    assert.strictEqual(
+      result.messages[0].role,
+      vscode.LanguageModelChatMessageRole.User,
+    );
+    assert.ok(
+      textOf(result.messages[0]).includes("what is in this image?"),
+      `the text around the image must survive, got "${textOf(result.messages[0])}"`,
+    );
+  });
+
+  test("leaves messages without images untouched", async () => {
+    const plain = vscode.LanguageModelChatMessage.User("and now?");
+    const messages = [
+      createImageMessage(),
+      vscode.LanguageModelChatMessage.Assistant("it is a red square"),
+      plain,
+    ];
+    const stub = createVisionServiceStub();
+
+    const result = await resolveImageMessages(
+      messages,
+      createToken(),
+      stub.service,
+    );
+
+    assert.strictEqual(
+      result.messages[2],
+      plain,
+      "a message without images needs no rebuild",
+    );
+  });
+
+  test("preserves the message name when rebuilding", async () => {
+    // Rebuilding is only about the image parts; anything else on the message
+    // must survive, including the optional name.
+    const named = vscode.LanguageModelChatMessage.User(
+      [
+        new vscode.LanguageModelTextPart("look at this"),
+        new vscode.LanguageModelDataPart(
+          new Uint8Array([1, 2, 3]),
+          "image/png",
+        ),
+      ],
+      "custom-name",
+    );
+    const messages = [
+      named,
+      vscode.LanguageModelChatMessage.Assistant("it is a graph"),
+      vscode.LanguageModelChatMessage.User("next"),
+    ];
+    const stub = createVisionServiceStub();
+
+    const result = await resolveImageMessages(
+      messages,
+      createToken(),
+      stub.service,
+    );
+
+    assert.strictEqual(containsImagePart(result.messages[0]), false);
+    assert.strictEqual(
+      result.messages[0].name,
+      "custom-name",
+      "the rebuilt message must keep its name",
+    );
+  });
+});
+
+suite("visionAffectingConfigKeys Test Suite", () => {
+  test("covers every setting captured when a describer is built", () => {
+    const keys = visionAffectingConfigKeys();
+    for (const name of [
+      "visionModel",
+      "visionPrompt",
+      "visionProxy.apiUrl",
+      "visionProxy.apiModelId",
+      "visionProxy.timeoutMs",
+      "visionProxy.maxTokens",
+    ]) {
+      assert.ok(
+        keys.includes(`${CONFIG_SECTION}.${name}`),
+        `${name} must reset the cached describer`,
+      );
+    }
+  });
+});
+
+suite("VisionService describer resolution Test Suite", () => {
+  const config = () => vscode.workspace.getConfiguration(CONFIG_SECTION);
+
+  async function applySettings(values: Record<string, unknown>): Promise<void> {
+    for (const [key, value] of Object.entries(values)) {
+      await config().update(key, value, vscode.ConfigurationTarget.Global);
+    }
+  }
+
+  function createService(): VisionService {
+    return new VisionService({
+      secrets: { onDidChange: () => ({ dispose: () => {} }) },
+    } as unknown as vscode.ExtensionContext);
+  }
+
+  function resetSettings(): Promise<void> {
+    return applySettings({
+      visionModel: undefined,
+      "visionProxy.apiUrl": undefined,
+      "visionProxy.apiModelId": undefined,
+      "visionProxy.timeoutMs": undefined,
+      "visionProxy.maxTokens": undefined,
+    });
+  }
+
+  teardown(resetSettings);
+
+  test("returns undefined when the custom endpoint is incomplete", async () => {
+    await applySettings({
+      visionModel: VISION_API_ENDPOINT_ID,
+      "visionProxy.apiUrl": "",
+      "visionProxy.apiModelId": "",
+    });
+
+    const service = createService();
+    try {
+      assert.strictEqual(
+        await service.get(),
+        undefined,
+        "an incomplete endpoint must not silently fall back to VS Code LM auto-detect",
+      );
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test("builds and caches an API endpoint describer when complete", async () => {
+    await applySettings({
+      visionModel: VISION_API_ENDPOINT_ID,
+      "visionProxy.apiUrl": "https://api.example.com/v1",
+      "visionProxy.apiModelId": "gpt-4o",
+    });
+
+    const service = createService();
+    try {
+      const first = await service.get();
+      assert.strictEqual(first?.source, "api-endpoint");
+      assert.strictEqual(await service.get(), first, "the describer is cached");
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test("rebuilds the describer when the endpoint timeout changes", async () => {
+    await applySettings({
+      visionModel: VISION_API_ENDPOINT_ID,
+      "visionProxy.apiUrl": "https://api.example.com/v1",
+      "visionProxy.apiModelId": "gpt-4o",
+      "visionProxy.timeoutMs": 1000,
+    });
+
+    const service = createService();
+    try {
+      const first = await service.get();
+      assert.notStrictEqual(first, undefined);
+
+      await applySettings({ "visionProxy.timeoutMs": 2000 });
+
+      // The reset runs from the workspace configuration event, which is
+      // delivered asynchronously.
+      const deadline = Date.now() + 2000;
+      let rebuilt = await service.get();
+      while (rebuilt === first && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        rebuilt = await service.get();
+      }
+
+      assert.notStrictEqual(
+        rebuilt,
+        first,
+        "changing visionProxy.timeoutMs must reset the cached describer",
+      );
+    } finally {
+      service.dispose();
+    }
   });
 });
