@@ -112,11 +112,11 @@ Run `Copilot Models: Clear Vision Model` to remove the configuration.
 ## Supported Models
 
 The *Thinking Effort* selector in the model picker maps onto what each
-provider documents. `None` turns thinking off everywhere — for Qwen through
-`enable_thinking: false`, because its API defaults thinking to on, and for
-Zhipu AI and DeepSeek through their `thinking` toggle. Those two document only
-the toggle, so `low`, `high` and `max` all enable thinking at the provider's
-own default effort.
+provider documents. `None` turns thinking off everywhere: Qwen through
+`enable_thinking: false` — its API defaults thinking to on — and Zhipu AI and
+DeepSeek through their `thinking` toggle. All three document an on/off switch
+and no effort level, so `low`, `high` and `max` enable thinking at the
+provider's own default effort.
 
 ### Qwen (Alibaba Cloud)
 

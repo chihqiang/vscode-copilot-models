@@ -265,13 +265,12 @@ export function applyThinkingParams(
   const enabled = effort !== "none";
 
   if (format === "enable_thinking") {
-    // A boolean, and the API defaults it to on, so `false` is the only way to
-    // turn thinking off. The level still travels in `reasoning_effort` for the
-    // values that keep thinking on.
+    // A boolean, and the API defaults it to on, so `false` is the only value
+    // that turns thinking off. Nothing else is sent: this provider documents
+    // no effort parameter, and until these fields were wired into the request
+    // body at all, a level here was never transmitted — so sending one now
+    // would put an unverified parameter on every request.
     request.enable_thinking = enabled;
-    if (enabled) {
-      request.reasoning_effort = effort;
-    }
     return;
   }
 

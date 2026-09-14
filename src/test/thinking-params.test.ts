@@ -110,13 +110,17 @@ suite("thinking parameters Test Suite", () => {
       }
     });
 
-    test("a level still sends the effort it always sent", () => {
-      // This provider already sent the level this way; dropping it would be a
-      // silent behaviour change beyond the reported bug.
-      assert.strictEqual(
-        apply("enable_thinking", "max").reasoning_effort,
-        "max",
-      );
+    test("the level is not sent, because this API documents none", () => {
+      // DashScope documents the boolean toggle and `thinking_budget`, not an
+      // effort level. Until these fields reached the request body at all, a
+      // level sent here went nowhere; sending one now would put an unverified
+      // parameter on every request.
+      for (const effort of ["low", "high", "max"] as const) {
+        assert.strictEqual(
+          apply("enable_thinking", effort).reasoning_effort,
+          undefined,
+        );
+      }
     });
 
     test("no toggle of the other shape is sent", () => {

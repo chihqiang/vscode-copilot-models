@@ -52,7 +52,62 @@ export interface ClientOptions {
 }
 
 /**
- * API client interface
+ * Build the JSON body for a streaming chat completion request.
+ *
+ * Exported and pure so the payload can be asserted on directly. Every field
+ * has to be listed here to reach the API, and a field that is missing is
+ * indistinguishable from one the API chose to ignore — which is how the
+ * thinking parameters went unsent for every provider: they were set on the
+ * request and then dropped at this boundary, so the thinking-mode setting did
+ * nothing at all.
+ */
+export function buildChatRequestBody(
+  request: ApiRequest,
+): Record<string, unknown> {
+  const extraFields: Record<string, unknown> = {};
+
+  if (request.temperature !== undefined) {
+    extraFields.temperature = request.temperature;
+  }
+  if (request.top_p !== undefined) {
+    extraFields.top_p = request.top_p;
+  }
+  if (request.max_tokens !== undefined) {
+    extraFields.max_tokens = request.max_tokens;
+  }
+
+  const tools = request.tools?.map(toChatCompletionTool);
+  if (tools) {
+    extraFields.tools = tools;
+  }
+  if (request.tool_choice) {
+    extraFields.tool_choice = request.tool_choice;
+  }
+
+  // Thinking controls. Which one is set depends on the provider's declared
+  // `thinkingFormat`; an absent field must stay absent rather than being sent
+  // as `undefined`, which would be serialised away and hide the difference.
+  if (request.thinking !== undefined) {
+    extraFields.thinking = request.thinking;
+  }
+  if (request.enable_thinking !== undefined) {
+    extraFields.enable_thinking = request.enable_thinking;
+  }
+  if (request.reasoning_effort !== undefined) {
+    extraFields.reasoning_effort = request.reasoning_effort;
+  }
+
+  return {
+    model: request.model,
+    messages: request.messages.map(toChatCompletionMessageParam),
+    stream: true,
+    stream_options: request.stream_options ?? { include_usage: true },
+    ...extraFields,
+  };
+}
+
+/**
+ * API Client interface
  */
 export interface IApiClient {
   /** Base URL */
@@ -359,33 +414,7 @@ class ApiClientImpl implements IApiClient {
     }
 
     try {
-      const messages = request.messages.map(toChatCompletionMessageParam);
-      const tools = request.tools?.map(toChatCompletionTool);
-
-      const extraFields: Record<string, unknown> = {};
-      if (request.temperature !== undefined) {
-        extraFields.temperature = request.temperature;
-      }
-      if (request.top_p !== undefined) {
-        extraFields.top_p = request.top_p;
-      }
-      if (request.max_tokens !== undefined) {
-        extraFields.max_tokens = request.max_tokens;
-      }
-      if (tools) {
-        extraFields.tools = tools;
-      }
-      if (request.tool_choice) {
-        extraFields.tool_choice = request.tool_choice;
-      }
-
-      const requestBody: Record<string, unknown> = {
-        model: request.model,
-        messages,
-        stream: true,
-        stream_options: request.stream_options ?? { include_usage: true },
-        ...extraFields,
-      };
+      const requestBody = buildChatRequestBody(request);
 
       if (logger.shouldLog("debug")) {
         logger.api.debug(
@@ -393,8 +422,15 @@ class ApiClientImpl implements IApiClient {
         );
       }
 
+      const extraKeys = Object.keys(requestBody).filter(
+        (key) =>
+          key !== "model" &&
+          key !== "messages" &&
+          key !== "stream" &&
+          key !== "stream_options",
+      );
       logger.api.debug(
-        `[${providerName}] model="${request.model}" messages=${messages.length} extra=[${Object.keys(extraFields).join(",")}] stream=true`,
+        `[${providerName}] model="${request.model}" messages=${(requestBody.messages as unknown[]).length} extra=[${extraKeys.join(",")}] stream=true`,
       );
 
       // The circuit breaker now also guards the streaming consumption phase,

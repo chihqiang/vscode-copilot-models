@@ -91,9 +91,9 @@ API 密钥保存在 VS Code SecretStorage 中。
 ## 支持的模型
 
 模型选择器中的*思考强度*选项对应各服务商实际提供的参数。`None` 在所有
-服务商上都能关闭思考——通义千问通过 `enable_thinking: false`（其接口默认
-开启思考），智谱 AI 与 DeepSeek 则通过 `thinking` 开关。后两者只提供开关，
-因此 `low`、`high`、`max` 均以服务商自身默认强度开启思考。
+服务商上都能关闭思考：通义千问通过 `enable_thinking: false`（其接口默认开启
+思考），智谱 AI 与 DeepSeek 则通过 `thinking` 开关。三者都只提供开关、
+不提供强度档位，因此 `low`、`high`、`max` 均以服务商自身默认强度开启思考。
 
 ### 通义千问 (Alibaba Cloud)
 
