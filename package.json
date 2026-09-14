@@ -52,18 +52,6 @@
       {
         "vendor": "copilot-models-router",
         "displayName": "Copilot Models"
-      },
-      {
-        "vendor": "deepseek",
-        "displayName": "DeepSeek"
-      },
-      {
-        "vendor": "bigmodel",
-        "displayName": "BigModel"
-      },
-      {
-        "vendor": "qwen",
-        "displayName": "Qwen"
       }
     ],
     "commands": [

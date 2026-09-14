@@ -138,19 +138,16 @@ suite("Interfaces Test Suite", () => {
       const request: ApiRequest = {
         model: "deepseek-flash",
         messages: [{ role: "user", content: "Hello" }],
-        stream: true,
       };
 
       assert.strictEqual(request.model, "deepseek-flash");
       assert.strictEqual(request.messages.length, 1);
-      assert.strictEqual(request.stream, true);
     });
 
     test("should support thinking parameters", () => {
       const request: ApiRequest = {
         model: "deepseek-flash",
         messages: [{ role: "user", content: "Hello" }],
-        stream: true,
         thinking: { type: "enabled" },
         reasoning_effort: "high",
       };
@@ -163,7 +160,6 @@ suite("Interfaces Test Suite", () => {
       const request: ApiRequest = {
         model: "deepseek-flash",
         messages: [{ role: "user", content: "Hello" }],
-        stream: true,
         tools: [
           {
             type: "function",

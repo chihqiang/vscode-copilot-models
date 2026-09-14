@@ -20,7 +20,6 @@ function body(patch: Partial<ApiRequest> = {}): Record<string, unknown> {
   const request = {
     model: "test-model",
     messages: [{ role: "user", content: "hi" }],
-    stream: true,
     ...patch,
   } as ApiRequest;
   return buildChatRequestBody(request);
@@ -32,6 +31,8 @@ suite("chat request body Test Suite", () => {
 
     assert.strictEqual(requestBody.model, "test-model");
     assert.strictEqual((requestBody.messages as unknown[]).length, 1);
+    // Written by the builder, not read from the request: the client has no
+    // way to consume a non-streaming response.
     assert.strictEqual(requestBody.stream, true);
     assert.deepStrictEqual(requestBody.stream_options, { include_usage: true });
   });

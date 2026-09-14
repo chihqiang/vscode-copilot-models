@@ -46,9 +46,14 @@ suite("Registry Provider Test Suite", () => {
   });
 
   setup(() => {
-    if (ProviderModels.isInitialized()) {
-      ProviderModels.getInstance().clear();
-    }
+    // A fresh registry for every test, so this suite does not depend on
+    // another suite — or on the extension's own activation — having called
+    // `init()`. It used to clear an instance it assumed already existed, which
+    // held only while that assumption happened to be true; adding a test file
+    // that changes the order suites run in made `getInstance returns same
+    // instance` throw `Singleton not initialized` before any test had run
+    // `init()`.
+    ProviderModels.init([]);
   });
 
   teardown(() => {

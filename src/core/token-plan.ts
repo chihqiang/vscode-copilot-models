@@ -32,7 +32,6 @@ export interface TokenPlanConfig {
   baseUrl: string;
   providerId?: string | undefined;
   models: TokenPlanModel[];
-  stream?: boolean | undefined;
   createdAt: number;
   updatedAt: number;
 }
@@ -66,7 +65,6 @@ export interface PlanOverride {
   baseUrl: string;
   apiKey: string;
   consumptionRate: number;
-  stream: boolean;
 }
 
 // ── Constants ────────────────────────────────────────
@@ -472,7 +470,6 @@ export class TokenPlan {
       baseUrl: matchingPlan.baseUrl,
       apiKey: token,
       consumptionRate: 1,
-      stream: matchingPlan.stream !== false,
     };
   }
 }

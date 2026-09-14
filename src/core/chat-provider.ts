@@ -42,7 +42,9 @@ import {
 import {
   VisionService,
   containsImageParts,
+  formatVisionResolutionSummary,
   getVisionService,
+  hasUndescribedImages,
   isDescribingWith,
   resolveImageMessages,
   visionModelNeedsImageInputMessage,
@@ -682,7 +684,6 @@ export abstract class BaseChatProvider
     const request: ApiRequest = {
       model: this.getApiModelId(modelInfo.id),
       messages: apiMessages,
-      stream: true,
       ...(tools ? { tools } : {}),
       ...(toolChoice ? { tool_choice: toolChoice } : {}),
     };
@@ -1023,9 +1024,6 @@ export abstract class BaseChatProvider
         client = this.modelProvider.createClient(apiKey, { baseUrl });
         this.clientCache.set(cacheKey, client);
       }
-      if (planOverride) {
-        request.stream = planOverride.stream;
-      }
       const callbacks = this.createStreamCallbacks(progress, usageCallback);
       await client.streamChatCompletion(request, callbacks, token);
     } catch (error) {
@@ -1241,16 +1239,33 @@ export abstract class BaseChatProvider
         throw new Error(visionModelNeedsImageInputMessage(modelInfo.id));
       }
 
+      const skipVisionProxy =
+        modelDefinition?.capabilities.imageInput === true || nestedDescription;
       const visionResolution = await resolveImageMessages(
         messages,
         token,
         this.visionService,
-        {
-          skipVisionProxy:
-            modelDefinition?.capabilities.imageInput === true ||
-            nestedDescription,
-        },
+        { skipVisionProxy },
       );
+
+      // One line per request that carried images, saying which branch handled
+      // them and what became of each. Logging it here rather than inside
+      // `resolveImageMessages` keeps that function free of the logger's level
+      // rule, and a request without images produces no line at all.
+      //
+      // `warn` when an image failed or no describer was configured, `info`
+      // otherwise: `minimal` — the default — reports warnings, so a dropped
+      // image is reported without the routine case being.
+      const visionSummary = formatVisionResolutionSummary(visionResolution, {
+        bypassed: skipVisionProxy,
+      });
+      if (visionSummary) {
+        if (hasUndescribedImages(visionResolution.stats)) {
+          logger.vision.warn(visionSummary);
+        } else {
+          logger.vision.info(visionSummary);
+        }
+      }
 
       // Report vision proxy notice if available
       if (visionResolution.initialResponseNotice) {

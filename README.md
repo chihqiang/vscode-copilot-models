@@ -335,6 +335,32 @@ to trace one request across routing, provider, and network layers.
 API keys, tokens, and URL query strings are automatically redacted from the
 logs — secrets never appear in the output panel.
 
+### Diagnosing images
+
+Any request that carries an image writes one line describing what became of
+it, for example:
+
+```text
+[WARN ] [Vision] req=0043ef provider=deepseek model=glm-5.3 \
+  Image handling: found=1 inMessages=1 described=0 failed=1 unavailable=0 omitted=0
+```
+
+| Field | Meaning |
+| :---- | :------ |
+| `found` | Image parts in the request |
+| `inMessages` | Messages holding at least one image |
+| `described` | Images replaced by a description |
+| `failed` | The description request failed or came back empty |
+| `unavailable` | No vision proxy is configured |
+| `omitted` | Images from earlier turns, which are not described again |
+| `bypassed` | Left alone because the model accepts images itself |
+| `model` | Vision model that produced the description |
+
+A request with no images writes no such line. When `failed` or `unavailable`
+is non-zero the line is logged as a warning, so it appears at the default
+`minimal` level; a request whose images were all handled is logged at `info`,
+which needs `metadata` or `verbose` to show up.
+
 ## License
 
 Apache-2.0

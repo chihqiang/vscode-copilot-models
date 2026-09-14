@@ -24,7 +24,11 @@ function apply(
   format: ThinkingFormat,
   effort: ThinkingEffort,
 ): Record<string, unknown> {
-  const request = { model: "m", messages: [], stream: true } as ApiRequest;
+  const request = {
+    model: "m",
+    messages: [],
+    max_tokens: 1024,
+  } as ApiRequest;
   applyThinkingParams(request, format, effort);
   return request as unknown as Record<string, unknown>;
 }
@@ -153,7 +157,7 @@ suite("thinking parameters Test Suite", () => {
     const request = apply("enable_thinking", "none");
 
     assert.strictEqual(request.model, "m");
-    assert.strictEqual(request.stream, true);
+    assert.strictEqual(request.max_tokens, 1024);
   });
 });
 

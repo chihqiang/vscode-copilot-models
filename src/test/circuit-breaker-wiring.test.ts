@@ -48,7 +48,6 @@ const ATTEMPTS = FAILURE_THRESHOLD + 3;
 const REQUEST: ApiRequest = {
   model: "test-model",
   messages: [{ role: "user", content: "hello" }],
-  stream: true,
 };
 
 function jsonResponse(status: number, body: unknown): Response {

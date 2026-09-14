@@ -60,6 +60,12 @@ export interface ClientOptions {
  * thinking parameters went unsent for every provider: they were set on the
  * request and then dropped at this boundary, so the thinking-mode setting did
  * nothing at all.
+ *
+ * `stream` is written here rather than read from the request. The client has
+ * one way to consume a response — `consumeChatCompletionStream`, which parses
+ * SSE — so a non-streaming body has no reader, and a field accepting `false`
+ * would only promise something nothing can deliver. A token plan used to carry
+ * such a flag; it was never set by the wizard, never read here, and is gone.
  */
 export function buildChatRequestBody(
   request: ApiRequest,
@@ -195,7 +201,6 @@ export interface ApiUsage {
 export interface ApiRequest {
   model: string;
   messages: ApiMessage[];
-  stream: boolean;
   temperature?: number;
   top_p?: number;
   max_tokens?: number;
