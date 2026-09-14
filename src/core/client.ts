@@ -182,6 +182,16 @@ export interface ApiUsage {
 /**
  * API request format
  */
+/**
+ * A chat completion request.
+ *
+ * Closed on purpose. Every field here has to be copied into the JSON body by
+ * `buildChatRequestBody`, and a field missing from that function never reaches
+ * the API — which is how the thinking controls came to be set on every request
+ * and sent on none of them. An index signature used to accept arbitrary
+ * properties, so the compiler had no way to object; there is none now, and a
+ * new request field is a deliberate addition in both places.
+ */
 export interface ApiRequest {
   model: string;
   messages: ApiMessage[];
@@ -198,7 +208,6 @@ export interface ApiRequest {
   stream_options?: {
     include_usage: boolean;
   };
-  [key: string]: unknown;
 }
 
 /**
