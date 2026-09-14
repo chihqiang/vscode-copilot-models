@@ -37,6 +37,26 @@ export function isImageMime(mimeType: string): boolean {
 }
 
 /**
+ * Check whether a MIME type carries text a model can be handed verbatim.
+ *
+ * Covers `text/*` (including `; charset=` parameters) plus the JSON family:
+ * `application/json` and the `+json` suffix used by structured types such as
+ * `application/vnd.api+json`. These are exactly what
+ * `LanguageModelDataPart.text()` and `LanguageModelDataPart.json()` produce
+ * when a tool answers with data instead of prose, and they decode to something
+ * the model reads as-is. Everything else — images, audio, video, archives — is
+ * binary and cannot be inlined into a JSON request body.
+ */
+export function isTextualMime(mimeType: string): boolean {
+  const mime = mimeType.toLowerCase();
+  return (
+    mime.startsWith("text/") ||
+    mime === "application/json" ||
+    mime.endsWith("+json")
+  );
+}
+
+/**
  * Largest buffer, in bytes, whose data URL is memoised.
  *
  * A cached data URL is retained for as long as the image buffer itself (the

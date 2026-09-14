@@ -17,6 +17,8 @@
  */
 
 import * as assert from "assert";
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import { ALL_COMMAND_IDS } from "../commands/command-ids";
 import { ALL_SETTING_NAMES, settingKey } from "../core/settings";
@@ -146,6 +148,34 @@ suite("Identifier consistency Test Suite", () => {
     assert.strictEqual(
       settingKey("showStatusBar"),
       `${CONFIG_SECTION}.showStatusBar`,
+    );
+  });
+
+  test("the chatProvider proposal is declared for the edit-tool hint", () => {
+    // Unlike most fields a provider returns, `capabilities.editTools` is
+    // gated in the extension host with `checkProposedApiEnabled`, which
+    // *throws*. Reporting the hint without this declaration does not degrade
+    // gracefully: model discovery fails and the provider disappears from the
+    // picker. The proposal also gates `requiresAuthorization` and `isDefault`,
+    // neither of which this extension sets.
+    //
+    // Read from the file rather than from `extension.packageJSON`: VS Code
+    // consumes `enabledApiProposals` while loading the extension and does not
+    // pass it on to the manifest extensions see at runtime.
+    const extension = vscode.extensions.getExtension(
+      "chihqiang.vscode-copilot-models",
+    );
+    assert.ok(extension, "the extension under test must be available");
+    const manifest = JSON.parse(
+      fs.readFileSync(
+        path.join(extension.extensionPath, "package.json"),
+        "utf8",
+      ),
+    ) as { enabledApiProposals?: string[] };
+
+    assert.ok(
+      manifest.enabledApiProposals?.includes("chatProvider"),
+      "capabilities.editTools requires the chatProvider proposal to be listed in enabledApiProposals",
     );
   });
 });

@@ -163,7 +163,13 @@ API 密钥保存在 VS Code SecretStorage 中。
 | `timeoutMs` | API 请求超时（毫秒） | `60000` |
 | `maxRetries` | 最大重试次数 | `1` |
 | `showStatusBar` | 在状态栏显示今日 token 消耗 | `true` |
+| `editTools` | 向编辑器声明的文件编辑工具偏好 | `[]` |
 | `debugMode` | 日志级别：`minimal / metadata / verbose` | `minimal` |
+
+> **关于 `editTools`**：留空（默认）时编辑器会自行尝试多种编辑工具并挑选合
+> 适的那个。可选值为 `find-replace`、`multi-find-replace`、`apply-patch`、
+> `code-rewrite`；只有在你明确知道这些模型擅长哪种编辑工具时才填写，填错会
+> 让编辑效果变差。该设置对所有模型生效。
 
 ### 视觉代理设置
 

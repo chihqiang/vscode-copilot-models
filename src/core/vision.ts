@@ -47,6 +47,76 @@ Return one concise factual description suitable for inserting into a text-only c
 export const VISION_PROXY_API_KEY_SECRET = `${CONFIG_SECTION}.visionProxy.apiKey`;
 
 /**
+ * Why this extension needs another extension's language model.
+ *
+ * VS Code gates one extension using another's models behind an approval the
+ * user has to give, and renders this string there as `Justification: <text>`.
+ * The vision describer used to send no options at all, so the prompt asked for
+ * access without saying what for.
+ */
+export const VISION_MODEL_JUSTIFICATION =
+  "Copilot Models uses this model to describe images, so that models without " +
+  "image input can still answer questions about them.";
+
+/**
+ * How to recover from a refused model.
+ *
+ * Names the command rather than a menu path: it is the stable, greppable
+ * identifier, whereas the surrounding UI moves between releases.
+ */
+const VISION_ACCESS_HINT =
+  'Run "Manage Language Model Access" ' +
+  "(workbench.action.chat.manageLanguageModelAuthentication) to allow it, or " +
+  'pick a different model with "Copilot Models: Set Vision Model".';
+
+/** The message for a vision model this extension is not allowed to use. */
+function visionModelDeniedMessage(model: {
+  id: string;
+  vendor: string;
+}): string {
+  return (
+    `VS Code has not allowed Copilot Models to use the vision model ` +
+    `"${model.id}" from ${model.vendor}. ${VISION_ACCESS_HINT}`
+  );
+}
+
+/**
+ * The refusal message for a model this extension may not use, or `undefined`.
+ *
+ * `canSendRequest` only reports a decision the user already made — it never
+ * prompts — so `undefined` ("never asked") has to be treated as usable,
+ * leaving `sendRequest` to raise the approval prompt.
+ */
+export function visionModelRefusal(
+  accessInfo: vscode.LanguageModelAccessInformation | undefined,
+  model: vscode.LanguageModelChat,
+): string | undefined {
+  if (accessInfo?.canSendRequest(model) !== false) {
+    return undefined;
+  }
+  return visionModelDeniedMessage(model);
+}
+
+/**
+ * An actionable message for a refusal by another extension's model, or
+ * `undefined` when the failure has some other cause.
+ *
+ * The refusal arrives as a `LanguageModelError` rather than as a transport
+ * failure, so without this the user only sees the generic
+ * "Vision proxy failed: ..." notice and has nothing to act on.
+ */
+export function visionModelAccessError(error: unknown): string | undefined {
+  if (!(error instanceof vscode.LanguageModelError)) {
+    return undefined;
+  }
+  const { NoPermissions, Blocked } = vscode.LanguageModelError;
+  if (error.code !== NoPermissions.name && error.code !== Blocked.name) {
+    return undefined;
+  }
+  return `${error.message} ${VISION_ACCESS_HINT}`;
+}
+
+/**
  * Sentinel stored in `visionModel` when the user picks "Custom API Endpoint".
  * Shared with the wizard so the value is not duplicated as a bare literal.
  */
@@ -122,6 +192,15 @@ export interface VisionImagePart {
 interface MessageParts {
   imageParts: vscode.LanguageModelDataPart[];
   textParts: vscode.LanguageModelTextPart[];
+  /**
+   * Data parts that are not images (JSON, plain text).
+   *
+   * Kept separate because the vision proxy rebuilds a message around its
+   * description and used to carry over only text parts — so a JSON payload in
+   * the same message disappeared on the way. They are not sent to the vision
+   * model; the rebuilt message hands them back to `convertMessages`.
+   */
+  otherDataParts: vscode.LanguageModelDataPart[];
 }
 
 /**
@@ -192,9 +271,13 @@ export class VSCodeLMVisionDescriber implements VisionDescriber {
 
   private readonly visionModelId: string | undefined;
   private readonly visionPrompt: string;
+  private readonly accessInfo:
+    | vscode.LanguageModelAccessInformation
+    | undefined;
 
-  constructor() {
+  constructor(accessInfo?: vscode.LanguageModelAccessInformation) {
     const config = getConfig();
+    this.accessInfo = accessInfo;
     this.visionModelId = config.get<string>(SETTING_VISION_MODEL);
     this.visionPrompt =
       config.get<string>(SETTING_VISION_PROMPT) || DEFAULT_VISION_PROMPT;
@@ -221,6 +304,7 @@ export class VSCodeLMVisionDescriber implements VisionDescriber {
       logger.vision.info(
         `Using vision model: ${model.id} (${model.family}/${model.name})`,
       );
+      this.assertUsable(model);
 
       const imageParts = request.images.map(
         (img) => new vscode.LanguageModelDataPart(img.data, img.mimeType),
@@ -235,7 +319,11 @@ export class VSCodeLMVisionDescriber implements VisionDescriber {
         vscode.LanguageModelChatMessage.User(content),
       ];
 
-      const response = await model.sendRequest(messages, {}, request.token);
+      const response = await model.sendRequest(
+        messages,
+        { justification: VISION_MODEL_JUSTIFICATION },
+        request.token,
+      );
       let description = "";
 
       for await (const part of response.text) {
@@ -248,8 +336,23 @@ export class VSCodeLMVisionDescriber implements VisionDescriber {
 
       return description.trim();
     } catch (error) {
+      const accessError = visionModelAccessError(error);
+      if (accessError) {
+        logger.vision.error(accessError);
+        throw new Error(accessError);
+      }
       logger.vision.error("Failed to generate vision description:", error);
       throw error;
+    }
+  }
+
+  /**
+   * Fail early, and with advice, when the user has refused this extension.
+   */
+  private assertUsable(model: vscode.LanguageModelChat): void {
+    const refusal = visionModelRefusal(this.accessInfo, model);
+    if (refusal) {
+      throw new Error(refusal);
     }
   }
 
@@ -486,7 +589,9 @@ export class VisionService {
     }
 
     // No explicit model id means "auto-detect" (the documented default).
-    this.describer = new VSCodeLMVisionDescriber();
+    this.describer = new VSCodeLMVisionDescriber(
+      this.context.languageModelAccessInformation,
+    );
     return this.describer;
   }
 
@@ -593,13 +698,14 @@ function separateMessageParts(
 ): MessageParts {
   const imageParts: vscode.LanguageModelDataPart[] = [];
   const textParts: vscode.LanguageModelTextPart[] = [];
+  const otherDataParts: vscode.LanguageModelDataPart[] = [];
 
   const content = message.content as
     | readonly vscode.LanguageModelInputPart[]
     | undefined;
 
   if (!content) {
-    return { imageParts, textParts };
+    return { imageParts, textParts, otherDataParts };
   }
 
   for (const part of content) {
@@ -612,13 +718,15 @@ function separateMessageParts(
             `Image too large: ${part.data.length} bytes (max: ${maxImageSize})`,
           );
         }
+      } else {
+        otherDataParts.push(part);
       }
     } else if (part instanceof vscode.LanguageModelTextPart) {
       textParts.push(part);
     }
   }
 
-  return { imageParts, textParts };
+  return { imageParts, textParts, otherDataParts };
 }
 
 /**
@@ -742,8 +850,17 @@ export async function resolveImageMessages(
           const content: (
             | vscode.LanguageModelTextPart
             | vscode.LanguageModelDataPart
-          )[] = [new vscode.LanguageModelTextPart(combinedText)];
-          const newMessage = vscode.LanguageModelChatMessage.User(content);
+          )[] = [
+            new vscode.LanguageModelTextPart(combinedText),
+            ...parts.otherDataParts,
+          ];
+          // Keep the original name: rebuilding a message must not drop what
+          // the caller put there.
+          const newMessage = new vscode.LanguageModelChatMessage(
+            message.role,
+            content,
+            message.name,
+          );
           result.push(newMessage);
 
           visionModelId = describer.id;

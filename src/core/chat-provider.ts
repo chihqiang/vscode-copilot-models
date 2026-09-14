@@ -10,7 +10,7 @@ import {
   withLogContext,
   type LogContext,
 } from "./logger";
-import { isImageMime, toDataUrl } from "./bytes";
+import { isImageMime, isTextualMime, toDataUrl, decodeUTF8 } from "./bytes";
 import { ApiError, CancelledError, TimeoutError } from "./errors";
 import {
   ApiMessage,
@@ -23,6 +23,7 @@ import {
 } from "./client";
 import { CONFIG_SECTION, ModelDefinition } from "./models";
 import {
+  getEditTools,
   getMaxImageSize,
   SETTING_MAX_RETRIES,
   SETTING_MODEL_ID_OVERRIDES,
@@ -120,6 +121,26 @@ export function clientAffectingConfigKeys(
 }
 
 /**
+ * The text a non-image data part contributes to the request.
+ *
+ * `LanguageModelDataPart` is not only for images: `DataPart.json(...)` and
+ * `DataPart.text(...)` carry tool output and structured data, and they arrive
+ * as message content exactly like an image part does. `convertMessages` used
+ * to `continue` on every non-`image/*` data part, so those payloads vanished:
+ * the model received a message with no content where a tool had returned
+ * data, and nothing in the logs said so.
+ */
+export function dataPartText(part: vscode.LanguageModelDataPart): string {
+  if (isTextualMime(part.mimeType)) {
+    return decodeUTF8(part.data);
+  }
+  // Binary that is not an image (audio, video, archives) cannot go into a JSON
+  // request body. Name it so the model can tell "a file came back" from "the
+  // tool returned nothing".
+  return `[${part.mimeType} data omitted, ${part.data.length} bytes]`;
+}
+
+/**
  * The text a tool result contributes to the request.
  *
  * Shared by `convertMessages` (which sends it) and `messageTextForTokenCount`
@@ -130,25 +151,30 @@ function toolResultContentString(
   part: vscode.LanguageModelToolResultPart,
 ): string {
   const textParts: string[] = [];
-  let binaryParts = 0;
+  const binaryMimes = new Set<string>();
+
   for (const item of part.content) {
     if (item instanceof vscode.LanguageModelTextPart) {
       textParts.push(item.value);
     } else if (item instanceof vscode.LanguageModelDataPart) {
-      binaryParts++;
+      if (isTextualMime(item.mimeType)) {
+        textParts.push(decodeUTF8(item.data));
+      } else {
+        binaryMimes.add(item.mimeType);
+      }
     }
   }
 
-  const toolText = textParts.join("");
-  if (toolText) {
-    return toolText;
-  }
   // Never serialize binary data parts into the request — that would bloat the
-  // payload with a huge JSON byte map. Count the placeholder instead, which is
-  // what the provider actually sees.
-  return binaryParts > 0
-    ? `[Tool result contains ${binaryParts} binary data part(s), omitted]`
-    : JSON.stringify(part.content);
+  // payload with a huge JSON byte map. Name the types instead, so an image
+  // result is distinguishable from an empty one.
+  if (binaryMimes.size > 0) {
+    textParts.push(
+      `[Tool result contains binary data (${[...binaryMimes].join(", ")}), omitted]`,
+    );
+  }
+
+  return textParts.join("") || JSON.stringify(part.content);
 }
 
 // ── Token estimation ─────────────────────────────────
@@ -162,6 +188,8 @@ function toolResultContentString(
  * parts made a tool-heavy conversation look far smaller than its request.
  * Images are deliberately excluded: they are sent as data URLs, whose length
  * is dominated by base64 rather than by anything a token estimate can model.
+ * Textual data parts are included, because `convertMessages` now sends them as
+ * text rather than dropping them.
  */
 export function messageTextForTokenCount(
   message: vscode.LanguageModelChatRequestMessage,
@@ -181,6 +209,18 @@ export function messageTextForTokenCount(
           ? part.value
           : JSON.stringify(part.value),
       );
+    } else if (part instanceof vscode.LanguageModelThinkingPart) {
+      // `convertMessages` sends reasoning back as `reasoning_content` on
+      // assistant messages, and DeepSeek concatenates it into the context when
+      // the request carries tools. Not counting it would report less context
+      // in use than the request actually costs.
+      if (message.role === vscode.LanguageModelChatMessageRole.Assistant) {
+        chunks.push(part.value);
+      }
+    } else if (part instanceof vscode.LanguageModelDataPart) {
+      if (isTextualMime(part.mimeType)) {
+        chunks.push(decodeUTF8(part.data));
+      }
     }
   }
 
@@ -377,7 +417,7 @@ export abstract class BaseChatProvider
    * Get model picker information
    */
   async provideLanguageModelChatInformation(
-    _options: vscode.PrepareLanguageModelChatModelOptions,
+    options: vscode.PrepareLanguageModelChatModelOptions,
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelChatInformation[]> {
     if (!this.isActive) {
@@ -394,7 +434,13 @@ export abstract class BaseChatProvider
     const planManager = TokenPlan.getInstance();
     const planModelIds = planManager.getPlanModelIds();
     const models = this.modelProvider.getModels();
-    logger.provider.info(
+    // `silent` probes are the editor asking "are there models?" — they happen
+    // far more often than the picker is opened, so the per-call inventory is
+    // debug material there and only interesting at info level otherwise.
+    const logInventory = options.silent
+      ? logger.provider.debug
+      : logger.provider.info;
+    logInventory(
       `[${this.providerId}] Providing model information, count: ${models.length}, hasApiKey: ${hasApiKey}, planModels: ${planModelIds.size}`,
     );
 
@@ -416,6 +462,7 @@ export abstract class BaseChatProvider
     hasPlan = false,
   ): ModelPickerChatInformation {
     const selectable = hasApiKey || hasPlan;
+    const editTools = getEditTools();
     logger.provider.debug(
       `[${this.providerId}] Converting model to chat info: ${model.id}, hasApiKey: ${hasApiKey}, hasPlan: ${hasPlan}, selectable: ${selectable}`,
     );
@@ -430,6 +477,10 @@ export abstract class BaseChatProvider
         : selectable
           ? ""
           : "Please configure API key",
+      // Every model here is paid for by the user's own key or token plan. VS
+      // Code infers this for third-party providers anyway, so stating it keeps
+      // the answer independent of that inference rule.
+      isBYOK: true,
       statusIcon: new vscode.ThemeIcon(selectable ? "check" : "warning"),
       maxInputTokens: model.maxInputTokens,
       maxOutputTokens: model.maxOutputTokens,
@@ -437,6 +488,11 @@ export abstract class BaseChatProvider
       capabilities: {
         toolCalling: model.capabilities.toolCalling,
         imageInput: model.capabilities.imageInput,
+        // Only reported when the user names the tools: the field replaces the
+        // editor's "try several edit tools" default, so guessing it would be
+        // worse than leaving it out. Reading it per call keeps the setting
+        // live without a model-picker refresh.
+        ...(editTools.length > 0 ? { editTools } : {}),
       },
       ...(this.supportsThinking && model.capabilities.thinking
         ? { configurationSchema: BaseChatProvider.buildThinkingEffortSchema() }
@@ -487,10 +543,16 @@ export abstract class BaseChatProvider
       `[${this.providerId}] Model: ${modelInfo.id}, isThinkingModel: ${isThinkingModel}, thinkingEffort: ${thinkingEffort}`,
     );
 
-    const apiMessages = this.convertMessages(messages);
+    // The tools are resolved before the messages because the converter needs
+    // to know whether the request will carry a `tools` parameter — see
+    // `convertMessages`.
     const tools = modelDefinition?.capabilities.toolCalling
       ? this.convertTools(options.tools)
       : undefined;
+    const apiMessages = this.convertMessages(
+      messages,
+      Boolean(tools && tools.length > 0),
+    );
 
     logger.chat.debug(
       `[${this.providerId}] Original messages count: ${messages.length}`,
@@ -624,9 +686,15 @@ export abstract class BaseChatProvider
 
   /**
    * Convert message format (subclass can override)
+   *
+   * `hasTools` tells the converter whether the request it is building will
+   * carry a `tools` parameter. DeepSeek treats a missing `reasoning_content`
+   * as a protocol error in that case (see the assistant branch below), so the
+   * two cannot be decided independently.
    */
   protected convertMessages(
     messages: readonly vscode.LanguageModelChatRequestMessage[],
+    hasTools = false,
   ): ApiMessage[] {
     logger.chat.debug(
       `[${this.providerId}] Converting ${messages.length} messages`,
@@ -645,17 +713,27 @@ export abstract class BaseChatProvider
       const toolCalls: ApiToolCall[] = [];
       const toolResults: Array<{ callId: string; content: string }> = [];
 
+      // Text that arrives before the first image can stay a plain string;
+      // once the message holds an image it becomes an array of content parts,
+      // and every later text has to be pushed as a part instead.
+      const appendText = (text: string): void => {
+        if (hasImages) {
+          contentParts.push({ type: "text", text });
+        } else {
+          textBuffer += text;
+        }
+      };
+
       for (const part of message.content) {
         if (part instanceof vscode.LanguageModelTextPart) {
-          if (hasImages) {
-            contentParts.push({ type: "text", text: part.value });
-          } else {
-            textBuffer += part.value;
-          }
+          appendText(part.value);
         } else if (part instanceof vscode.LanguageModelThinkingPart) {
           thinkingText += part.value;
         } else if (part instanceof vscode.LanguageModelDataPart) {
           if (!isImageMime(part.mimeType)) {
+            // JSON / text data parts are content, not attachments — they used
+            // to be skipped here and never reached the model.
+            appendText(dataPartText(part));
             continue;
           }
 
@@ -692,11 +770,7 @@ export abstract class BaseChatProvider
             typeof part.value === "string"
               ? part.value
               : JSON.stringify(part.value);
-          if (hasImages) {
-            contentParts.push({ type: "text", text: val });
-          } else {
-            textBuffer += val;
-          }
+          appendText(val);
         } else if (part instanceof vscode.LanguageModelToolResultPart) {
           toolResults.push({
             callId: part.callId,
@@ -710,7 +784,16 @@ export abstract class BaseChatProvider
         : textBuffer;
 
       if (role === "assistant") {
-        if (finalContent || toolCalls.length > 0) {
+        // DeepSeek requires the reasoning of every earlier turn to be sent
+        // back once the request carries tools, and answers a missing
+        // `reasoning_content` with a 400 — see its thinking-mode guide. A
+        // message that holds nothing but reasoning can only come from a turn
+        // the user interrupted, which is exactly when the next request would
+        // otherwise fail and keep failing. Without tools the field is ignored
+        // by the provider, so an empty message is still dropped rather than
+        // sent: some APIs reject an assistant message with no content.
+        const carriesRequiredReasoning = hasTools && thinkingText.length > 0;
+        if (finalContent || toolCalls.length > 0 || carriesRequiredReasoning) {
           const msg: ApiMessage = {
             role: "assistant",
             content: finalContent || "",
@@ -1014,7 +1097,7 @@ export abstract class BaseChatProvider
   ): Promise<void> {
     const startTime = Date.now();
     logger.chat.info(
-      `[${this.providerId}] provideLanguageModelChatResponse called, model: ${modelInfo.id}`,
+      `[${this.providerId}] provideLanguageModelChatResponse called, model: ${modelInfo.id}, initiator: ${options.requestInitiator ?? "unknown"}`,
     );
     try {
       // Models with native image input must see the real images — routing

@@ -186,7 +186,14 @@ Available in VS Code settings (search `copilot-models`):
 | `timeoutMs` | Request timeout in milliseconds | `60000` |
 | `maxRetries` | Maximum retry attempts | `1` |
 | `showStatusBar` | Show today's token usage in the status bar | `true` |
+| `editTools` | File-editing tools to advertise to the editor | `[]` |
 | `debugMode` | Log level: `minimal / metadata / verbose` | `minimal` |
+
+> **On `editTools`:** left empty (the default), the editor tries several edit
+> tools and picks one itself. Accepted values are `find-replace`,
+> `multi-find-replace`, `apply-patch` and `code-rewrite`; fill them in only
+> when you know which editing tool suits the models, because naming the wrong
+> one makes their edits worse. The setting applies to every model.
 
 ### Vision Proxy Settings
 
