@@ -82,6 +82,19 @@ export class ProviderModels {
     return ProviderModels.store.get();
   }
 
+  /**
+   * The instance, or `undefined` when {@link init} has not run (or a
+   * {@link resetInstance} has run since).
+   *
+   * For reads on paths VS Code drives, where "nothing is registered" is a
+   * usable answer and throwing is not. The strict accessor stays for the
+   * wizards and the activation sequence, which must not run without a
+   * registry.
+   */
+  static getOptional(): ProviderModels | undefined {
+    return ProviderModels.store.getOptional();
+  }
+
   static resetInstance(): void {
     const inst = ProviderModels.store.getOptional();
     inst?.clear();

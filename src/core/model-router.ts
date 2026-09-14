@@ -11,6 +11,7 @@
 import vscode from "vscode";
 import { estimateTokenCount, IChatProvider } from "./chat-provider";
 import { ProviderModels } from "./provider-models";
+import type { IModelProvider } from "./model-provider";
 import {
   generateRequestId,
   getLogContext,
@@ -266,13 +267,27 @@ export class ModelRouter implements IChatProvider {
     return this.providers.has(providerId);
   }
 
+  /**
+   * Look up the provider that serves a model, or `undefined` when there is
+   * none.
+   *
+   * Tolerant of a registry that has no instance: the strict accessor throws,
+   * and both callers run on paths VS Code drives. A throw there would surface
+   * as `Singleton not initialized` in place of the caller's own answer —
+   * `No provider found for model "..."`, or a locally estimated token count —
+   * which is what `deactivate()` already guards against when it clears the
+   * registry rather than resetting it.
+   */
+  private lookupModelProvider(modelId: string): IModelProvider | undefined {
+    return ProviderModels.getOptional()?.findProviderByModelId(modelId);
+  }
+
   /** Find provider by model ID */
   private findProviderForModel(
     modelId: string,
   ): { provider: IChatProvider; providerId: string } | undefined {
     // Reuse the registry's model → provider index instead of duplicating it.
-    const modelProvider =
-      ProviderModels.getInstance().findProviderByModelId(modelId);
+    const modelProvider = this.lookupModelProvider(modelId);
     if (!modelProvider) {
       return undefined;
     }
@@ -296,8 +311,7 @@ export class ModelRouter implements IChatProvider {
       return undefined;
     }
 
-    const fallbackModelProvider =
-      ProviderModels.getInstance().findProviderByModelId(fallbackModelId);
+    const fallbackModelProvider = this.lookupModelProvider(fallbackModelId);
     if (
       !fallbackModelProvider ||
       triedProviderIds.has(fallbackModelProvider.id)
