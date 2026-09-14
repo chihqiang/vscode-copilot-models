@@ -105,24 +105,44 @@ suite("Identifier consistency Test Suite", () => {
     );
   });
 
-  test("every built-in provider is declared in the manifest", () => {
-    // Declaring a provider the code does not register leaves it unselectable;
-    // registering one the manifest omits is equally invisible. Provider data
-    // lives in src/providers, so the manifest is the copy that can drift.
-    const vendors = readManifest().contributes.languageModelChatProviders.map(
+  test("the manifest declares no vendor that serves nothing", async () => {
+    // A declared vendor that never registers is the case the old assertion
+    // described without checking. It compared the manifest against
+    // `builtInProviders` while the code registers only the router, so it
+    // passed for the wrong reason — and the three extra vendors are dead
+    // weight: `getVendors()` hands them to every caller that looks a vendor up
+    // by name. The reality is read from the models VS Code can see.
+    const declared = readManifest().contributes.languageModelChatProviders.map(
       (p) => p.vendor,
     );
+    const served = new Set(
+      (await vscode.lm.selectChatModels()).map((m) => m.vendor),
+    );
 
-    const undeclared = builtInProviders
-      .map((p) => p.id)
-      .filter((id) => !vendors.includes(id));
-    assert.deepStrictEqual(undeclared, []);
-
-    const expected = [...builtInProviders.map((p) => p.id), ROUTER_VENDOR_ID];
     assert.deepStrictEqual(
-      [...vendors].sort(),
-      [...expected].sort(),
-      "the manifest must declare exactly the providers the code registers",
+      declared.filter((vendor) => !served.has(vendor)),
+      [],
+      "these vendors are declared in package.json but serve no model",
+    );
+  });
+
+  test("every built-in model is served by a registered vendor", async () => {
+    // Stated as the requirement the declarations exist to satisfy: a model the
+    // provider data promises has to be reachable. Asserting it through
+    // `builtInProviders` proved nothing, because that list is the thing that
+    // has to be reachable.
+    const servedIds = new Set(
+      (await vscode.lm.selectChatModels()).map((m) => m.id),
+    );
+
+    const missing = builtInProviders
+      .flatMap((provider) => provider.models.map((model) => model.id))
+      .filter((id) => !servedIds.has(id));
+
+    assert.deepStrictEqual(
+      missing,
+      [],
+      "these models are configured in src/providers but unreachable in VS Code",
     );
   });
 

@@ -76,8 +76,12 @@ suite("Extension Test Suite", () => {
     );
   });
 
-  test("Language model chat provider should be registered", () => {
-    // Check that deepseek provider is declared in package.json
+  test("Language model chat provider should be registered", async () => {
+    // The router is the only provider this extension registers. Every upstream
+    // vendor is aggregated behind it, so registering the vendors directly as
+    // well would list each model twice — which is why the manifest declares
+    // the router alone. This used to assert that a `deepseek` provider was
+    // declared, left over from before the router existed.
     const packageJson = vscode.extensions.getExtension(
       "chihqiang.vscode-copilot-models",
     );
@@ -95,9 +99,19 @@ suite("Extension Test Suite", () => {
     }>;
     assert.ok(providers.length > 0, "At least one provider should be declared");
 
-    const deepseekProvider = providers.find((p) => p.vendor === "deepseek");
-    assert.ok(deepseekProvider, "DeepSeek provider should be declared");
-    assert.strictEqual(deepseekProvider.displayName, "DeepSeek");
+    const router = providers.find((p) => p.vendor === "copilot-models-router");
+    assert.ok(router, "the router provider should be declared");
+    assert.strictEqual(router.displayName, "Copilot Models");
+
+    // The declaration is only worth anything if it serves models, and every
+    // model has to come through it rather than from a second registration.
+    const models = await vscode.lm.selectChatModels();
+    assert.ok(models.length > 0, "the provider should serve models");
+    assert.deepStrictEqual(
+      [...new Set(models.map((m) => m.vendor))],
+      ["copilot-models-router"],
+      "all models should be served by the router",
+    );
   });
 
   test("Logger should be functional", async () => {
