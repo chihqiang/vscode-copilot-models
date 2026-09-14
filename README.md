@@ -262,11 +262,18 @@ The GitHub Copilot Chat extension provides that button, and by default it runs
 on Copilot's own small utility model. It can run on a model from this
 extension instead.
 
-Point it at one by setting `chat.utilitySmallModel` to `<vendor>/<model-id>`:
+Point it at one by setting `chat.utilitySmallModel` to the `<vendor>/<model-id>`
+value the dropdown stores. Every model from this extension is served by the
+`Copilot Models` router, whose vendor id is `copilot-models-router`:
 
 ```jsonc
-"chat.utilitySmallModel": "deepseek/deepseek-flash"
+"chat.utilitySmallModel": "copilot-models-router/deepseek-flash"
 ```
+
+> **Note:** The vendor is the one that registers the models, not the upstream
+> service. `deepseek/deepseek-flash` looks right and is silently ignored — the
+> setting is only read by name `<vendor>/<id>`, and no model is registered
+> under the `deepseek` vendor. Picking from the dropdown avoids the guesswork.
 
 | Setting | Applies to |
 | :------ | :--------- |

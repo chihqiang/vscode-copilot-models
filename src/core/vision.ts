@@ -776,9 +776,10 @@ export function getVisionService(
  * Two things are filtered out. Models without image input, because describing
  * an image is a call that carries the image — offering one produced a
  * description request that either failed or, when the model was one of ours,
- * came back as another description request. And duplicates: this extension
- * registers each provider *and* a router that aggregates them, so every model
- * is returned twice and the picker showed two identical rows.
+ * came back as another description request. And a repeated vendor/id pair:
+ * today one router provider serves every model, so each appears once, but the
+ * three per-provider vendors are declared in the manifest and would each
+ * contribute the same ids if they were registered too.
  */
 export async function getVisionLanguageModelOptions(): Promise<
   VisionLanguageModelOption[]

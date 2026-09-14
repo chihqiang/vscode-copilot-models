@@ -230,11 +230,18 @@ Balance:
 Chat 扩展提供，默认使用 Copilot 自带的小型实用模型，也可以改成使用本扩展的
 模型。
 
-把 `chat.utilitySmallModel` 设为 `<vendor>/<model-id>` 即可：
+把 `chat.utilitySmallModel` 设为下拉列表中存储的 `<vendor>/<model-id>` 形式。
+本扩展的所有模型都由 `Copilot Models` 路由器提供，其 vendor id 为
+`copilot-models-router`：
 
 ```jsonc
-"chat.utilitySmallModel": "deepseek/deepseek-flash"
+"chat.utilitySmallModel": "copilot-models-router/deepseek-flash"
 ```
+
+> **注意：** 这里的 vendor 是「注册这些模型的扩展」，而不是上游服务商。
+> 写成 `deepseek/deepseek-flash` 看似合理，但会被静默忽略——该设置按
+> `<vendor>/<id>` 严格匹配，而 `deepseek` 这个 vendor 名下没有注册任何模型。
+> 从下拉列表中直接选择即可避免猜错。
 
 | 设置项 | 适用范围 |
 | :----- | :------- |

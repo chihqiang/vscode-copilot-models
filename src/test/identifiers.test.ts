@@ -178,4 +178,34 @@ suite("Identifier consistency Test Suite", () => {
       "capabilities.editTools requires the chatProvider proposal to be listed in enabledApiProposals",
     );
   });
+
+  test("the documented utility-model value names the vendor that serves the models", () => {
+    // `chat.utilitySmallModel` is matched by exactly `<vendor>/<model-id>`, and
+    // the vendor VS Code reports is the one that *registered* the provider —
+    // the router — not the upstream service a model is named after. Documenting
+    // `deepseek/deepseek-flash` therefore described a value the editor silently
+    // ignores, which is worse than an obvious error: nothing reports a
+    // non-matching override except a log line.
+    const extension = vscode.extensions.getExtension(
+      "chihqiang.vscode-copilot-models",
+    );
+    assert.ok(extension, "the extension under test must be available");
+
+    for (const file of ["README.md", "README.zh-CN.md"]) {
+      const text: string = fs.readFileSync(
+        path.join(extension.extensionPath, file),
+        "utf8",
+      );
+      const example: RegExpMatchArray | null = text.match(
+        /"chat\.utilitySmallModel"\s*:\s*"([^"\/]+)\/([^"]+)"/,
+      );
+
+      assert.ok(example, `${file} must show a chat.utilitySmallModel example`);
+      assert.strictEqual(
+        example[1],
+        ROUTER_VENDOR_ID,
+        `${file} documents "${example[1]}/..." but the models are served by "${ROUTER_VENDOR_ID}"`,
+      );
+    }
+  });
 });
