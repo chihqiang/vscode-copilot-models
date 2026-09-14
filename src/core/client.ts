@@ -137,6 +137,8 @@ export interface ApiRequest {
   tools?: ApiTool[];
   tool_choice?: "none" | "auto" | "required";
   thinking?: { type: "enabled" | "disabled" };
+  /** DashScope's boolean toggle, an alternative to `thinking.type` */
+  enable_thinking?: boolean;
   reasoning_effort?: string;
   stream_options?: {
     include_usage: boolean;

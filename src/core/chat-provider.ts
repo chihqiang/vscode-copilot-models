@@ -22,6 +22,7 @@ import {
   StreamCallbacks,
 } from "./client";
 import { CONFIG_SECTION, ModelDefinition } from "./models";
+import type { ThinkingFormat } from "./models";
 import {
   getEditTools,
   getMaxImageSize,
@@ -244,6 +245,46 @@ export function estimateTokenCount(
   const content =
     typeof text === "string" ? text : messageTextForTokenCount(text);
   return Tokenizer.getInstance().countTokens(content);
+}
+
+/**
+ * Write the thinking parameters a provider expects for an effort level.
+ *
+ * Exported as a pure function so each format can be checked on its own: the
+ * failure mode here is silent. An API ignores a parameter it does not know,
+ * so a level expressed the wrong way — or not expressed at all — leaves
+ * thinking at its default instead of reporting anything. Choosing "None" used
+ * to omit the parameter entirely, which on an API whose default is thinking on
+ * meant the setting did nothing.
+ */
+export function applyThinkingParams(
+  request: ApiRequest,
+  format: ThinkingFormat,
+  effort: ThinkingEffort,
+): void {
+  const enabled = effort !== "none";
+
+  if (format === "enable_thinking") {
+    // A boolean, and the API defaults it to on, so `false` is the only way to
+    // turn thinking off. The level still travels in `reasoning_effort` for the
+    // values that keep thinking on.
+    request.enable_thinking = enabled;
+    if (enabled) {
+      request.reasoning_effort = effort;
+    }
+    return;
+  }
+
+  if (format === "thinking_type") {
+    // One toggle; the effort level is left to the API's own default, which is
+    // all a provider that documents only this parameter offers.
+    request.thinking = { type: enabled ? "enabled" : "disabled" };
+    return;
+  }
+
+  // `reasoning_effort` carries both the toggle and the level, so `none` is
+  // sent rather than omitted — it is the documented value for "do not think".
+  request.reasoning_effort = effort;
 }
 
 /**
@@ -656,15 +697,16 @@ export abstract class BaseChatProvider
 
   /**
    * Convert thinking params to API-specific format (subclass can override)
+   *
+   * The default assumes the provider expresses both the toggle and the effort
+   * through `reasoning_effort`; a provider that uses a different parameter
+   * overrides this or declares a `thinkingFormat`.
    */
   protected convertThinkingParams(
     request: ApiRequest,
     effort: ThinkingEffort,
   ): void {
-    // Default implementation: use reasoning_effort parameter
-    if (effort !== "none") {
-      request.reasoning_effort = effort;
-    }
+    applyThinkingParams(request, "reasoning_effort", effort);
   }
 
   private logMessageDetails(
