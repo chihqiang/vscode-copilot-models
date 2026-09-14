@@ -14,7 +14,11 @@ import {
   modelInfoAffectingConfigKeys,
 } from "../core/chat-provider";
 import { CONFIG_SECTION, ModelDefinition } from "../core/models";
-import { SETTING_EDIT_TOOLS, settingKey } from "../core/settings";
+import {
+  SETTING_EDIT_TOOLS,
+  SETTING_TIMEOUT_MS,
+  settingKey,
+} from "../core/settings";
 import type { IModelProvider } from "../core/model-provider";
 
 const PROVIDER = "deepseek";
@@ -86,6 +90,13 @@ class TestableProvider extends BaseChatProvider {
 
   notifySecretChange(key: string): void {
     this.onSecretsChanged({ key } as vscode.SecretStorageChangeEvent);
+  }
+
+  /** Run the real change handler, so the cache/refresh split is under test. */
+  applyConfigChange(changedKey: string): void {
+    this.onConfigurationChanged(
+      createChangeEvent(changedKey) as vscode.ConfigurationChangeEvent,
+    );
   }
 }
 
@@ -171,6 +182,43 @@ suite("BaseChatProvider.affectsConfiguration Test Suite", () => {
         ),
         true,
       );
+    } finally {
+      provider.dispose();
+    }
+  });
+
+  test("editing editTools keeps the cached clients", () => {
+    // The cached client also holds the circuit breaker that tracks the
+    // provider's health. Dropping the cache for a setting that changes nothing
+    // about how a client is built would reset that tracking — a failing
+    // provider would get traffic again because someone edited an edit-tool
+    // hint.
+    const provider = new TestableProvider();
+    try {
+      provider.seedCachedClient("https://api.deepseek.com::sk-test");
+
+      provider.applyConfigChange(settingKey(SETTING_EDIT_TOOLS));
+
+      assert.strictEqual(
+        provider.cachedClientCount(),
+        1,
+        "editTools does not change how a client is built",
+      );
+    } finally {
+      provider.dispose();
+    }
+  });
+
+  test("a request setting still drops the cached clients", () => {
+    // The other half of the same rule, so the split cannot be implemented by
+    // simply never clearing the cache.
+    const provider = new TestableProvider();
+    try {
+      provider.seedCachedClient("https://api.deepseek.com::sk-test");
+
+      provider.applyConfigChange(`${CONFIG_SECTION}.${SETTING_TIMEOUT_MS}`);
+
+      assert.strictEqual(provider.cachedClientCount(), 0);
     } finally {
       provider.dispose();
     }

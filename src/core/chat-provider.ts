@@ -433,13 +433,23 @@ export abstract class BaseChatProvider
    * Called on configuration change
    */
   protected onConfigurationChanged(e: vscode.ConfigurationChangeEvent): void {
-    if (this.isActive && this.affectsConfiguration(e)) {
-      logger.config.debug(
-        `[${this.providerId}] Configuration affects this provider, refreshing...`,
-      );
-      this.clientCache.clear();
-      this.onDidChangeLanguageModelChatInformationEmitter.fire();
+    if (!this.isActive || !this.affectsConfiguration(e)) {
+      return;
     }
+
+    // A cached client captured the base URL, timeout and retry count it was
+    // built with, so a change to any of those has to drop it. The drop is kept
+    // to that case: it also discards the client's circuit breaker, so doing it
+    // for a setting that only changes what is reported to VS Code would reset
+    // a provider's failure tracking as a side effect of an unrelated edit.
+    if (this.affectsClient(e)) {
+      this.clientCache.clear();
+    }
+
+    logger.config.debug(
+      `[${this.providerId}] Configuration affects this provider, refreshing...`,
+    );
+    this.onDidChangeLanguageModelChatInformationEmitter.fire();
   }
 
   /**
@@ -450,6 +460,18 @@ export abstract class BaseChatProvider
       this.configSection,
       this.providerId,
     ).some((key) => e.affectsConfiguration(key));
+  }
+
+  /**
+   * Whether the change invalidates the cached API clients.
+   *
+   * A strict subset of {@link affectsConfiguration}: every such change also
+   * needs the model list rebuilt, but not the other way round.
+   */
+  protected affectsClient(e: vscode.ConfigurationChangeEvent): boolean {
+    return clientAffectingConfigKeys(this.configSection, this.providerId).some(
+      (key) => e.affectsConfiguration(key),
+    );
   }
 
   /**
