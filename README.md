@@ -21,6 +21,8 @@ One-click switching and native panel compatibility.
 - **Lightweight**: OpenAI SDK replaced with native SSE client code
 - **Token Plan**: Unified prepaid billing for Qwen, DeepSeek, and
   GLM token packages via a single endpoint
+- **Utility Model**: Optionally run AI commit-message generation on one of
+  these models, through VS Code's utility-model settings
 
 ## Documentation
 
@@ -109,6 +111,13 @@ Run `Copilot Models: Clear Vision Model` to remove the configuration.
 
 ## Supported Models
 
+The *Thinking Effort* selector in the model picker maps onto what each
+provider documents. `None` turns thinking off everywhere: Qwen through
+`enable_thinking: false` — its API defaults thinking to on — and Zhipu AI and
+DeepSeek through their `thinking` toggle. All three document an on/off switch
+and no effort level, so `low`, `high` and `max` enable thinking at the
+provider's own default effort.
+
 ### Qwen (Alibaba Cloud)
 
 | Model | Context | Output | Tool Calling | Image Input | Thinking Mode |
@@ -186,7 +195,14 @@ Available in VS Code settings (search `copilot-models`):
 | `timeoutMs` | Request timeout in milliseconds | `60000` |
 | `maxRetries` | Maximum retry attempts | `1` |
 | `showStatusBar` | Show today's token usage in the status bar | `true` |
+| `editTools` | File-editing tools to advertise to the editor | `[]` |
 | `debugMode` | Log level: `minimal / metadata / verbose` | `minimal` |
+
+> **On `editTools`:** left empty (the default), the editor tries several edit
+> tools and picks one itself. Accepted values are `find-replace`,
+> `multi-find-replace`, `apply-patch` and `code-rewrite`; fill them in only
+> when you know which editing tool suits the models, because naming the wrong
+> one makes their edits worse. The setting applies to every model.
 
 ### Vision Proxy Settings
 
@@ -238,6 +254,51 @@ Balance:
 > configured API key are omitted entirely; a configured provider whose lookup
 > fails reads as `unavailable` — a balance problem never blocks the rest of the
 > report. No request is sent when no API key is set.
+
+## AI Commit Messages
+
+The sparkle button in the Source Control input box drafts a commit message.
+The GitHub Copilot Chat extension provides that button, and by default it runs
+on Copilot's own small utility model. It can run on a model from this
+extension instead.
+
+Point it at one by setting `chat.utilitySmallModel` to the `<vendor>/<model-id>`
+value the dropdown stores. Every model from this extension is served by the
+`Copilot Models` router, whose vendor id is `copilot-models-router`:
+
+```jsonc
+"chat.utilitySmallModel": "copilot-models-router/deepseek-flash"
+```
+
+> **Note:** The vendor is the one that registers the models, not the upstream
+> service. `deepseek/deepseek-flash` looks right and is silently ignored — the
+> setting is only read by name `<vendor>/<id>`, and no model is registered
+> under the `deepseek` vendor. Picking from the dropdown avoids the guesswork.
+
+| Setting | Applies to |
+| :------ | :--------- |
+| `chat.utilitySmallModel` | Short, frequent flows: commit messages |
+| `chat.utilityModel` | Longer utility flows |
+| `chat.byokUtilityModelDefault` | Used when the two above are empty |
+
+`chat.byokUtilityModelDefault` decides what happens when the model selected
+in the chat picker is a BYOK model and neither override is set: `copilot`
+(the default) keeps Copilot's utility models, `mainAgent` reuses the selected
+BYOK model, and `none` disables utility models.
+
+> **Notes:**
+>
+> - The model must be selectable, which means its API key or a covering token
+>   plan is configured. Without credentials a model is not offered in these
+>   settings, and a request it does receive fails with
+>   `API key not configured`.
+> - Prefer a fast, inexpensive model: these flows run often and the prompt is
+>   mostly the diff.
+> - Only the Copilot extension's utility aliases follow these settings. VS
+>   Code's own internal flows (chat titles, dictation cleanup, tool risk
+>   assessment) ask for the Copilot utility model directly and ignore them.
+> - To change what the message says rather than which model writes it, use
+>   `github.copilot.chat.commitMessageGeneration.instructions`.
 
 ## Commands
 

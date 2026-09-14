@@ -8,6 +8,11 @@ export const deepseekConfig = {
   apiKeyPrompt: "Enter your DeepSeek API Key",
   apiKeyPlaceholder: "sk-xxxxxxxxxxxxxxxxxxxxxxxx",
   supportsThinking: true,
-  thinkingFormat: "thinking_type",
+  /**
+   * `as const` keeps the literal type: without it the property widens to
+   * `string`, which no longer satisfies `ThinkingFormat`. The same annotation
+   * is on the BigModel config.
+   */
+  thinkingFormat: "thinking_type" as const,
   models: models satisfies ModelDefinition[],
 };

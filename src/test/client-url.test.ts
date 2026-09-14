@@ -68,4 +68,35 @@ suite("joinApiUrl Test Suite", () => {
       );
     }
   });
+
+  test("keeps a query string after the path, not before it", () => {
+    // Some endpoints carry their version in the query (Azure OpenAI's
+    // `api-version` is the familiar one). Appending the path textually put it
+    // inside the query value, so the request went to a different URL than the
+    // one intended — and the logs showed nothing wrong, because `sanitizeUrl`
+    // removes the query before logging.
+    assert.strictEqual(
+      joinApiUrl(
+        "https://host.example.com/openai/deployments/gpt-4?api-version=2024-02-01",
+        PATH,
+      ),
+      "https://host.example.com/openai/deployments/gpt-4/chat/completions?api-version=2024-02-01",
+    );
+  });
+
+  test("keeps a query string on a plain base URL", () => {
+    assert.strictEqual(
+      joinApiUrl("https://host.example.com/v1?key=abc", PATH),
+      "https://host.example.com/v1/chat/completions?key=abc",
+    );
+  });
+
+  test("falls back to joining text when the base URL cannot be parsed", () => {
+    // A relative value is not a usable endpoint, but returning something
+    // predictable beats throwing from a code path that only builds a URL.
+    assert.strictEqual(
+      joinApiUrl("api.example.com/v1/", "chat/completions"),
+      "api.example.com/v1/chat/completions",
+    );
+  });
 });

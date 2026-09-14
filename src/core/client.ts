@@ -52,7 +52,62 @@ export interface ClientOptions {
 }
 
 /**
- * API client interface
+ * Build the JSON body for a streaming chat completion request.
+ *
+ * Exported and pure so the payload can be asserted on directly. Every field
+ * has to be listed here to reach the API, and a field that is missing is
+ * indistinguishable from one the API chose to ignore — which is how the
+ * thinking parameters went unsent for every provider: they were set on the
+ * request and then dropped at this boundary, so the thinking-mode setting did
+ * nothing at all.
+ */
+export function buildChatRequestBody(
+  request: ApiRequest,
+): Record<string, unknown> {
+  const extraFields: Record<string, unknown> = {};
+
+  if (request.temperature !== undefined) {
+    extraFields.temperature = request.temperature;
+  }
+  if (request.top_p !== undefined) {
+    extraFields.top_p = request.top_p;
+  }
+  if (request.max_tokens !== undefined) {
+    extraFields.max_tokens = request.max_tokens;
+  }
+
+  const tools = request.tools?.map(toChatCompletionTool);
+  if (tools) {
+    extraFields.tools = tools;
+  }
+  if (request.tool_choice) {
+    extraFields.tool_choice = request.tool_choice;
+  }
+
+  // Thinking controls. Which one is set depends on the provider's declared
+  // `thinkingFormat`; an absent field must stay absent rather than being sent
+  // as `undefined`, which would be serialised away and hide the difference.
+  if (request.thinking !== undefined) {
+    extraFields.thinking = request.thinking;
+  }
+  if (request.enable_thinking !== undefined) {
+    extraFields.enable_thinking = request.enable_thinking;
+  }
+  if (request.reasoning_effort !== undefined) {
+    extraFields.reasoning_effort = request.reasoning_effort;
+  }
+
+  return {
+    model: request.model,
+    messages: request.messages.map(toChatCompletionMessageParam),
+    stream: true,
+    stream_options: request.stream_options ?? { include_usage: true },
+    ...extraFields,
+  };
+}
+
+/**
+ * API Client interface
  */
 export interface IApiClient {
   /** Base URL */
@@ -127,6 +182,16 @@ export interface ApiUsage {
 /**
  * API request format
  */
+/**
+ * A chat completion request.
+ *
+ * Closed on purpose. Every field here has to be copied into the JSON body by
+ * `buildChatRequestBody`, and a field missing from that function never reaches
+ * the API — which is how the thinking controls came to be set on every request
+ * and sent on none of them. An index signature used to accept arbitrary
+ * properties, so the compiler had no way to object; there is none now, and a
+ * new request field is a deliberate addition in both places.
+ */
 export interface ApiRequest {
   model: string;
   messages: ApiMessage[];
@@ -137,11 +202,12 @@ export interface ApiRequest {
   tools?: ApiTool[];
   tool_choice?: "none" | "auto" | "required";
   thinking?: { type: "enabled" | "disabled" };
+  /** DashScope's boolean toggle, an alternative to `thinking.type` */
+  enable_thinking?: boolean;
   reasoning_effort?: string;
   stream_options?: {
     include_usage: boolean;
   };
-  [key: string]: unknown;
 }
 
 /**
@@ -180,11 +246,31 @@ const MAX_RETRY_AFTER_MS = 60_000;
  * A `baseUrl` entered with a trailing slash (e.g. `https://host/v1/`) used to
  * be concatenated verbatim, yielding `https://host/v1//chat/completions` —
  * an empty path segment that some gateways reject with a 404.
+ *
+ * The base may also carry a query string, which is part of the endpoint rather
+ * than something the path follows. Appending textually put the path *inside*
+ * the query value — `...?api-version=2024-02-01/chat/completions` — so the
+ * request went somewhere else entirely. Parsing keeps each part in its place.
+ * The malformed result never looked malformed in the logs either, because
+ * `sanitizeUrl` strips the query before logging.
  */
 export function joinApiUrl(baseUrl: string, apiPath: string): string {
-  const base = baseUrl.trim().replace(/\/+$/, "");
+  const base = baseUrl.trim();
   const path = apiPath.trim();
-  return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
+
+  try {
+    const url = new URL(base);
+    const basePath = url.pathname.replace(/\/+$/, "");
+    url.pathname = path.startsWith("/")
+      ? `${basePath}${path}`
+      : `${basePath}/${path}`;
+    return url.toString();
+  } catch {
+    // Not an absolute URL — fall back to joining the strings, which is all
+    // that can be done with nothing to parse.
+    const basePath = base.replace(/\/+$/, "");
+    return path.startsWith("/") ? `${basePath}${path}` : `${basePath}/${path}`;
+  }
 }
 
 /**
@@ -357,33 +443,7 @@ class ApiClientImpl implements IApiClient {
     }
 
     try {
-      const messages = request.messages.map(toChatCompletionMessageParam);
-      const tools = request.tools?.map(toChatCompletionTool);
-
-      const extraFields: Record<string, unknown> = {};
-      if (request.temperature !== undefined) {
-        extraFields.temperature = request.temperature;
-      }
-      if (request.top_p !== undefined) {
-        extraFields.top_p = request.top_p;
-      }
-      if (request.max_tokens !== undefined) {
-        extraFields.max_tokens = request.max_tokens;
-      }
-      if (tools) {
-        extraFields.tools = tools;
-      }
-      if (request.tool_choice) {
-        extraFields.tool_choice = request.tool_choice;
-      }
-
-      const requestBody: Record<string, unknown> = {
-        model: request.model,
-        messages,
-        stream: true,
-        stream_options: request.stream_options ?? { include_usage: true },
-        ...extraFields,
-      };
+      const requestBody = buildChatRequestBody(request);
 
       if (logger.shouldLog("debug")) {
         logger.api.debug(
@@ -391,8 +451,15 @@ class ApiClientImpl implements IApiClient {
         );
       }
 
+      const extraKeys = Object.keys(requestBody).filter(
+        (key) =>
+          key !== "model" &&
+          key !== "messages" &&
+          key !== "stream" &&
+          key !== "stream_options",
+      );
       logger.api.debug(
-        `[${providerName}] model="${request.model}" messages=${messages.length} extra=[${Object.keys(extraFields).join(",")}] stream=true`,
+        `[${providerName}] model="${request.model}" messages=${(requestBody.messages as unknown[]).length} extra=[${extraKeys.join(",")}] stream=true`,
       );
 
       // The circuit breaker now also guards the streaming consumption phase,
@@ -635,16 +702,27 @@ export async function consumeChatCompletionStream(
   /** Emit all accumulated tool calls and reset the buffer. */
   const flushToolCalls = (): void => {
     for (const tc of pendingToolCalls.values()) {
-      if (tc.function.name) {
-        callbacks.onToolCall({
-          id: tc.id,
-          type: tc.type,
-          function: {
-            name: tc.function.name,
-            arguments: tc.function.arguments,
-          },
-        });
+      if (!tc.function.name) {
+        continue;
       }
+      if (!tc.id) {
+        // Nothing arrived to pair the eventual tool result with. Emitting one
+        // with an empty id produces a result the provider cannot match, so
+        // the call is dropped instead — loudly, because the user otherwise
+        // sees the model decide to call a tool and nothing happen.
+        logger.api.warn(
+          `[${providerName}] Dropping tool call "${tc.function.name}": the stream never sent its id`,
+        );
+        continue;
+      }
+      callbacks.onToolCall({
+        id: tc.id,
+        type: tc.type,
+        function: {
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        },
+      });
     }
     pendingToolCalls.clear();
   };
@@ -701,22 +779,27 @@ export async function consumeChatCompletionStream(
 
     if (delta.tool_calls) {
       for (const tc of delta.tool_calls) {
+        // The entry is created on the first fragment for an index, not on the
+        // first fragment that happens to carry an id. OpenAI puts the id in
+        // that first fragment, but not every gateway does, and waiting for it
+        // discarded the name that arrived ahead of it — leaving no tool call
+        // at all, since a call with no name is not emitted.
         let pending = pendingToolCalls.get(tc.index);
-        if (!pending && tc.id) {
+        if (!pending) {
           pending = {
-            id: tc.id,
+            id: tc.id ?? "",
             type: "function",
             function: { name: "", arguments: "" },
           };
           pendingToolCalls.set(tc.index, pending);
+        } else if (!pending.id && tc.id) {
+          pending.id = tc.id;
         }
-        if (pending) {
-          if (tc.function?.name) {
-            pending.function.name += tc.function.name;
-          }
-          if (tc.function?.arguments) {
-            pending.function.arguments += tc.function.arguments;
-          }
+        if (tc.function?.name) {
+          pending.function.name += tc.function.name;
+        }
+        if (tc.function?.arguments) {
+          pending.function.arguments += tc.function.arguments;
         }
       }
     }

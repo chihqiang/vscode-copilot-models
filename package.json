@@ -2,7 +2,7 @@
   "name": "vscode-copilot-models",
   "displayName": "Copilot Models",
   "description": "Unlock third-party large model extensions for GitHub Copilot. Support DeepSeek and more LLMs.",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "publisher": "chihqiang",
   "icon": "resources/icon.png",
   "repository": {
@@ -44,7 +44,8 @@
   ],
   "main": "./out/extension.js",
   "enabledApiProposals": [
-    "languageModelThinkingPart"
+    "languageModelThinkingPart",
+    "chatProvider"
   ],
   "contributes": {
     "languageModelChatProviders": [
@@ -194,6 +195,21 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "copilot-models.editTools": {
+          "type": "array",
+          "default": [],
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "find-replace",
+              "multi-find-replace",
+              "apply-patch",
+              "code-rewrite"
+            ]
+          },
+          "description": "File-editing tools to advertise for every model, as a hint to the editor. Empty (default) lets the editor try several edit tools and pick one; listing tools that don't suit the models can make their edits worse."
         },
         "copilot-models.deepseek.enabled": {
           "type": "boolean",

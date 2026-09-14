@@ -40,6 +40,7 @@ export const SETTING_MAX_IMAGE_SIZE = "maxImageSize";
 export const SETTING_SHOW_STATUS_BAR = "showStatusBar";
 export const SETTING_ROUTING_STRATEGY = "routingStrategy";
 export const SETTING_FAILOVER_MODELS = "failoverModels";
+export const SETTING_EDIT_TOOLS = "editTools";
 
 // ── Vision proxy setting names ───────────────────────
 
@@ -66,6 +67,7 @@ export const ALL_SETTING_NAMES: readonly string[] = [
   SETTING_SHOW_STATUS_BAR,
   SETTING_ROUTING_STRATEGY,
   SETTING_FAILOVER_MODELS,
+  SETTING_EDIT_TOOLS,
   SETTING_VISION_MODEL,
   SETTING_VISION_PROMPT,
   SETTING_VISION_PROXY_API_URL,
@@ -139,6 +141,17 @@ export function getFailoverModels(): Record<string, string> {
 /** Routing strategy: failover or latency */
 export function getRoutingStrategy(): RoutingStrategy {
   return getConfig().get<RoutingStrategy>(SETTING_ROUTING_STRATEGY, "failover");
+}
+
+/**
+ * File-editing tools to advertise for every model, or `[]` for none.
+ *
+ * Empty is the default and the only value that changes nothing: VS Code then
+ * keeps trying several edit tools and picks one itself. Anything else is a
+ * statement about the models that only the user can make, so it is opt-in.
+ */
+export function getEditTools(): string[] {
+  return getConfig().get<string[]>(SETTING_EDIT_TOOLS, []);
 }
 
 /**

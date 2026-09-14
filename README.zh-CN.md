@@ -14,6 +14,8 @@
 - **日志调试**: 4 级日志系统，支持热重载
 - **轻量**: 移除 OpenAI SDK，原生 SSE 客户端实现
 - **令牌套餐**: 统一预付费计费，通过单个端点同时覆盖通义千问、DeepSeek、GLM 的令牌套餐
+- **实用模型**: 可通过 VS Code 的实用模型设置，让 AI 生成提交信息
+  也使用这些模型
 
 ## 快速开始
 
@@ -87,6 +89,11 @@ API 密钥保存在 VS Code SecretStorage 中。
 4. 开始对话
 
 ## 支持的模型
+
+模型选择器中的*思考强度*选项对应各服务商实际提供的参数。`None` 在所有
+服务商上都能关闭思考：通义千问通过 `enable_thinking: false`（其接口默认开启
+思考），智谱 AI 与 DeepSeek 则通过 `thinking` 开关。三者都只提供开关、
+不提供强度档位，因此 `low`、`high`、`max` 均以服务商自身默认强度开启思考。
 
 ### 通义千问 (Alibaba Cloud)
 
@@ -163,7 +170,13 @@ API 密钥保存在 VS Code SecretStorage 中。
 | `timeoutMs` | API 请求超时（毫秒） | `60000` |
 | `maxRetries` | 最大重试次数 | `1` |
 | `showStatusBar` | 在状态栏显示今日 token 消耗 | `true` |
+| `editTools` | 向编辑器声明的文件编辑工具偏好 | `[]` |
 | `debugMode` | 日志级别：`minimal / metadata / verbose` | `minimal` |
+
+> **关于 `editTools`**：留空（默认）时编辑器会自行尝试多种编辑工具并挑选合
+> 适的那个。可选值为 `find-replace`、`multi-find-replace`、`apply-patch`、
+> `code-rewrite`；只有在你明确知道这些模型擅长哪种编辑工具时才填写，填错会
+> 让编辑效果变差。该设置对所有模型生效。
 
 ### 视觉代理设置
 
@@ -210,6 +223,45 @@ Balance:
 > 因此经它们发起的请求不显示余额。未配置 API 密钥的服务商会整行省略；
 > 已配置但查询失败时显示 `unavailable`——余额问题不会影响报表其余部分的展示。
 > 未配置密钥时不会发起任何网络请求。
+
+## AI 生成提交信息
+
+源代码管理输入框上的星标按钮可以自动草拟提交信息。该按钮由 GitHub Copilot
+Chat 扩展提供，默认使用 Copilot 自带的小型实用模型，也可以改成使用本扩展的
+模型。
+
+把 `chat.utilitySmallModel` 设为下拉列表中存储的 `<vendor>/<model-id>` 形式。
+本扩展的所有模型都由 `Copilot Models` 路由器提供，其 vendor id 为
+`copilot-models-router`：
+
+```jsonc
+"chat.utilitySmallModel": "copilot-models-router/deepseek-flash"
+```
+
+> **注意：** 这里的 vendor 是「注册这些模型的扩展」，而不是上游服务商。
+> 写成 `deepseek/deepseek-flash` 看似合理，但会被静默忽略——该设置按
+> `<vendor>/<id>` 严格匹配，而 `deepseek` 这个 vendor 名下没有注册任何模型。
+> 从下拉列表中直接选择即可避免猜错。
+
+| 设置项 | 适用范围 |
+| :----- | :------- |
+| `chat.utilitySmallModel` | 短而频繁的流程：提交信息 |
+| `chat.utilityModel` | 较长的实用流程 |
+| `chat.byokUtilityModelDefault` | 上面两项都为空时的默认行为 |
+
+`chat.byokUtilityModelDefault` 决定当对话面板中选中的是 BYOK 模型、且上面两项
+都未设置时的行为：`copilot`（默认）继续用 Copilot 的实用模型，`mainAgent` 复用
+当前选中的 BYOK 模型，`none` 表示不使用实用模型。
+
+> **注意：**
+>
+> - 模型必须是可选的，即已配置 API 密钥或有令牌套餐覆盖。未配置凭据的模型不会
+>   出现在这些设置的下拉列表中；若仍收到请求，会报 `API key not configured`。
+> - 建议选择快而便宜的模型：这类流程调用频繁，且提示内容基本只有 diff。
+> - 只有 Copilot 扩展的实用模型别名会遵循这些设置。VS Code 自身的内部流程
+>   （对话标题生成、语音清理、工具风险评估）直接请求 Copilot 实用模型，不受影响。
+> - 如果想改的是提交信息的写法而不是由哪个模型来写，请使用
+>   `github.copilot.chat.commitMessageGeneration.instructions`。
 
 ## 命令
 

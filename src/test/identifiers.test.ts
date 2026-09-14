@@ -17,6 +17,8 @@
  */
 
 import * as assert from "assert";
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import { ALL_COMMAND_IDS } from "../commands/command-ids";
 import { ALL_SETTING_NAMES, settingKey } from "../core/settings";
@@ -147,5 +149,63 @@ suite("Identifier consistency Test Suite", () => {
       settingKey("showStatusBar"),
       `${CONFIG_SECTION}.showStatusBar`,
     );
+  });
+
+  test("the chatProvider proposal is declared for the edit-tool hint", () => {
+    // Unlike most fields a provider returns, `capabilities.editTools` is
+    // gated in the extension host with `checkProposedApiEnabled`, which
+    // *throws*. Reporting the hint without this declaration does not degrade
+    // gracefully: model discovery fails and the provider disappears from the
+    // picker. The proposal also gates `requiresAuthorization` and `isDefault`,
+    // neither of which this extension sets.
+    //
+    // Read from the file rather than from `extension.packageJSON`: VS Code
+    // consumes `enabledApiProposals` while loading the extension and does not
+    // pass it on to the manifest extensions see at runtime.
+    const extension = vscode.extensions.getExtension(
+      "chihqiang.vscode-copilot-models",
+    );
+    assert.ok(extension, "the extension under test must be available");
+    const manifest = JSON.parse(
+      fs.readFileSync(
+        path.join(extension.extensionPath, "package.json"),
+        "utf8",
+      ),
+    ) as { enabledApiProposals?: string[] };
+
+    assert.ok(
+      manifest.enabledApiProposals?.includes("chatProvider"),
+      "capabilities.editTools requires the chatProvider proposal to be listed in enabledApiProposals",
+    );
+  });
+
+  test("the documented utility-model value names the vendor that serves the models", () => {
+    // `chat.utilitySmallModel` is matched by exactly `<vendor>/<model-id>`, and
+    // the vendor VS Code reports is the one that *registered* the provider —
+    // the router — not the upstream service a model is named after. Documenting
+    // `deepseek/deepseek-flash` therefore described a value the editor silently
+    // ignores, which is worse than an obvious error: nothing reports a
+    // non-matching override except a log line.
+    const extension = vscode.extensions.getExtension(
+      "chihqiang.vscode-copilot-models",
+    );
+    assert.ok(extension, "the extension under test must be available");
+
+    for (const file of ["README.md", "README.zh-CN.md"]) {
+      const text: string = fs.readFileSync(
+        path.join(extension.extensionPath, file),
+        "utf8",
+      );
+      const example: RegExpMatchArray | null = text.match(
+        /"chat\.utilitySmallModel"\s*:\s*"([^"\/]+)\/([^"]+)"/,
+      );
+
+      assert.ok(example, `${file} must show a chat.utilitySmallModel example`);
+      assert.strictEqual(
+        example[1],
+        ROUTER_VENDOR_ID,
+        `${file} documents "${example[1]}/..." but the models are served by "${ROUTER_VENDOR_ID}"`,
+      );
+    }
   });
 });

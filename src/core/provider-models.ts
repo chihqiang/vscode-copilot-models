@@ -3,9 +3,14 @@ import {
   CONFIG_SECTION,
   type ModelDefinition,
   type ProviderDefinition,
+  type ThinkingFormat,
 } from "./models";
 import { logger } from "./logger";
-import { BaseChatProvider, type ThinkingEffort } from "./chat-provider";
+import {
+  BaseChatProvider,
+  applyThinkingParams,
+  type ThinkingEffort,
+} from "./chat-provider";
 import { BaseModelProvider } from "./model-provider";
 import { createApiClient, type ApiRequest } from "./client";
 import { createSingletonStore } from "./singleton";
@@ -139,8 +144,20 @@ export class ProviderModels {
     this.providers.set(provider.id, provider);
     this.models.set(provider.id, providerModels);
     for (const model of providerModels) {
-      if (!this.modelIdToProviderId.has(model.id)) {
+      const existing = this.modelIdToProviderId.get(model.id);
+      if (existing === undefined) {
         this.modelIdToProviderId.set(model.id, provider.id);
+      } else if (existing !== provider.id) {
+        // Routing resolves a model id to exactly one provider, so the first
+        // registration wins and the other model is unreachable — silently,
+        // because nothing else compares these two lists. Two providers can
+        // legitimately offer the same model name (a token plan mirrors the
+        // direct API), so this is a warning rather than an error.
+        logger.registry.warn(
+          `Model id "${model.id}" from provider "${provider.id}" is already ` +
+            `served by "${existing}"; requests for it will not reach ` +
+            `"${provider.id}".`,
+        );
       }
     }
     logger.registry.debug(
@@ -259,13 +276,13 @@ export class ProviderModels {
 // ── Generic Chat Provider ──────────────────────────
 
 class GenericChatProvider extends BaseChatProvider {
-  private readonly thinkingFormat: "reasoning_effort" | "thinking_type";
+  private readonly thinkingFormat: ThinkingFormat;
   private readonly _supportsThinking: boolean;
 
   constructor(
     context: vscode.ExtensionContext,
     modelProvider: IModelProvider,
-    thinkingFormat: "reasoning_effort" | "thinking_type",
+    thinkingFormat: ThinkingFormat,
     supportsThinking: boolean,
   ) {
     super(context, modelProvider);
@@ -281,12 +298,6 @@ class GenericChatProvider extends BaseChatProvider {
     request: ApiRequest,
     effort: ThinkingEffort,
   ): void {
-    if (this.thinkingFormat === "thinking_type") {
-      request.thinking = { type: effort === "none" ? "disabled" : "enabled" };
-    } else {
-      if (effort !== "none") {
-        request.reasoning_effort = effort;
-      }
-    }
+    applyThinkingParams(request, this.thinkingFormat, effort);
   }
 }

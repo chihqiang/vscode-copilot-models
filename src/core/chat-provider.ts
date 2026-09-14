@@ -10,7 +10,7 @@ import {
   withLogContext,
   type LogContext,
 } from "./logger";
-import { isImageMime, toDataUrl } from "./bytes";
+import { isImageMime, isTextualMime, toDataUrl, decodeUTF8 } from "./bytes";
 import { ApiError, CancelledError, TimeoutError } from "./errors";
 import {
   ApiMessage,
@@ -22,8 +22,11 @@ import {
   StreamCallbacks,
 } from "./client";
 import { CONFIG_SECTION, ModelDefinition } from "./models";
+import type { ThinkingFormat } from "./models";
 import {
+  getEditTools,
   getMaxImageSize,
+  SETTING_EDIT_TOOLS,
   SETTING_MAX_RETRIES,
   SETTING_MODEL_ID_OVERRIDES,
   SETTING_TIMEOUT_MS,
@@ -38,8 +41,11 @@ import {
 } from "./token-plan";
 import {
   VisionService,
+  containsImageParts,
   getVisionService,
+  isDescribingWith,
   resolveImageMessages,
+  visionModelNeedsImageInputMessage,
 } from "./vision";
 
 /**
@@ -120,6 +126,51 @@ export function clientAffectingConfigKeys(
 }
 
 /**
+ * Configuration keys that change the model information reported to VS Code.
+ *
+ * A superset of {@link clientAffectingConfigKeys}: rebuilding a client means
+ * rebuilding the model list, so those keys need both. `editTools` is the
+ * exception — it changes only the capabilities reported for a model, so it
+ * needs a refresh and not a cache drop.
+ *
+ * Leaving a key out is invisible until someone checks: `toChatInfo` reads the
+ * setting on every call, so the value is right the moment anything else
+ * refreshes the list. But VS Code caches what the provider reported until
+ * `onDidChangeLanguageModelChatInformation` fires, so a user who edits the
+ * setting and immediately opens the picker sees the old value and reasonably
+ * calls it broken.
+ */
+export function modelInfoAffectingConfigKeys(
+  configSection: string,
+  providerId: string,
+): string[] {
+  return [
+    ...clientAffectingConfigKeys(configSection, providerId),
+    `${configSection}.${SETTING_EDIT_TOOLS}`,
+  ];
+}
+
+/**
+ * The text a non-image data part contributes to the request.
+ *
+ * `LanguageModelDataPart` is not only for images: `DataPart.json(...)` and
+ * `DataPart.text(...)` carry tool output and structured data, and they arrive
+ * as message content exactly like an image part does. `convertMessages` used
+ * to `continue` on every non-`image/*` data part, so those payloads vanished:
+ * the model received a message with no content where a tool had returned
+ * data, and nothing in the logs said so.
+ */
+export function dataPartText(part: vscode.LanguageModelDataPart): string {
+  if (isTextualMime(part.mimeType)) {
+    return decodeUTF8(part.data);
+  }
+  // Binary that is not an image (audio, video, archives) cannot go into a JSON
+  // request body. Name it so the model can tell "a file came back" from "the
+  // tool returned nothing".
+  return `[${part.mimeType} data omitted, ${part.data.length} bytes]`;
+}
+
+/**
  * The text a tool result contributes to the request.
  *
  * Shared by `convertMessages` (which sends it) and `messageTextForTokenCount`
@@ -130,25 +181,30 @@ function toolResultContentString(
   part: vscode.LanguageModelToolResultPart,
 ): string {
   const textParts: string[] = [];
-  let binaryParts = 0;
+  const binaryMimes = new Set<string>();
+
   for (const item of part.content) {
     if (item instanceof vscode.LanguageModelTextPart) {
       textParts.push(item.value);
     } else if (item instanceof vscode.LanguageModelDataPart) {
-      binaryParts++;
+      if (isTextualMime(item.mimeType)) {
+        textParts.push(decodeUTF8(item.data));
+      } else {
+        binaryMimes.add(item.mimeType);
+      }
     }
   }
 
-  const toolText = textParts.join("");
-  if (toolText) {
-    return toolText;
-  }
   // Never serialize binary data parts into the request — that would bloat the
-  // payload with a huge JSON byte map. Count the placeholder instead, which is
-  // what the provider actually sees.
-  return binaryParts > 0
-    ? `[Tool result contains ${binaryParts} binary data part(s), omitted]`
-    : JSON.stringify(part.content);
+  // payload with a huge JSON byte map. Name the types instead, so an image
+  // result is distinguishable from an empty one.
+  if (binaryMimes.size > 0) {
+    textParts.push(
+      `[Tool result contains binary data (${[...binaryMimes].join(", ")}), omitted]`,
+    );
+  }
+
+  return textParts.join("") || JSON.stringify(part.content);
 }
 
 // ── Token estimation ─────────────────────────────────
@@ -162,6 +218,8 @@ function toolResultContentString(
  * parts made a tool-heavy conversation look far smaller than its request.
  * Images are deliberately excluded: they are sent as data URLs, whose length
  * is dominated by base64 rather than by anything a token estimate can model.
+ * Textual data parts are included, because `convertMessages` now sends them as
+ * text rather than dropping them.
  */
 export function messageTextForTokenCount(
   message: vscode.LanguageModelChatRequestMessage,
@@ -181,6 +239,18 @@ export function messageTextForTokenCount(
           ? part.value
           : JSON.stringify(part.value),
       );
+    } else if (part instanceof vscode.LanguageModelThinkingPart) {
+      // `convertMessages` sends reasoning back as `reasoning_content` on
+      // assistant messages, and DeepSeek concatenates it into the context when
+      // the request carries tools. Not counting it would report less context
+      // in use than the request actually costs.
+      if (message.role === vscode.LanguageModelChatMessageRole.Assistant) {
+        chunks.push(part.value);
+      }
+    } else if (part instanceof vscode.LanguageModelDataPart) {
+      if (isTextualMime(part.mimeType)) {
+        chunks.push(decodeUTF8(part.data));
+      }
     }
   }
 
@@ -201,6 +271,45 @@ export function estimateTokenCount(
   const content =
     typeof text === "string" ? text : messageTextForTokenCount(text);
   return Tokenizer.getInstance().countTokens(content);
+}
+
+/**
+ * Write the thinking parameters a provider expects for an effort level.
+ *
+ * Exported as a pure function so each format can be checked on its own: the
+ * failure mode here is silent. An API ignores a parameter it does not know,
+ * so a level expressed the wrong way — or not expressed at all — leaves
+ * thinking at its default instead of reporting anything. Choosing "None" used
+ * to omit the parameter entirely, which on an API whose default is thinking on
+ * meant the setting did nothing.
+ */
+export function applyThinkingParams(
+  request: ApiRequest,
+  format: ThinkingFormat,
+  effort: ThinkingEffort,
+): void {
+  const enabled = effort !== "none";
+
+  if (format === "enable_thinking") {
+    // A boolean, and the API defaults it to on, so `false` is the only value
+    // that turns thinking off. Nothing else is sent: this provider documents
+    // no effort parameter, and until these fields were wired into the request
+    // body at all, a level here was never transmitted — so sending one now
+    // would put an unverified parameter on every request.
+    request.enable_thinking = enabled;
+    return;
+  }
+
+  if (format === "thinking_type") {
+    // One toggle; the effort level is left to the API's own default, which is
+    // all a provider that documents only this parameter offers.
+    request.thinking = { type: enabled ? "enabled" : "disabled" };
+    return;
+  }
+
+  // `reasoning_effort` carries both the toggle and the level, so `none` is
+  // sent rather than omitted — it is the documented value for "do not think".
+  request.reasoning_effort = effort;
 }
 
 /**
@@ -324,19 +433,42 @@ export abstract class BaseChatProvider
    * Called on configuration change
    */
   protected onConfigurationChanged(e: vscode.ConfigurationChangeEvent): void {
-    if (this.isActive && this.affectsConfiguration(e)) {
-      logger.config.debug(
-        `[${this.providerId}] Configuration affects this provider, refreshing...`,
-      );
-      this.clientCache.clear();
-      this.onDidChangeLanguageModelChatInformationEmitter.fire();
+    if (!this.isActive || !this.affectsConfiguration(e)) {
+      return;
     }
+
+    // A cached client captured the base URL, timeout and retry count it was
+    // built with, so a change to any of those has to drop it. The drop is kept
+    // to that case: it also discards the client's circuit breaker, so doing it
+    // for a setting that only changes what is reported to VS Code would reset
+    // a provider's failure tracking as a side effect of an unrelated edit.
+    if (this.affectsClient(e)) {
+      this.clientCache.clear();
+    }
+
+    logger.config.debug(
+      `[${this.providerId}] Configuration affects this provider, refreshing...`,
+    );
+    this.onDidChangeLanguageModelChatInformationEmitter.fire();
   }
 
   /**
    * Check if configuration affects this provider (subclass can override)
    */
   protected affectsConfiguration(e: vscode.ConfigurationChangeEvent): boolean {
+    return modelInfoAffectingConfigKeys(
+      this.configSection,
+      this.providerId,
+    ).some((key) => e.affectsConfiguration(key));
+  }
+
+  /**
+   * Whether the change invalidates the cached API clients.
+   *
+   * A strict subset of {@link affectsConfiguration}: every such change also
+   * needs the model list rebuilt, but not the other way round.
+   */
+  protected affectsClient(e: vscode.ConfigurationChangeEvent): boolean {
     return clientAffectingConfigKeys(this.configSection, this.providerId).some(
       (key) => e.affectsConfiguration(key),
     );
@@ -377,7 +509,7 @@ export abstract class BaseChatProvider
    * Get model picker information
    */
   async provideLanguageModelChatInformation(
-    _options: vscode.PrepareLanguageModelChatModelOptions,
+    options: vscode.PrepareLanguageModelChatModelOptions,
     _token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelChatInformation[]> {
     if (!this.isActive) {
@@ -394,7 +526,13 @@ export abstract class BaseChatProvider
     const planManager = TokenPlan.getInstance();
     const planModelIds = planManager.getPlanModelIds();
     const models = this.modelProvider.getModels();
-    logger.provider.info(
+    // `silent` probes are the editor asking "are there models?" — they happen
+    // far more often than the picker is opened, so the per-call inventory is
+    // debug material there and only interesting at info level otherwise.
+    const logInventory = options.silent
+      ? logger.provider.debug
+      : logger.provider.info;
+    logInventory(
       `[${this.providerId}] Providing model information, count: ${models.length}, hasApiKey: ${hasApiKey}, planModels: ${planModelIds.size}`,
     );
 
@@ -416,6 +554,7 @@ export abstract class BaseChatProvider
     hasPlan = false,
   ): ModelPickerChatInformation {
     const selectable = hasApiKey || hasPlan;
+    const editTools = getEditTools();
     logger.provider.debug(
       `[${this.providerId}] Converting model to chat info: ${model.id}, hasApiKey: ${hasApiKey}, hasPlan: ${hasPlan}, selectable: ${selectable}`,
     );
@@ -430,6 +569,10 @@ export abstract class BaseChatProvider
         : selectable
           ? ""
           : "Please configure API key",
+      // Every model here is paid for by the user's own key or token plan. VS
+      // Code infers this for third-party providers anyway, so stating it keeps
+      // the answer independent of that inference rule.
+      isBYOK: true,
       statusIcon: new vscode.ThemeIcon(selectable ? "check" : "warning"),
       maxInputTokens: model.maxInputTokens,
       maxOutputTokens: model.maxOutputTokens,
@@ -437,11 +580,31 @@ export abstract class BaseChatProvider
       capabilities: {
         toolCalling: model.capabilities.toolCalling,
         imageInput: model.capabilities.imageInput,
+        // Only reported when the user names the tools: the field replaces the
+        // editor's "try several edit tools" default, so guessing it would be
+        // worse than leaving it out. Reading it per call keeps the setting
+        // live without a model-picker refresh.
+        ...(editTools.length > 0 ? { editTools } : {}),
       },
       ...(this.supportsThinking && model.capabilities.thinking
         ? { configurationSchema: BaseChatProvider.buildThinkingEffortSchema() }
         : {}),
     };
+  }
+
+  /**
+   * Whether this extension made the request, rather than the user's chat.
+   *
+   * VS Code reports the requesting extension as its lowercased id, and `core`
+   * for its own chat functionality. Used to recognise the vision describer's
+   * own call coming back; `isDescribingWith` is the version-independent half
+   * of the same check.
+   */
+  private isSelfInitiatedRequest(options: ModelConfigurationOptions): boolean {
+    return (
+      options.requestInitiator?.toLowerCase() ===
+      this.context.extension.id.toLowerCase()
+    );
   }
 
   /**
@@ -487,10 +650,16 @@ export abstract class BaseChatProvider
       `[${this.providerId}] Model: ${modelInfo.id}, isThinkingModel: ${isThinkingModel}, thinkingEffort: ${thinkingEffort}`,
     );
 
-    const apiMessages = this.convertMessages(messages);
+    // The tools are resolved before the messages because the converter needs
+    // to know whether the request will carry a `tools` parameter — see
+    // `convertMessages`.
     const tools = modelDefinition?.capabilities.toolCalling
       ? this.convertTools(options.tools)
       : undefined;
+    const apiMessages = this.convertMessages(
+      messages,
+      Boolean(tools && tools.length > 0),
+    );
 
     logger.chat.debug(
       `[${this.providerId}] Original messages count: ${messages.length}`,
@@ -576,15 +745,16 @@ export abstract class BaseChatProvider
 
   /**
    * Convert thinking params to API-specific format (subclass can override)
+   *
+   * The default assumes the provider expresses both the toggle and the effort
+   * through `reasoning_effort`; a provider that uses a different parameter
+   * overrides this or declares a `thinkingFormat`.
    */
   protected convertThinkingParams(
     request: ApiRequest,
     effort: ThinkingEffort,
   ): void {
-    // Default implementation: use reasoning_effort parameter
-    if (effort !== "none") {
-      request.reasoning_effort = effort;
-    }
+    applyThinkingParams(request, "reasoning_effort", effort);
   }
 
   private logMessageDetails(
@@ -624,9 +794,15 @@ export abstract class BaseChatProvider
 
   /**
    * Convert message format (subclass can override)
+   *
+   * `hasTools` tells the converter whether the request it is building will
+   * carry a `tools` parameter. DeepSeek treats a missing `reasoning_content`
+   * as a protocol error in that case (see the assistant branch below), so the
+   * two cannot be decided independently.
    */
   protected convertMessages(
     messages: readonly vscode.LanguageModelChatRequestMessage[],
+    hasTools = false,
   ): ApiMessage[] {
     logger.chat.debug(
       `[${this.providerId}] Converting ${messages.length} messages`,
@@ -645,17 +821,27 @@ export abstract class BaseChatProvider
       const toolCalls: ApiToolCall[] = [];
       const toolResults: Array<{ callId: string; content: string }> = [];
 
+      // Text that arrives before the first image can stay a plain string;
+      // once the message holds an image it becomes an array of content parts,
+      // and every later text has to be pushed as a part instead.
+      const appendText = (text: string): void => {
+        if (hasImages) {
+          contentParts.push({ type: "text", text });
+        } else {
+          textBuffer += text;
+        }
+      };
+
       for (const part of message.content) {
         if (part instanceof vscode.LanguageModelTextPart) {
-          if (hasImages) {
-            contentParts.push({ type: "text", text: part.value });
-          } else {
-            textBuffer += part.value;
-          }
+          appendText(part.value);
         } else if (part instanceof vscode.LanguageModelThinkingPart) {
           thinkingText += part.value;
         } else if (part instanceof vscode.LanguageModelDataPart) {
           if (!isImageMime(part.mimeType)) {
+            // JSON / text data parts are content, not attachments — they used
+            // to be skipped here and never reached the model.
+            appendText(dataPartText(part));
             continue;
           }
 
@@ -692,11 +878,7 @@ export abstract class BaseChatProvider
             typeof part.value === "string"
               ? part.value
               : JSON.stringify(part.value);
-          if (hasImages) {
-            contentParts.push({ type: "text", text: val });
-          } else {
-            textBuffer += val;
-          }
+          appendText(val);
         } else if (part instanceof vscode.LanguageModelToolResultPart) {
           toolResults.push({
             callId: part.callId,
@@ -710,7 +892,16 @@ export abstract class BaseChatProvider
         : textBuffer;
 
       if (role === "assistant") {
-        if (finalContent || toolCalls.length > 0) {
+        // DeepSeek requires the reasoning of every earlier turn to be sent
+        // back once the request carries tools, and answers a missing
+        // `reasoning_content` with a 400 — see its thinking-mode guide. A
+        // message that holds nothing but reasoning can only come from a turn
+        // the user interrupted, which is exactly when the next request would
+        // otherwise fail and keep failing. Without tools the field is ignored
+        // by the provider, so an empty message is still dropped rather than
+        // sent: some APIs reject an assistant message with no content.
+        const carriesRequiredReasoning = hasTools && thinkingText.length > 0;
+        if (finalContent || toolCalls.length > 0 || carriesRequiredReasoning) {
           const msg: ApiMessage = {
             role: "assistant",
             content: finalContent || "",
@@ -1014,18 +1205,44 @@ export abstract class BaseChatProvider
   ): Promise<void> {
     const startTime = Date.now();
     logger.chat.info(
-      `[${this.providerId}] provideLanguageModelChatResponse called, model: ${modelInfo.id}`,
+      `[${this.providerId}] provideLanguageModelChatResponse called, model: ${modelInfo.id}, initiator: ${options.requestInitiator ?? "unknown"}`,
     );
     try {
       // Models with native image input must see the real images — routing
       // them through the vision proxy would downgrade them to a lossy text
       // description.
       const modelDefinition = this.findModelDefinition(modelInfo.id);
+
+      // The describer reaches this extension through `lm.selectChatModels()`
+      // when the model it picked is one of ours, and its request carries the
+      // image — so proxying it would start the description over, forever. Only
+      // ours can recurse this way, which is why the model definition is part
+      // of the test. `isDescribingWith` is the precise, version-independent
+      // signal; the initiator covers a request that was in flight before the
+      // description was registered. It also has to carry an image, or an
+      // unrelated self-initiated request — an AI commit message on a text-only
+      // model — would be mistaken for one.
+      const nestedDescription =
+        modelDefinition !== undefined &&
+        (isDescribingWith(modelInfo.id) ||
+          (this.isSelfInitiatedRequest(options) &&
+            containsImageParts(messages)));
+      if (
+        nestedDescription &&
+        modelDefinition.capabilities.imageInput !== true
+      ) {
+        throw new Error(visionModelNeedsImageInputMessage(modelInfo.id));
+      }
+
       const visionResolution = await resolveImageMessages(
         messages,
         token,
         this.visionService,
-        { skipVisionProxy: modelDefinition?.capabilities.imageInput === true },
+        {
+          skipVisionProxy:
+            modelDefinition?.capabilities.imageInput === true ||
+            nestedDescription,
+        },
       );
 
       // Report vision proxy notice if available

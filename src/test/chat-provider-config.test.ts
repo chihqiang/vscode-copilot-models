@@ -11,8 +11,14 @@ import * as vscode from "vscode";
 import {
   BaseChatProvider,
   clientAffectingConfigKeys,
+  modelInfoAffectingConfigKeys,
 } from "../core/chat-provider";
 import { CONFIG_SECTION, ModelDefinition } from "../core/models";
+import {
+  SETTING_EDIT_TOOLS,
+  SETTING_TIMEOUT_MS,
+  settingKey,
+} from "../core/settings";
 import type { IModelProvider } from "../core/model-provider";
 
 const PROVIDER = "deepseek";
@@ -85,6 +91,13 @@ class TestableProvider extends BaseChatProvider {
   notifySecretChange(key: string): void {
     this.onSecretsChanged({ key } as vscode.SecretStorageChangeEvent);
   }
+
+  /** Run the real change handler, so the cache/refresh split is under test. */
+  applyConfigChange(changedKey: string): void {
+    this.onConfigurationChanged(
+      createChangeEvent(changedKey) as vscode.ConfigurationChangeEvent,
+    );
+  }
 }
 
 suite("clientAffectingConfigKeys Test Suite", () => {
@@ -152,6 +165,86 @@ suite("BaseChatProvider.affectsConfiguration Test Suite", () => {
       assert.strictEqual(affects(`${CONFIG_SECTION}.visionModel`), false);
     } finally {
       provider.dispose();
+    }
+  });
+
+  test("refreshes the model list when editTools changes", () => {
+    // `toChatInfo` reads this setting on every call, so the value is correct
+    // as soon as the list is rebuilt — but VS Code caches what the provider
+    // reported until `onDidChangeLanguageModelChatInformation` fires. Without
+    // this wiring, editing the setting and immediately opening the picker
+    // shows the old capabilities, which reads as the setting not working.
+    const provider = new TestableProvider();
+    try {
+      assert.strictEqual(
+        provider.isAffectedBy(
+          createChangeEvent(settingKey(SETTING_EDIT_TOOLS)),
+        ),
+        true,
+      );
+    } finally {
+      provider.dispose();
+    }
+  });
+
+  test("editing editTools keeps the cached clients", () => {
+    // The cached client also holds the circuit breaker that tracks the
+    // provider's health. Dropping the cache for a setting that changes nothing
+    // about how a client is built would reset that tracking — a failing
+    // provider would get traffic again because someone edited an edit-tool
+    // hint.
+    const provider = new TestableProvider();
+    try {
+      provider.seedCachedClient("https://api.deepseek.com::sk-test");
+
+      provider.applyConfigChange(settingKey(SETTING_EDIT_TOOLS));
+
+      assert.strictEqual(
+        provider.cachedClientCount(),
+        1,
+        "editTools does not change how a client is built",
+      );
+    } finally {
+      provider.dispose();
+    }
+  });
+
+  test("a request setting still drops the cached clients", () => {
+    // The other half of the same rule, so the split cannot be implemented by
+    // simply never clearing the cache.
+    const provider = new TestableProvider();
+    try {
+      provider.seedCachedClient("https://api.deepseek.com::sk-test");
+
+      provider.applyConfigChange(`${CONFIG_SECTION}.${SETTING_TIMEOUT_MS}`);
+
+      assert.strictEqual(provider.cachedClientCount(), 0);
+    } finally {
+      provider.dispose();
+    }
+  });
+});
+
+suite("model info refresh coverage Test Suite", () => {
+  test("every setting the picker payload reads triggers a refresh", () => {
+    // This is the rule rather than an instance of it: a setting written into
+    // `toChatInfo` has to appear in `modelInfoAffectingConfigKeys`, because
+    // both halves are needed and neither fails loudly on its own. Wiring the
+    // read without the refresh leaves a setting that only takes effect after
+    // a window reload.
+    const keys = modelInfoAffectingConfigKeys(CONFIG_SECTION, PROVIDER);
+
+    assert.ok(
+      keys.includes(settingKey(SETTING_EDIT_TOOLS)),
+      "editTools is read by toChatInfo, so it must refresh the model list",
+    );
+    // The client keys are a subset: those change the payload too, since a
+    // rebuilt client serves the model list.
+    for (const key of clientAffectingConfigKeys(CONFIG_SECTION, PROVIDER)) {
+      assert.ok(
+        keys.includes(key),
+        `${key} rebuilds the client and must therefore refresh the model list`,
+      );
     }
   });
 });
