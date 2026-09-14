@@ -123,8 +123,9 @@ suite("model picker information Test Suite", () => {
   });
 
   test("the reading is live, not captured at construction", async () => {
-    // The provider outlives a settings change; a value cached in the
-    // constructor would keep the old hint until the window was reloaded.
+    // Covers `toChatInfo` only. The setting also has to trigger a model-list
+    // refresh, or VS Code keeps serving the capabilities it cached — that half
+    // is asserted in chat-provider-config.test.ts.
     assert.strictEqual(
       provider.describeModel().capabilities.editTools,
       undefined,

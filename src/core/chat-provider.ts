@@ -26,6 +26,7 @@ import type { ThinkingFormat } from "./models";
 import {
   getEditTools,
   getMaxImageSize,
+  SETTING_EDIT_TOOLS,
   SETTING_MAX_RETRIES,
   SETTING_MODEL_ID_OVERRIDES,
   SETTING_TIMEOUT_MS,
@@ -121,6 +122,31 @@ export function clientAffectingConfigKeys(
     `${configSection}.${SETTING_MODEL_ID_OVERRIDES}`,
     `${configSection}.${SETTING_TIMEOUT_MS}`,
     `${configSection}.${SETTING_MAX_RETRIES}`,
+  ];
+}
+
+/**
+ * Configuration keys that change the model information reported to VS Code.
+ *
+ * A superset of {@link clientAffectingConfigKeys}: rebuilding a client means
+ * rebuilding the model list, so those keys need both. `editTools` is the
+ * exception — it changes only the capabilities reported for a model, so it
+ * needs a refresh and not a cache drop.
+ *
+ * Leaving a key out is invisible until someone checks: `toChatInfo` reads the
+ * setting on every call, so the value is right the moment anything else
+ * refreshes the list. But VS Code caches what the provider reported until
+ * `onDidChangeLanguageModelChatInformation` fires, so a user who edits the
+ * setting and immediately opens the picker sees the old value and reasonably
+ * calls it broken.
+ */
+export function modelInfoAffectingConfigKeys(
+  configSection: string,
+  providerId: string,
+): string[] {
+  return [
+    ...clientAffectingConfigKeys(configSection, providerId),
+    `${configSection}.${SETTING_EDIT_TOOLS}`,
   ];
 }
 
@@ -420,9 +446,10 @@ export abstract class BaseChatProvider
    * Check if configuration affects this provider (subclass can override)
    */
   protected affectsConfiguration(e: vscode.ConfigurationChangeEvent): boolean {
-    return clientAffectingConfigKeys(this.configSection, this.providerId).some(
-      (key) => e.affectsConfiguration(key),
-    );
+    return modelInfoAffectingConfigKeys(
+      this.configSection,
+      this.providerId,
+    ).some((key) => e.affectsConfiguration(key));
   }
 
   /**
