@@ -523,8 +523,12 @@ export abstract class BaseChatProvider
       this.hasApiKeyCache = await this.modelProvider.hasApiKey();
     }
     const hasApiKey = this.hasApiKeyCache;
-    const planManager = TokenPlan.getInstance();
-    const planModelIds = planManager.getPlanModelIds();
+    // Optional on purpose: VS Code may ask for the model list before this
+    // extension has finished activating, or while it is shutting down after
+    // `resetInstance()`. "No plans" keeps the models listed; throwing would
+    // take the whole provider's list down with it.
+    const planModelIds =
+      TokenPlan.getOptional()?.getPlanModelIds() ?? new Set<string>();
     const models = this.modelProvider.getModels();
     // `silent` probes are the editor asking "are there models?" — they happen
     // far more often than the picker is opened, so the per-call inventory is
@@ -626,7 +630,10 @@ export abstract class BaseChatProvider
       `[${this.providerId}] Preparing chat request, model: ${modelInfo.id}`,
     );
 
-    const planOverride = await TokenPlan.getInstance().resolvePlanOverride(
+    // Absent means the extension has not initialised its plan store yet (or has
+    // torn it down); either way there is no plan to apply, which is the same
+    // answer as "the user configured none".
+    const planOverride = await TokenPlan.getOptional()?.resolvePlanOverride(
       modelInfo.id,
     );
 
@@ -1268,11 +1275,15 @@ export abstract class BaseChatProvider
       }) => {
         const plan = prepared.planOverride;
         const rate = plan?.consumptionRate ?? 1;
+        // Optional: this runs at the end of a response, which can be after the
+        // extension began shutting down. Losing one record is not worth failing
+        // a request the user is watching.
+        //
         // `recordConsumption` writes to globalState asynchronously. Not
         // awaiting it is intentional (it must not block or fail the chat
         // response), but the rejection still needs a handler.
-        TokenPlan.getInstance()
-          .recordConsumption({
+        TokenPlan.getOptional()
+          ?.recordConsumption({
             ...(plan ? { planId: plan.planId } : {}),
             providerId: this.providerId,
             modelId: modelInfo.id,

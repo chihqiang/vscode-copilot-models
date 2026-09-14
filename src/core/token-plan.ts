@@ -142,6 +142,28 @@ export class TokenPlan {
     return TokenPlan.store.get();
   }
 
+  /**
+   * The instance, or `undefined` when {@link init} has not run (or a
+   * {@link resetInstance} has run since).
+   *
+   * For the callbacks VS Code invokes on its own schedule.
+   * `provideLanguageModelChatInformation` is one: it is called eagerly to keep
+   * the model list current, including while the extension is shutting down,
+   * after `resetInstance()` has already cleared the instance. Letting
+   * {@link getInstance} throw there does not surface as a missing feature —
+   * the whole provider's model list fails and disappears from the picker, with
+   * `Singleton not initialized` as the only clue. "No token plan" is a valid
+   * answer for these reads, so they ask for one instead of asserting.
+   */
+  static getOptional(): TokenPlan | undefined {
+    return TokenPlan.store.getOptional();
+  }
+
+  /** Whether an instance exists (init() has run and no reset since). */
+  static isInitialized(): boolean {
+    return TokenPlan.store.getOptional() !== undefined;
+  }
+
   /** 重置实例并释放资源（测试与扩展停用时使用） */
   static resetInstance(): void {
     TokenPlan.store.getOptional()?.dispose();
