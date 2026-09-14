@@ -682,7 +682,6 @@ export abstract class BaseChatProvider
     const request: ApiRequest = {
       model: this.getApiModelId(modelInfo.id),
       messages: apiMessages,
-      stream: true,
       ...(tools ? { tools } : {}),
       ...(toolChoice ? { tool_choice: toolChoice } : {}),
     };
@@ -1022,9 +1021,6 @@ export abstract class BaseChatProvider
       if (!client) {
         client = this.modelProvider.createClient(apiKey, { baseUrl });
         this.clientCache.set(cacheKey, client);
-      }
-      if (planOverride) {
-        request.stream = planOverride.stream;
       }
       const callbacks = this.createStreamCallbacks(progress, usageCallback);
       await client.streamChatCompletion(request, callbacks, token);
