@@ -14,6 +14,8 @@
 - **日志调试**: 4 级日志系统，支持热重载
 - **轻量**: 移除 OpenAI SDK，原生 SSE 客户端实现
 - **令牌套餐**: 统一预付费计费，通过单个端点同时覆盖通义千问、DeepSeek、GLM 的令牌套餐
+- **实用模型**: 可通过 VS Code 的实用模型设置，让 AI 生成提交信息
+  也使用这些模型
 
 ## 快速开始
 
@@ -216,6 +218,38 @@ Balance:
 > 因此经它们发起的请求不显示余额。未配置 API 密钥的服务商会整行省略；
 > 已配置但查询失败时显示 `unavailable`——余额问题不会影响报表其余部分的展示。
 > 未配置密钥时不会发起任何网络请求。
+
+## AI 生成提交信息
+
+源代码管理输入框上的星标按钮可以自动草拟提交信息。该按钮由 GitHub Copilot
+Chat 扩展提供，默认使用 Copilot 自带的小型实用模型，也可以改成使用本扩展的
+模型。
+
+把 `chat.utilitySmallModel` 设为 `<vendor>/<model-id>` 即可：
+
+```jsonc
+"chat.utilitySmallModel": "deepseek/deepseek-flash"
+```
+
+| 设置项 | 适用范围 |
+| :----- | :------- |
+| `chat.utilitySmallModel` | 短而频繁的流程：提交信息 |
+| `chat.utilityModel` | 较长的实用流程 |
+| `chat.byokUtilityModelDefault` | 上面两项都为空时的默认行为 |
+
+`chat.byokUtilityModelDefault` 决定当对话面板中选中的是 BYOK 模型、且上面两项
+都未设置时的行为：`copilot`（默认）继续用 Copilot 的实用模型，`mainAgent` 复用
+当前选中的 BYOK 模型，`none` 表示不使用实用模型。
+
+> **注意：**
+>
+> - 模型必须是可选的，即已配置 API 密钥或有令牌套餐覆盖。未配置凭据的模型不会
+>   出现在这些设置的下拉列表中；若仍收到请求，会报 `API key not configured`。
+> - 建议选择快而便宜的模型：这类流程调用频繁，且提示内容基本只有 diff。
+> - 只有 Copilot 扩展的实用模型别名会遵循这些设置。VS Code 自身的内部流程
+>   （对话标题生成、语音清理、工具风险评估）直接请求 Copilot 实用模型，不受影响。
+> - 如果想改的是提交信息的写法而不是由哪个模型来写，请使用
+>   `github.copilot.chat.commitMessageGeneration.instructions`。
 
 ## 命令
 

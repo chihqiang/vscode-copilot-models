@@ -21,6 +21,8 @@ One-click switching and native panel compatibility.
 - **Lightweight**: OpenAI SDK replaced with native SSE client code
 - **Token Plan**: Unified prepaid billing for Qwen, DeepSeek, and
   GLM token packages via a single endpoint
+- **Utility Model**: Optionally run AI commit-message generation on one of
+  these models, through VS Code's utility-model settings
 
 ## Documentation
 
@@ -245,6 +247,44 @@ Balance:
 > configured API key are omitted entirely; a configured provider whose lookup
 > fails reads as `unavailable` — a balance problem never blocks the rest of the
 > report. No request is sent when no API key is set.
+
+## AI Commit Messages
+
+The sparkle button in the Source Control input box drafts a commit message.
+The GitHub Copilot Chat extension provides that button, and by default it runs
+on Copilot's own small utility model. It can run on a model from this
+extension instead.
+
+Point it at one by setting `chat.utilitySmallModel` to `<vendor>/<model-id>`:
+
+```jsonc
+"chat.utilitySmallModel": "deepseek/deepseek-flash"
+```
+
+| Setting | Applies to |
+| :------ | :--------- |
+| `chat.utilitySmallModel` | Short, frequent flows: commit messages |
+| `chat.utilityModel` | Longer utility flows |
+| `chat.byokUtilityModelDefault` | Used when the two above are empty |
+
+`chat.byokUtilityModelDefault` decides what happens when the model selected
+in the chat picker is a BYOK model and neither override is set: `copilot`
+(the default) keeps Copilot's utility models, `mainAgent` reuses the selected
+BYOK model, and `none` disables utility models.
+
+> **Notes:**
+>
+> - The model must be selectable, which means its API key or a covering token
+>   plan is configured. Without credentials a model is not offered in these
+>   settings, and a request it does receive fails with
+>   `API key not configured`.
+> - Prefer a fast, inexpensive model: these flows run often and the prompt is
+>   mostly the diff.
+> - Only the Copilot extension's utility aliases follow these settings. VS
+>   Code's own internal flows (chat titles, dictation cleanup, tool risk
+>   assessment) ask for the Copilot utility model directly and ignore them.
+> - To change what the message says rather than which model writes it, use
+>   `github.copilot.chat.commitMessageGeneration.instructions`.
 
 ## Commands
 
