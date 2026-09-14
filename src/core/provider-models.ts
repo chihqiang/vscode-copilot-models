@@ -139,8 +139,20 @@ export class ProviderModels {
     this.providers.set(provider.id, provider);
     this.models.set(provider.id, providerModels);
     for (const model of providerModels) {
-      if (!this.modelIdToProviderId.has(model.id)) {
+      const existing = this.modelIdToProviderId.get(model.id);
+      if (existing === undefined) {
         this.modelIdToProviderId.set(model.id, provider.id);
+      } else if (existing !== provider.id) {
+        // Routing resolves a model id to exactly one provider, so the first
+        // registration wins and the other model is unreachable — silently,
+        // because nothing else compares these two lists. Two providers can
+        // legitimately offer the same model name (a token plan mirrors the
+        // direct API), so this is a warning rather than an error.
+        logger.registry.warn(
+          `Model id "${model.id}" from provider "${provider.id}" is already ` +
+            `served by "${existing}"; requests for it will not reach ` +
+            `"${provider.id}".`,
+        );
       }
     }
     logger.registry.debug(

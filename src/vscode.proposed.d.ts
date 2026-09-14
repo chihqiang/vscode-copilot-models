@@ -60,4 +60,21 @@ declare module "vscode" {
      */
     readonly requestInitiator?: string;
   }
+
+  export interface LanguageModelChat {
+    /**
+     * What the model can do, as reported by whichever provider serves it.
+     *
+     * Declared from the `languageModelCapabilities` proposal, which is *not*
+     * listed in `enabledApiProposals`: the extension host builds this object
+     * unconditionally — it is a plain property, not a getter behind a check —
+     * so reading it needs no declaration. It is still read defensively, since
+     * the field may simply be absent on an older VS Code.
+     */
+    readonly capabilities?: {
+      readonly supportsToolCalling?: boolean;
+      readonly supportsImageToText?: boolean;
+      readonly editToolsHint?: readonly string[];
+    };
+  }
 }

@@ -39,8 +39,11 @@ import {
 } from "./token-plan";
 import {
   VisionService,
+  containsImageParts,
   getVisionService,
+  isDescribingWith,
   resolveImageMessages,
+  visionModelNeedsImageInputMessage,
 } from "./vision";
 
 /**
@@ -498,6 +501,21 @@ export abstract class BaseChatProvider
         ? { configurationSchema: BaseChatProvider.buildThinkingEffortSchema() }
         : {}),
     };
+  }
+
+  /**
+   * Whether this extension made the request, rather than the user's chat.
+   *
+   * VS Code reports the requesting extension as its lowercased id, and `core`
+   * for its own chat functionality. Used to recognise the vision describer's
+   * own call coming back; `isDescribingWith` is the version-independent half
+   * of the same check.
+   */
+  private isSelfInitiatedRequest(options: ModelConfigurationOptions): boolean {
+    return (
+      options.requestInitiator?.toLowerCase() ===
+      this.context.extension.id.toLowerCase()
+    );
   }
 
   /**
@@ -1104,11 +1122,37 @@ export abstract class BaseChatProvider
       // them through the vision proxy would downgrade them to a lossy text
       // description.
       const modelDefinition = this.findModelDefinition(modelInfo.id);
+
+      // The describer reaches this extension through `lm.selectChatModels()`
+      // when the model it picked is one of ours, and its request carries the
+      // image — so proxying it would start the description over, forever. Only
+      // ours can recurse this way, which is why the model definition is part
+      // of the test. `isDescribingWith` is the precise, version-independent
+      // signal; the initiator covers a request that was in flight before the
+      // description was registered. It also has to carry an image, or an
+      // unrelated self-initiated request — an AI commit message on a text-only
+      // model — would be mistaken for one.
+      const nestedDescription =
+        modelDefinition !== undefined &&
+        (isDescribingWith(modelInfo.id) ||
+          (this.isSelfInitiatedRequest(options) &&
+            containsImageParts(messages)));
+      if (
+        nestedDescription &&
+        modelDefinition.capabilities.imageInput !== true
+      ) {
+        throw new Error(visionModelNeedsImageInputMessage(modelInfo.id));
+      }
+
       const visionResolution = await resolveImageMessages(
         messages,
         token,
         this.visionService,
-        { skipVisionProxy: modelDefinition?.capabilities.imageInput === true },
+        {
+          skipVisionProxy:
+            modelDefinition?.capabilities.imageInput === true ||
+            nestedDescription,
+        },
       );
 
       // Report vision proxy notice if available
