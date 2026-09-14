@@ -357,6 +357,70 @@ export interface VisionResolutionResult {
 }
 
 /**
+ * Whether images in this request reached the model as images.
+ *
+ * The stats were computed on every request and read by nothing, so
+ * "the model never saw my image" left no trace: the user saw a placeholder in
+ * the conversation if they were lucky, and nothing in the log either way. This
+ * is the single line that answers it.
+ *
+ * Only a genuine failure counts. An image from an earlier turn is left out by
+ * design — the proxy describes the current turn — and one that the model takes
+ * natively was never the proxy's business.
+ */
+export function hasUndescribedImages(stats: VisionResolutionStats): boolean {
+  return stats.failedImageMessages > 0 || stats.unavailableImageMessages > 0;
+}
+
+/**
+ * One line describing what became of a request's images, or `undefined` when
+ * it carried none.
+ *
+ * Returning `undefined` for the common case is the point: most requests have
+ * no images, and a line per request would drown the log that this is meant to
+ * make readable.
+ *
+ * `bypassed` marks a request the proxy deliberately left alone because the
+ * model accepts images itself. Without it, such a request reads as
+ * `described=0`, which looks exactly like a failure.
+ */
+export function formatVisionResolutionSummary(
+  result: VisionResolutionResult,
+  options: { bypassed?: boolean } = {},
+): string | undefined {
+  const { stats } = result;
+
+  if (stats.inputImageParts === 0) {
+    return undefined;
+  }
+
+  const fields = [
+    `found=${stats.inputImageParts}`,
+    `inMessages=${stats.inputImageMessages}`,
+  ];
+
+  if (options.bypassed) {
+    fields.push("bypassed=model-accepts-images");
+  } else {
+    // Every counter is reported, zero or not: the line is read while asking
+    // "why is this image missing", and a field that is absent cannot be
+    // distinguished from one that was never computed.
+    fields.push(
+      `described=${stats.generatedImageMessages}`,
+      `failed=${stats.failedImageMessages}`,
+      `unavailable=${stats.unavailableImageMessages}`,
+      `omitted=${stats.omittedImageMessages}`,
+    );
+  }
+
+  if (result.visionModelId) {
+    fields.push(`model=${result.visionModelId}`);
+  }
+
+  return `Image handling: ${fields.join(" ")}`;
+}
+
+/**
  * Vision language model option
  */
 export interface VisionLanguageModelOption {

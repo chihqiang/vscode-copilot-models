@@ -296,6 +296,30 @@ Chat 扩展提供，默认使用 Copilot 自带的小型实用模型，也可以
 只需搜索单个 `req=<id>` 即可串联该请求在路由、Provider、网络层的完整链路。
 API 密钥、令牌和 URL 查询字符串都会自动脱敏——密钥绝不会出现在日志面板中。
 
+### 排查图片问题
+
+任何携带图片的请求都会写一行日志，说明图片最终被如何处理，例如：
+
+```text
+[WARN ] [Vision] req=0043ef provider=deepseek model=glm-5.3 \
+  Image handling: found=1 inMessages=1 described=0 failed=1 unavailable=0 omitted=0
+```
+
+| 字段 | 含义 |
+| :---- | :--- |
+| `found` | 请求中的图片分片数 |
+| `inMessages` | 至少包含一张图片的消息数 |
+| `described` | 已被描述文字替代的图片数 |
+| `failed` | 描述请求失败或返回为空 |
+| `unavailable` | 未配置视觉代理 |
+| `omitted` | 属于更早轮次、不会被重复描述的图片 |
+| `bypassed` | 模型本身支持图片输入，未走代理 |
+| `model` | 实际生成描述的视觉模型 |
+
+不含图片的请求不会输出这行日志。当 `failed` 或 `unavailable` 不为 0 时以
+warning 级别记录，因此在默认的 `minimal` 级别下也能看到；图片全部处理正常时
+以 `info` 级别记录，需要设为 `metadata` 或 `verbose` 才会显示。
+
 [marketplace]: https://marketplace.visualstudio.com/items?itemName=chihqiang.vscode-copilot-models
 
 ## 许可证
