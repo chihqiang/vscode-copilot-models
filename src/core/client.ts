@@ -246,11 +246,31 @@ const MAX_RETRY_AFTER_MS = 60_000;
  * A `baseUrl` entered with a trailing slash (e.g. `https://host/v1/`) used to
  * be concatenated verbatim, yielding `https://host/v1//chat/completions` —
  * an empty path segment that some gateways reject with a 404.
+ *
+ * The base may also carry a query string, which is part of the endpoint rather
+ * than something the path follows. Appending textually put the path *inside*
+ * the query value — `...?api-version=2024-02-01/chat/completions` — so the
+ * request went somewhere else entirely. Parsing keeps each part in its place.
+ * The malformed result never looked malformed in the logs either, because
+ * `sanitizeUrl` strips the query before logging.
  */
 export function joinApiUrl(baseUrl: string, apiPath: string): string {
-  const base = baseUrl.trim().replace(/\/+$/, "");
+  const base = baseUrl.trim();
   const path = apiPath.trim();
-  return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
+
+  try {
+    const url = new URL(base);
+    const basePath = url.pathname.replace(/\/+$/, "");
+    url.pathname = path.startsWith("/")
+      ? `${basePath}${path}`
+      : `${basePath}/${path}`;
+    return url.toString();
+  } catch {
+    // Not an absolute URL — fall back to joining the strings, which is all
+    // that can be done with nothing to parse.
+    const basePath = base.replace(/\/+$/, "");
+    return path.startsWith("/") ? `${basePath}${path}` : `${basePath}/${path}`;
+  }
 }
 
 /**
