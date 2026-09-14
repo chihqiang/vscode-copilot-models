@@ -682,16 +682,27 @@ export async function consumeChatCompletionStream(
   /** Emit all accumulated tool calls and reset the buffer. */
   const flushToolCalls = (): void => {
     for (const tc of pendingToolCalls.values()) {
-      if (tc.function.name) {
-        callbacks.onToolCall({
-          id: tc.id,
-          type: tc.type,
-          function: {
-            name: tc.function.name,
-            arguments: tc.function.arguments,
-          },
-        });
+      if (!tc.function.name) {
+        continue;
       }
+      if (!tc.id) {
+        // Nothing arrived to pair the eventual tool result with. Emitting one
+        // with an empty id produces a result the provider cannot match, so
+        // the call is dropped instead — loudly, because the user otherwise
+        // sees the model decide to call a tool and nothing happen.
+        logger.api.warn(
+          `[${providerName}] Dropping tool call "${tc.function.name}": the stream never sent its id`,
+        );
+        continue;
+      }
+      callbacks.onToolCall({
+        id: tc.id,
+        type: tc.type,
+        function: {
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        },
+      });
     }
     pendingToolCalls.clear();
   };
@@ -748,22 +759,27 @@ export async function consumeChatCompletionStream(
 
     if (delta.tool_calls) {
       for (const tc of delta.tool_calls) {
+        // The entry is created on the first fragment for an index, not on the
+        // first fragment that happens to carry an id. OpenAI puts the id in
+        // that first fragment, but not every gateway does, and waiting for it
+        // discarded the name that arrived ahead of it — leaving no tool call
+        // at all, since a call with no name is not emitted.
         let pending = pendingToolCalls.get(tc.index);
-        if (!pending && tc.id) {
+        if (!pending) {
           pending = {
-            id: tc.id,
+            id: tc.id ?? "",
             type: "function",
             function: { name: "", arguments: "" },
           };
           pendingToolCalls.set(tc.index, pending);
+        } else if (!pending.id && tc.id) {
+          pending.id = tc.id;
         }
-        if (pending) {
-          if (tc.function?.name) {
-            pending.function.name += tc.function.name;
-          }
-          if (tc.function?.arguments) {
-            pending.function.arguments += tc.function.arguments;
-          }
+        if (tc.function?.name) {
+          pending.function.name += tc.function.name;
+        }
+        if (tc.function?.arguments) {
+          pending.function.arguments += tc.function.arguments;
         }
       }
     }

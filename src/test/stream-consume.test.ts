@@ -146,6 +146,100 @@ suite("consumeChatCompletionStream Test Suite", () => {
     assert.strictEqual(recorder.usage[0].total_tokens, 18);
   });
 
+  test("assembles a tool call whose id arrives after the name", async () => {
+    // OpenAI puts the id in the first fragment, but not every gateway does.
+    // Waiting for the id before opening the entry discarded the name that came
+    // first, and since a call with no name is never emitted, the tool call
+    // vanished and the model appeared to do nothing.
+    const recorder = createRecorder();
+
+    await consumeChatCompletionStream(
+      streamOf([
+        makeChunk({
+          tool_calls: [{ index: 0, function: { name: "get_weather" } }],
+        }),
+        makeChunk({
+          tool_calls: [
+            { index: 0, id: "call-1", type: "function", function: {} },
+          ],
+        }),
+        makeChunk({
+          tool_calls: [
+            { index: 0, function: { arguments: '{"city":"Paris"}' } },
+          ],
+        }),
+        makeChunk({}, "tool_calls"),
+      ]),
+      recorder.callbacks,
+      undefined,
+      PROVIDER,
+    );
+
+    assert.deepStrictEqual(recorder.toolCalls, [
+      {
+        id: "call-1",
+        type: "function",
+        function: { name: "get_weather", arguments: '{"city":"Paris"}' },
+      },
+    ]);
+  });
+
+  test("drops a tool call that never receives an id, rather than sending an empty one", async () => {
+    // There is nothing to pair the tool result with, and an empty id would
+    // produce a result the provider cannot match. The call is dropped, but it
+    // must not be silent for the user.
+    const recorder = createRecorder();
+
+    await consumeChatCompletionStream(
+      streamOf([
+        makeChunk({
+          tool_calls: [{ index: 0, function: { name: "get_weather" } }],
+        }),
+        makeChunk({}, "tool_calls"),
+      ]),
+      recorder.callbacks,
+      undefined,
+      PROVIDER,
+    );
+
+    assert.deepStrictEqual(recorder.toolCalls, []);
+  });
+
+  test("keeps calls apart when the id arrives out of order", async () => {
+    // Two calls in one response, with the ids trailing their names. Keying by
+    // index has to survive that, or the fragments merge into one call.
+    const recorder = createRecorder();
+
+    await consumeChatCompletionStream(
+      streamOf([
+        makeChunk({
+          tool_calls: [
+            { index: 0, function: { name: "first" } },
+            { index: 1, function: { name: "second" } },
+          ],
+        }),
+        makeChunk({
+          tool_calls: [
+            { index: 0, id: "call-a", type: "function", function: {} },
+            { index: 1, id: "call-b", type: "function", function: {} },
+          ],
+        }),
+        makeChunk({}, "tool_calls"),
+      ]),
+      recorder.callbacks,
+      undefined,
+      PROVIDER,
+    );
+
+    assert.deepStrictEqual(
+      recorder.toolCalls.map((tc) => [tc.id, tc.function.name]),
+      [
+        ["call-a", "first"],
+        ["call-b", "second"],
+      ],
+    );
+  });
+
   test("assembles tool call fragments split across chunks", async () => {
     const recorder = createRecorder();
 
