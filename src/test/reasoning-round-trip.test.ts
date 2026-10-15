@@ -2,12 +2,12 @@
  * Regression tests for the reasoning round-trip.
  *
  * DeepSeek's thinking mode requires the reasoning of previous turns to be sent
- * back whenever the request carries a `tools` parameter, and answers a missing
- * `reasoning_content` with a 400 — its own guide says so explicitly. The
- * converter used to drop any assistant message with no text and no tool calls,
- * which is exactly what a turn the user interrupted looks like, taking the
- * reasoning with it. Without tools the field is ignored by the provider, so an
- * empty assistant message is still dropped: some APIs reject one.
+ * back on every request, and answers a missing `reasoning_content` with a 400 —
+ * its own guide says so explicitly. The converter used to drop any assistant
+ * message with no text and no tool calls, which is exactly what a turn the user
+ * interrupted looks like, taking the reasoning with it. A genuinely empty
+ * assistant message (no reasoning, no text, no tool calls) is still dropped:
+ * some APIs reject one.
  */
 
 import * as assert from "assert";
@@ -95,12 +95,20 @@ suite("reasoning round-trip Test Suite", () => {
     );
   });
 
-  test("still drops an empty assistant message without tools", () => {
-    // Nothing is gained by sending it, and an assistant message with no
-    // content is rejected by some providers.
+  test("keeps reasoning-only output even without tools", () => {
+    // DeepSeek's thinking mode requires reasoning_content to be passed back
+    // on every request, not only when tools are present — otherwise it
+    // returns a 400. A reasoning-only assistant message is what a turn the
+    // user interrupted looks like, so dropping it loses the reasoning and
+    // the next request fails.
     const messages = provider.toApiMessages([reasoningOnlyMessage()], false);
 
-    assert.deepStrictEqual(messages, []);
+    assert.strictEqual(messages.length, 1);
+    assert.strictEqual(messages[0].role, "assistant");
+    assert.strictEqual(
+      (messages[0] as { reasoning_content?: string }).reasoning_content,
+      REASONING,
+    );
   });
 
   test("still drops a genuinely empty assistant message with tools", () => {
