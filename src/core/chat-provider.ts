@@ -243,9 +243,9 @@ export function messageTextForTokenCount(
       );
     } else if (part instanceof vscode.LanguageModelThinkingPart) {
       // `convertMessages` sends reasoning back as `reasoning_content` on
-      // assistant messages, and DeepSeek concatenates it into the context when
-      // the request carries tools. Not counting it would report less context
-      // in use than the request actually costs.
+      // assistant messages, and DeepSeek concatenates it into the context in
+      // thinking mode. Not counting it would report less context in use than
+      // the request actually costs.
       if (message.role === vscode.LanguageModelChatMessageRole.Assistant) {
         chunks.push(part.value);
       }
@@ -805,13 +805,17 @@ export abstract class BaseChatProvider
    *
    * `hasTools` tells the converter whether the request it is building will
    * carry a `tools` parameter. DeepSeek treats a missing `reasoning_content`
-   * as a protocol error in that case (see the assistant branch below), so the
-   * two cannot be decided independently.
+   * as a protocol error in thinking mode (see the assistant branch below), so
+   * the two cannot be decided independently.
    */
   protected convertMessages(
     messages: readonly vscode.LanguageModelChatRequestMessage[],
     hasTools = false,
   ): ApiMessage[] {
+    // `hasTools` is no longer used to decide whether reasoning is kept —
+    // DeepSeek requires it in thinking mode regardless — but the parameter
+    // stays so the call site and subclasses can express the intent.
+    void hasTools;
     logger.chat.debug(
       `[${this.providerId}] Converting ${messages.length} messages`,
     );
@@ -901,14 +905,13 @@ export abstract class BaseChatProvider
 
       if (role === "assistant") {
         // DeepSeek requires the reasoning of every earlier turn to be sent
-        // back once the request carries tools, and answers a missing
-        // `reasoning_content` with a 400 — see its thinking-mode guide. A
-        // message that holds nothing but reasoning can only come from a turn
-        // the user interrupted, which is exactly when the next request would
-        // otherwise fail and keep failing. Without tools the field is ignored
-        // by the provider, so an empty message is still dropped rather than
-        // sent: some APIs reject an assistant message with no content.
-        const carriesRequiredReasoning = hasTools && thinkingText.length > 0;
+        // back in thinking mode, and answers a missing `reasoning_content`
+        // with a 400 — see its thinking-mode guide. A message that holds
+        // nothing but reasoning can only come from a turn the user
+        // interrupted, which is exactly when the next request would otherwise
+        // fail and keep failing. A genuinely empty assistant message (no text,
+        // no tool calls, no reasoning) is still dropped: some APIs reject one.
+        const carriesRequiredReasoning = thinkingText.length > 0;
         if (finalContent || toolCalls.length > 0 || carriesRequiredReasoning) {
           const msg: ApiMessage = {
             role: "assistant",
