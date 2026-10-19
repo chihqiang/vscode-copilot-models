@@ -37,7 +37,9 @@ export function toChatCompletionMessageParam(
         role: "assistant",
         content: toTextContent(message.content),
       };
-      if (message.reasoning_content) {
+      // Providers that require the field reject a message without it, so an
+      // empty string is meaningful and must not be dropped as falsy.
+      if (message.reasoning_content !== undefined) {
         msg.reasoning_content = message.reasoning_content;
       }
       if (message.tool_calls && message.tool_calls.length > 0) {

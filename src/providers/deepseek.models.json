@@ -10,7 +10,8 @@
     "capabilities": {
       "toolCalling": true,
       "imageInput": true,
-      "thinking": true
+      "thinking": true,
+      "reasoningEffort": true
     }
   }
 ]

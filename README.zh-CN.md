@@ -90,10 +90,12 @@ API 密钥保存在 VS Code SecretStorage 中。
 
 ## 支持的模型
 
-模型选择器中的*思考强度*选项对应各服务商实际提供的参数。`None` 在所有
-服务商上都能关闭思考：通义千问通过 `enable_thinking: false`（其接口默认开启
-思考），智谱 AI 与 DeepSeek 则通过 `thinking` 开关。三者都只提供开关、
-不提供强度档位，因此 `low`、`high`、`max` 均以服务商自身默认强度开启思考。
+模型选择器中的*思考强度*选项对应各服务商实际提供的参数。通义千问通过
+`enable_thinking: false` 关闭思考（其接口默认开启思考）；智谱 AI 与
+DeepSeek 使用 `thinking` 开关，其中 DeepSeek 以及 GLM-5.2、GLM-5.3 系列
+模型还会把所选档位作为 `reasoning_effort` 发送。GLM-5.3、GLM-5.3-Flash 与
+GLM-5.3-FlashX 始终开启思考，因此不提供 `None`；残留的 `None` 配置会按
+`low` 发送。
 
 ### 通义千问 (Alibaba Cloud)
 
@@ -119,11 +121,13 @@ API 密钥保存在 VS Code SecretStorage 中。
 | :----- | :------: | :----: | :--------: | :------: | :--------: |
 | GLM-5.3 | 1M | 128K | ✅ | ❌ | ✅ |
 | GLM-5.3-Flash | 1M | 128K | ✅ | ✅ | ✅ |
+| GLM-5.3-FlashX | 1M | 128K | ✅ | ✅ | ✅ |
+| GLM-5V-Turbo | 200K | 128K | ✅ | ✅ | ✅ |
 | GLM-5.2 | 1M | 128K | ✅ | ❌ | ✅ |
 | GLM-5.1 | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5-Turbo | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5 | 200K | 128K | ✅ | ❌ | ✅ |
-| GLM-4.7-Flash | 200K | 128K | ✅ | ❌ | ❌ |
+| GLM-4.7-Flash | 200K | 128K | ✅ | ❌ | ✅ |
 
 > **提示：** 图片输入标记为 ❌ 的模型仍可通过视觉代理功能处理图片
 > （见快速开始第 4 步）。

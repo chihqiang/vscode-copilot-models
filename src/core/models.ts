@@ -23,6 +23,16 @@ export interface ModelCapabilities {
   imageInput: boolean;
   /** Whether thinking mode (reasoning) is supported */
   thinking: boolean;
+  /**
+   * Whether the model accepts `reasoning_effort` (low/high/max).
+   *
+   * Some providers expose only an on/off toggle for older models, while newer
+   * ones document effort levels alongside it. Sending `reasoning_effort` to a
+   * model that does not support it is at best ignored, so this is opt-in.
+   */
+  reasoningEffort?: boolean;
+  /** Whether thinking cannot be disabled (the API rejects `disabled`). */
+  thinkingAlwaysOn?: boolean;
 }
 
 /**
@@ -55,8 +65,9 @@ export interface ModelDefinition {
  *
  * - `reasoning_effort`: one parameter carries both. `none` turns thinking
  *   off, and `low` / `high` / `max` turn it on at that effort.
- * - `thinking_type`: a `thinking.type` toggle for on/off, with the effort
- *   level — where the API has one — left at the API's own default.
+ * - `thinking_type`: a `thinking.type` toggle for on/off. Newer models also
+ *   accept `reasoning_effort`, which is sent alongside the toggle when the
+ *   model declares that capability.
  * - `enable_thinking`: an `enable_thinking` boolean toggle, which is what
  *   DashScope documents. Thinking is on by default there, so the boolean has
  *   to be sent as `false` to turn it off.
@@ -79,5 +90,17 @@ export interface ProviderDefinition {
   apiKeyPlaceholder: string;
   supportsThinking?: boolean;
   thinkingFormat?: ThinkingFormat;
+  /**
+   * Whether `tool_choice: "required"` is accepted.
+   *
+   * BigModel documents `auto` as the only supported value, so it opts out.
+   * Providers that follow the standard OpenAI behavior leave this unset.
+   */
+  supportsRequiredToolChoice?: boolean;
+  /**
+   * Whether every prior assistant message must carry `reasoning_content`
+   * while thinking is on. DeepSeek answers a missing field with a 400.
+   */
+  requiresReasoningContent?: boolean;
   models: ModelDefinition[];
 }
