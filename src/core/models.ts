@@ -65,8 +65,9 @@ export interface ModelDefinition {
  *
  * - `reasoning_effort`: one parameter carries both. `none` turns thinking
  *   off, and `low` / `high` / `max` turn it on at that effort.
- * - `thinking_type`: a `thinking.type` toggle for on/off, with the effort
- *   level — where the API has one — left at the API's own default.
+ * - `thinking_type`: a `thinking.type` toggle for on/off. Newer models also
+ *   accept `reasoning_effort`, which is sent alongside the toggle when the
+ *   model declares that capability.
  * - `enable_thinking`: an `enable_thinking` boolean toggle, which is what
  *   DashScope documents. Thinking is on by default there, so the boolean has
  *   to be sent as `false` to turn it off.

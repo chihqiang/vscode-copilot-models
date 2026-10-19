@@ -114,9 +114,10 @@ Run `Copilot Models: Clear Vision Model` to remove the configuration.
 The *Thinking Effort* selector in the model picker maps onto what each
 provider documents. Qwen uses `enable_thinking: false` to turn thinking off —
 its API defaults thinking to on. Zhipu AI and DeepSeek use the `thinking`
-toggle, and DeepSeek plus GLM-5.2 and newer also receive the selected level as
-`reasoning_effort`. GLM-5.3, GLM-5.3-Flash and GLM-5.3-FlashX always think, so
-they do not offer `None`; a stale `None` selection is sent as `low`.
+toggle, and DeepSeek plus the GLM-5.2 and GLM-5.3 models also receive the
+selected level as `reasoning_effort`. GLM-5.3, GLM-5.3-Flash and
+GLM-5.3-FlashX always think, so they do not offer `None`; a stale `None`
+selection is sent as `low`.
 
 ### Qwen (Alibaba Cloud)
 

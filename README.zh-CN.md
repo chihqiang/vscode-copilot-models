@@ -92,8 +92,8 @@ API 密钥保存在 VS Code SecretStorage 中。
 
 模型选择器中的*思考强度*选项对应各服务商实际提供的参数。通义千问通过
 `enable_thinking: false` 关闭思考（其接口默认开启思考）；智谱 AI 与
-DeepSeek 使用 `thinking` 开关，其中 DeepSeek 以及 GLM-5.2 及更新模型还会
-把所选档位作为 `reasoning_effort` 发送。GLM-5.3、GLM-5.3-Flash 与
+DeepSeek 使用 `thinking` 开关，其中 DeepSeek 以及 GLM-5.2、GLM-5.3 系列
+模型还会把所选档位作为 `reasoning_effort` 发送。GLM-5.3、GLM-5.3-Flash 与
 GLM-5.3-FlashX 始终开启思考，因此不提供 `None`；残留的 `None` 配置会按
 `low` 发送。
 
