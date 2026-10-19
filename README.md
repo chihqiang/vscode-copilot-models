@@ -112,11 +112,11 @@ Run `Copilot Models: Clear Vision Model` to remove the configuration.
 ## Supported Models
 
 The *Thinking Effort* selector in the model picker maps onto what each
-provider documents. `None` turns thinking off everywhere: Qwen through
-`enable_thinking: false` — its API defaults thinking to on — and Zhipu AI and
-DeepSeek through their `thinking` toggle. All three document an on/off switch
-and no effort level, so `low`, `high` and `max` enable thinking at the
-provider's own default effort.
+provider documents. Qwen uses `enable_thinking: false` to turn thinking off —
+its API defaults thinking to on. Zhipu AI and DeepSeek use the `thinking`
+toggle, and DeepSeek plus GLM-5.2 and newer also receive the selected level as
+`reasoning_effort`. GLM-5.3, GLM-5.3-Flash and GLM-5.3-FlashX always think, so
+they do not offer `None`; a stale `None` selection is sent as `low`.
 
 ### Qwen (Alibaba Cloud)
 
@@ -142,11 +142,13 @@ provider's own default effort.
 | :----- | :------: | :----: | :--------: | :---------: | :--------: |
 | GLM-5.3 | 1M | 128K | ✅ | ❌ | ✅ |
 | GLM-5.3-Flash | 1M | 128K | ✅ | ✅ | ✅ |
+| GLM-5.3-FlashX | 1M | 128K | ✅ | ✅ | ✅ |
+| GLM-5V-Turbo | 200K | 128K | ✅ | ✅ | ✅ |
 | GLM-5.2 | 1M | 128K | ✅ | ❌ | ✅ |
 | GLM-5.1 | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5-Turbo | 200K | 128K | ✅ | ❌ | ✅ |
 | GLM-5 | 200K | 128K | ✅ | ❌ | ✅ |
-| GLM-4.7-Flash | 200K | 128K | ✅ | ❌ | ❌ |
+| GLM-4.7-Flash | 200K | 128K | ✅ | ❌ | ✅ |
 
 > **Tip:** Models marked with ❌ for Image Input can still handle images
 > through the Vision Proxy feature (see Quick Start step 4).

@@ -2,6 +2,7 @@
  * Base Chat Provider - Common logic for vscode.LanguageModelChatProvider
  */
 
+import { createHash } from "node:crypto";
 import vscode from "vscode";
 import {
   generateRequestId,
@@ -289,6 +290,7 @@ export function applyThinkingParams(
   request: ApiRequest,
   format: ThinkingFormat,
   effort: ThinkingEffort,
+  supportsReasoningEffort = false,
 ): void {
   const enabled = effort !== "none";
 
@@ -303,9 +305,12 @@ export function applyThinkingParams(
   }
 
   if (format === "thinking_type") {
-    // One toggle; the effort level is left to the API's own default, which is
-    // all a provider that documents only this parameter offers.
+    // The toggle is universal. Newer models document `reasoning_effort`
+    // alongside it, so send the level only when the model declares support.
     request.thinking = { type: enabled ? "enabled" : "disabled" };
+    if (enabled && supportsReasoningEffort) {
+      request.reasoning_effort = effort;
+    }
     return;
   }
 
@@ -339,6 +344,15 @@ export abstract class BaseChatProvider
    */
   protected readonly clientCache = new Map<string, IApiClient>();
 
+  /**
+   * Reasoning returned by the model, keyed by assistant text hash or tool call
+   * ID. VS Code does not replay `LanguageModelThinkingPart` in every request
+   * history, so the provider has to remember the reasoning it produced or
+   * DeepSeek rejects the next request with a 400.
+   */
+  private readonly reasoningCache = new Map<string, string>();
+  private static readonly MAX_REASONING_CACHE_ENTRIES = 128;
+
   /** Cached API key presence, invalidated on secret change */
   private hasApiKeyCache: boolean | undefined;
 
@@ -358,20 +372,36 @@ export abstract class BaseChatProvider
     progress.report(new vscode.LanguageModelThinkingPart(text));
   }
 
-  static buildThinkingEffortSchema() {
+  static buildThinkingEffortSchema(thinkingAlwaysOn = false) {
+    // Some models (GLM-5.3/5.3-Flash) reject `thinking.type: "disabled"`, so
+    // offering "None" would produce a request the API cannot accept.
+    const efforts = thinkingAlwaysOn
+      ? (["low", "high", "max"] as const)
+      : (["none", "low", "high", "max"] as const);
+    const labels = thinkingAlwaysOn
+      ? ["Low", "High", "Max"]
+      : ["None", "Low", "High", "Max"];
+    const descriptions = thinkingAlwaysOn
+      ? [
+          "Low reasoning effort",
+          "High reasoning effort",
+          "Maximum reasoning effort",
+        ]
+      : [
+          "Disable thinking mode",
+          "Low reasoning effort",
+          "High reasoning effort",
+          "Maximum reasoning effort",
+        ];
+
     return {
       properties: {
         reasoningEffort: {
           type: "string",
           title: "Thinking Effort",
-          enum: ["none", "low", "high", "max"],
-          enumItemLabels: ["None", "Low", "High", "Max"],
-          enumDescriptions: [
-            "Disable thinking mode",
-            "Low reasoning effort",
-            "High reasoning effort",
-            "Maximum reasoning effort",
-          ],
+          enum: efforts,
+          enumItemLabels: labels,
+          enumDescriptions: descriptions,
           default: "high",
           group: "navigation",
         },
@@ -421,12 +451,30 @@ export abstract class BaseChatProvider
   }
 
   /**
+   * Whether the provider accepts `tool_choice: "required"` (subclass can
+   * override). Providers that document only `auto` fall back to it rather
+   * than sending a value the API rejects.
+   */
+  protected get supportsRequiredToolChoice(): boolean {
+    return true;
+  }
+
+  /**
+   * Whether every earlier assistant turn must carry `reasoning_content` while
+   * thinking is enabled (subclass can override).
+   */
+  protected get requiresReasoningContent(): boolean {
+    return false;
+  }
+
+  /**
    * Dispose resources
    */
   dispose(): void {
     logger.provider.debug(`[${this.providerId}] Disposing ChatProvider...`);
     this.isActive = false;
     this.clientCache.clear();
+    this.reasoningCache.clear();
     this.disposables.forEach((d) => d.dispose());
     this.disposables = [];
   }
@@ -593,7 +641,11 @@ export abstract class BaseChatProvider
         ...(editTools.length > 0 ? { editTools } : {}),
       },
       ...(this.supportsThinking && model.capabilities.thinking
-        ? { configurationSchema: BaseChatProvider.buildThinkingEffortSchema() }
+        ? {
+            configurationSchema: BaseChatProvider.buildThinkingEffortSchema(
+              model.capabilities.thinkingAlwaysOn ?? false,
+            ),
+          }
         : {}),
     };
   }
@@ -653,7 +705,16 @@ export abstract class BaseChatProvider
 
     const modelDefinition = this.findModelDefinition(modelInfo.id);
     const isThinkingModel = modelDefinition?.capabilities.thinking ?? false;
-    const thinkingEffort = this.getConfiguredThinkingEffort(options);
+    let thinkingEffort = this.getConfiguredThinkingEffort(options);
+
+    // GLM-5.3/5.3-Flash reject `thinking.type: "disabled"`. A stale or
+    // manually supplied "none" must not turn into a failing request.
+    if (
+      modelDefinition?.capabilities.thinkingAlwaysOn &&
+      thinkingEffort === "none"
+    ) {
+      thinkingEffort = "low";
+    }
 
     logger.chat.debug(
       `[${this.providerId}] Model: ${modelInfo.id}, isThinkingModel: ${isThinkingModel}, thinkingEffort: ${thinkingEffort}`,
@@ -665,9 +726,14 @@ export abstract class BaseChatProvider
     const tools = modelDefinition?.capabilities.toolCalling
       ? this.convertTools(options.tools)
       : undefined;
+    const needsReasoningReplay =
+      this.requiresReasoningContent &&
+      isThinkingModel &&
+      thinkingEffort !== "none";
     const apiMessages = this.convertMessages(
       messages,
       Boolean(tools && tools.length > 0),
+      needsReasoningReplay,
     );
 
     logger.chat.debug(
@@ -676,7 +742,8 @@ export abstract class BaseChatProvider
 
     const toolChoice =
       tools && tools.length > 0
-        ? options.toolMode === vscode.LanguageModelChatToolMode.Required
+        ? options.toolMode === vscode.LanguageModelChatToolMode.Required &&
+          this.supportsRequiredToolChoice
           ? "required"
           : "auto"
         : undefined;
@@ -694,7 +761,7 @@ export abstract class BaseChatProvider
 
     // If thinking model, add thinking-related parameters
     if (isThinkingModel) {
-      this.convertThinkingParams(request, thinkingEffort);
+      this.convertThinkingParams(request, thinkingEffort, modelDefinition);
     }
 
     logger.chat.debug(
@@ -761,6 +828,7 @@ export abstract class BaseChatProvider
   protected convertThinkingParams(
     request: ApiRequest,
     effort: ThinkingEffort,
+    _model?: ModelDefinition,
   ): void {
     applyThinkingParams(request, "reasoning_effort", effort);
   }
@@ -801,6 +869,64 @@ export abstract class BaseChatProvider
   }
 
   /**
+   * Remember reasoning for later requests.
+   *
+   * The chat panel does not always include thinking parts when it re-sends
+   * history. Tool call IDs are stable across requests, and assistant text is
+   * hashed so an identical replay finds the same entry without keeping a
+   * second copy of the response. The map is bounded: reasoning can be long,
+   * and this is a replay aid rather than an archive.
+   */
+  protected rememberReasoning(
+    thinking: string,
+    content: string,
+    toolCallIds: readonly string[],
+  ): void {
+    if (!thinking) {
+      return;
+    }
+
+    const keys = toolCallIds.map((id) => `tool:${id}`);
+    if (content) {
+      keys.push(BaseChatProvider.reasoningKeyForText(content));
+    }
+
+    for (const key of keys) {
+      // Re-insert so the most recently used entry is last for eviction.
+      this.reasoningCache.delete(key);
+      this.reasoningCache.set(key, thinking);
+      while (
+        this.reasoningCache.size > BaseChatProvider.MAX_REASONING_CACHE_ENTRIES
+      ) {
+        const oldest = this.reasoningCache.keys().next().value;
+        if (oldest === undefined) {
+          break;
+        }
+        this.reasoningCache.delete(oldest);
+      }
+    }
+  }
+
+  private static reasoningKeyForText(text: string): string {
+    return `text:${createHash("sha256").update(text).digest("hex")}`;
+  }
+
+  private lookupReasoning(
+    content: string,
+    toolCallIds: readonly string[],
+  ): string | undefined {
+    for (const id of toolCallIds) {
+      const cached = this.reasoningCache.get(`tool:${id}`);
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
+    return content
+      ? this.reasoningCache.get(BaseChatProvider.reasoningKeyForText(content))
+      : undefined;
+  }
+
+  /**
    * Convert message format (subclass can override)
    *
    * `hasTools` tells the converter whether the request it is building will
@@ -811,6 +937,7 @@ export abstract class BaseChatProvider
   protected convertMessages(
     messages: readonly vscode.LanguageModelChatRequestMessage[],
     hasTools = false,
+    requiresReasoningContent = false,
   ): ApiMessage[] {
     // `hasTools` is no longer used to decide whether reasoning is kept —
     // DeepSeek requires it in thinking mode regardless — but the parameter
@@ -911,15 +1038,36 @@ export abstract class BaseChatProvider
         // interrupted, which is exactly when the next request would otherwise
         // fail and keep failing. A genuinely empty assistant message (no text,
         // no tool calls, no reasoning) is still dropped: some APIs reject one.
-        const carriesRequiredReasoning = thinkingText.length > 0;
+        const textForCache =
+          typeof finalContent === "string"
+            ? finalContent
+            : finalContent
+                .map((part) => (part.type === "text" ? part.text : ""))
+                .join("");
+        // Prefer the reasoning captured from the stream: a thinking part
+        // supplied by VS Code may be a summary, while DeepSeek requires the
+        // full reasoning to be replayed.
+        const reasoning =
+          this.lookupReasoning(
+            textForCache,
+            toolCalls.map((call) => call.id),
+          ) ||
+          thinkingText ||
+          "";
+        const carriesRequiredReasoning = reasoning.length > 0;
         if (finalContent || toolCalls.length > 0 || carriesRequiredReasoning) {
           const msg: ApiMessage = {
             role: "assistant",
             content: finalContent || "",
           };
 
-          if (thinkingText) {
-            msg.reasoning_content = thinkingText;
+          if (reasoning) {
+            msg.reasoning_content = reasoning;
+          } else if (requiresReasoningContent) {
+            // DeepSeek checks that the field is present, even for a turn
+            // that produced no reasoning (for example after switching
+            // models mid-conversation).
+            msg.reasoning_content = "";
           }
 
           if (toolCalls.length > 0) {
@@ -1064,10 +1212,12 @@ export abstract class BaseChatProvider
       total_tokens: number;
     }) => void,
   ): StreamCallbacks {
-    // Only accumulate full content for debug logging; skip in production to save memory
+    // The reasoning cache needs the full response even when debug logging is
+    // off: VS Code may not replay thinking parts in the next request.
     const shouldLogDebug = logger.shouldLog("debug");
-    let content = shouldLogDebug ? "" : undefined;
-    let thinking = shouldLogDebug ? "" : undefined;
+    let content = "";
+    let thinking = "";
+    const toolCallIds: string[] = [];
     let toolCalls = shouldLogDebug
       ? ([] as { name: string; args: string }[])
       : undefined;
@@ -1079,18 +1229,15 @@ export abstract class BaseChatProvider
 
     return {
       onContent: (text: string) => {
-        if (content !== undefined) {
-          content += text;
-        }
+        content += text;
         progress.report(new vscode.LanguageModelTextPart(text));
       },
       onThinking: (text: string) => {
-        if (thinking !== undefined) {
-          thinking += text;
-        }
+        thinking += text;
         BaseChatProvider.reportThinkingPart(progress, text);
       },
       onToolCall: (toolCall) => {
+        toolCallIds.push(toolCall.id);
         try {
           const args = JSON.parse(toolCall.function.arguments);
           if (toolCalls) {
@@ -1136,6 +1283,8 @@ export abstract class BaseChatProvider
         throw error;
       },
       onDone: () => {
+        this.rememberReasoning(thinking, content, toolCallIds);
+
         // Log full response content (debug only)
         if (content) {
           logger.stream.debug(

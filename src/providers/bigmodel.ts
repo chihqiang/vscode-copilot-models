@@ -10,5 +10,7 @@ export const bigmodelConfig = {
   supportsThinking: true,
   /** BigModel 使用 thinking: { type: "disabled" | "enabled" } 格式 */
   thinkingFormat: "thinking_type" as const,
+  /** BigModel 的 tool_choice 仅支持 "auto" */
+  supportsRequiredToolChoice: false,
   models: models satisfies ModelDefinition[],
 };

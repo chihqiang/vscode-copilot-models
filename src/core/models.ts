@@ -23,6 +23,16 @@ export interface ModelCapabilities {
   imageInput: boolean;
   /** Whether thinking mode (reasoning) is supported */
   thinking: boolean;
+  /**
+   * Whether the model accepts `reasoning_effort` (low/high/max).
+   *
+   * Some providers expose only an on/off toggle for older models, while newer
+   * ones document effort levels alongside it. Sending `reasoning_effort` to a
+   * model that does not support it is at best ignored, so this is opt-in.
+   */
+  reasoningEffort?: boolean;
+  /** Whether thinking cannot be disabled (the API rejects `disabled`). */
+  thinkingAlwaysOn?: boolean;
 }
 
 /**
@@ -79,5 +89,17 @@ export interface ProviderDefinition {
   apiKeyPlaceholder: string;
   supportsThinking?: boolean;
   thinkingFormat?: ThinkingFormat;
+  /**
+   * Whether `tool_choice: "required"` is accepted.
+   *
+   * BigModel documents `auto` as the only supported value, so it opts out.
+   * Providers that follow the standard OpenAI behavior leave this unset.
+   */
+  supportsRequiredToolChoice?: boolean;
+  /**
+   * Whether every prior assistant message must carry `reasoning_content`
+   * while thinking is on. DeepSeek answers a missing field with a 400.
+   */
+  requiresReasoningContent?: boolean;
   models: ModelDefinition[];
 }

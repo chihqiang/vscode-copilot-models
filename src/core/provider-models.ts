@@ -256,6 +256,8 @@ export class ProviderModels {
   private createFactory(def: ProviderDefinition): IProviderFactory {
     const thinkingFormat = def.thinkingFormat ?? "reasoning_effort";
     const supportsThinking = def.supportsThinking ?? false;
+    const supportsRequiredToolChoice = def.supportsRequiredToolChoice ?? true;
+    const requiresReasoningContent = def.requiresReasoningContent ?? false;
 
     return createProviderFactory({
       providerId: def.id,
@@ -280,6 +282,8 @@ export class ProviderModels {
           modelProvider,
           thinkingFormat,
           supportsThinking,
+          supportsRequiredToolChoice,
+          requiresReasoningContent,
         );
       },
     });
@@ -291,26 +295,46 @@ export class ProviderModels {
 class GenericChatProvider extends BaseChatProvider {
   private readonly thinkingFormat: ThinkingFormat;
   private readonly _supportsThinking: boolean;
+  private readonly _supportsRequiredToolChoice: boolean;
+  private readonly _requiresReasoningContent: boolean;
 
   constructor(
     context: vscode.ExtensionContext,
     modelProvider: IModelProvider,
     thinkingFormat: ThinkingFormat,
     supportsThinking: boolean,
+    supportsRequiredToolChoice: boolean,
+    requiresReasoningContent: boolean,
   ) {
     super(context, modelProvider);
     this.thinkingFormat = thinkingFormat;
     this._supportsThinking = supportsThinking;
+    this._supportsRequiredToolChoice = supportsRequiredToolChoice;
+    this._requiresReasoningContent = requiresReasoningContent;
   }
 
   protected override getSupportsThinking(): boolean {
     return this._supportsThinking;
   }
 
+  protected override get supportsRequiredToolChoice(): boolean {
+    return this._supportsRequiredToolChoice;
+  }
+
+  protected override get requiresReasoningContent(): boolean {
+    return this._requiresReasoningContent;
+  }
+
   protected override convertThinkingParams(
     request: ApiRequest,
     effort: ThinkingEffort,
+    model?: ModelDefinition,
   ): void {
-    applyThinkingParams(request, this.thinkingFormat, effort);
+    applyThinkingParams(
+      request,
+      this.thinkingFormat,
+      effort,
+      model?.capabilities.reasoningEffort ?? false,
+    );
   }
 }

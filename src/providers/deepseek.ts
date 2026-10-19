@@ -14,5 +14,7 @@ export const deepseekConfig = {
    * is on the BigModel config.
    */
   thinkingFormat: "thinking_type" as const,
+  /** DeepSeek returns 400 when an earlier assistant turn omits it. */
+  requiresReasoningContent: true,
   models: models satisfies ModelDefinition[],
 };

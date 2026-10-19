@@ -12,7 +12,7 @@
  */
 
 import * as assert from "assert";
-import { applyThinkingParams } from "../core/chat-provider";
+import { BaseChatProvider, applyThinkingParams } from "../core/chat-provider";
 import type { ApiRequest } from "../core/client";
 import type { ThinkingFormat } from "../core/models";
 import { builtInProviders } from "../providers";
@@ -23,13 +23,14 @@ type ThinkingEffort = "none" | "low" | "high" | "max";
 function apply(
   format: ThinkingFormat,
   effort: ThinkingEffort,
+  supportsReasoningEffort = false,
 ): Record<string, unknown> {
   const request = {
     model: "m",
     messages: [],
     max_tokens: 1024,
   } as ApiRequest;
-  applyThinkingParams(request, format, effort);
+  applyThinkingParams(request, format, effort, supportsReasoningEffort);
   return request as unknown as Record<string, unknown>;
 }
 
@@ -92,6 +93,23 @@ suite("thinking parameters Test Suite", () => {
 
       assert.strictEqual(request.reasoning_effort, undefined);
       assert.strictEqual(request.enable_thinking, undefined);
+    });
+
+    test("models that document an effort send it alongside the toggle", () => {
+      // DeepSeek and GLM-5.2+ accept both `thinking.type` and
+      // `reasoning_effort`; the toggle alone always leaves them at the API
+      // default, so Low and Max would do nothing.
+      for (const effort of ["low", "high", "max"] as const) {
+        const request = apply("thinking_type", effort, true);
+
+        assert.deepStrictEqual(request.thinking, { type: "enabled" });
+        assert.strictEqual(request.reasoning_effort, effort);
+      }
+
+      assert.strictEqual(
+        apply("thinking_type", "none", true).reasoning_effort,
+        undefined,
+      );
     });
   });
 
@@ -170,6 +188,30 @@ suite("provider thinking formats Test Suite", () => {
 
     assert.ok(qwen, "the Qwen provider must be registered");
     assert.strictEqual(qwen.thinkingFormat, "enable_thinking");
+  });
+
+  test("always-on models do not offer a way to disable thinking", () => {
+    const alwaysOn = BaseChatProvider.buildThinkingEffortSchema(true);
+    const efforts = Array.from(alwaysOn.properties.reasoningEffort.enum);
+    assert.deepStrictEqual(efforts, ["low", "high", "max"]);
+
+    const toggleable = BaseChatProvider.buildThinkingEffortSchema();
+    assert.deepStrictEqual(
+      Array.from(toggleable.properties.reasoningEffort.enum),
+      ["none", "low", "high", "max"],
+    );
+  });
+
+  test("BigModel declares that required tool choice is unsupported", () => {
+    const bigmodel = builtInProviders.find((p) => p.id === "bigmodel");
+
+    assert.ok(bigmodel, "the BigModel provider must be registered");
+    assert.strictEqual(
+      "supportsRequiredToolChoice" in bigmodel
+        ? bigmodel.supportsRequiredToolChoice
+        : true,
+      false,
+    );
   });
 
   test("every declared format is one the converter implements", () => {

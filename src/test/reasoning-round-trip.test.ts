@@ -56,11 +56,42 @@ class TestableProvider extends BaseChatProvider {
     super(createStubContext(), createStubProvider());
   }
 
+  protected override get requiresReasoningContent(): boolean {
+    return true;
+  }
+
   toApiMessages(
     messages: vscode.LanguageModelChatRequestMessage[],
     hasTools = false,
+    requiresReasoningContent = false,
   ) {
-    return this.convertMessages(messages, hasTools);
+    return this.convertMessages(messages, hasTools, requiresReasoningContent);
+  }
+
+  /** Drive the stream callbacks without a network request. */
+  captureStream(
+    thinking: string,
+    content: string,
+    toolCallIds: readonly string[] = [],
+  ): void {
+    const callbacks = this.createStreamCallbacks({
+      report: () => {},
+    } as unknown as vscode.Progress<vscode.LanguageModelResponsePart>);
+
+    if (thinking) {
+      callbacks.onThinking(thinking);
+    }
+    if (content) {
+      callbacks.onContent(content);
+    }
+    for (const id of toolCallIds) {
+      callbacks.onToolCall({
+        id,
+        type: "function",
+        function: { name: "tool", arguments: "{}" },
+      });
+    }
+    callbacks.onDone();
   }
 }
 
@@ -169,5 +200,63 @@ suite("reasoning round-trip Test Suite", () => {
         "only the assistant branch sends reasoning back",
       );
     });
+  });
+
+  test("replays reasoning by tool call ID when history has no thinking part", () => {
+    // VS Code does not always include thinking parts when it re-sends the
+    // conversation, but the tool call ID is stable. Without this cache the
+    // next DeepSeek request is a 400.
+    provider.captureStream(REASONING, "", ["call-1"]);
+
+    const message = vscode.LanguageModelChatMessage.Assistant([
+      new vscode.LanguageModelToolCallPart("call-1", "get_date", {}),
+    ] as unknown as vscode.LanguageModelTextPart[]);
+    const [apiMessage] = provider.toApiMessages([message], true, true);
+
+    assert.strictEqual(
+      (apiMessage as { reasoning_content?: string }).reasoning_content,
+      REASONING,
+    );
+  });
+
+  test("replays reasoning by assistant text when there is no tool call", () => {
+    const content = "The date is Tuesday.";
+    provider.captureStream(REASONING, content);
+
+    const message = vscode.LanguageModelChatMessage.Assistant([
+      new vscode.LanguageModelTextPart(content),
+    ]);
+    const [apiMessage] = provider.toApiMessages([message], false, true);
+
+    assert.strictEqual(
+      (apiMessage as { reasoning_content?: string }).reasoning_content,
+      REASONING,
+    );
+  });
+
+  test("sends an empty reasoning_content when a required turn has none", () => {
+    // A turn that produced no reasoning (for example after switching models)
+    // still has to carry the field; DeepSeek checks for its presence.
+    const message = vscode.LanguageModelChatMessage.Assistant([
+      new vscode.LanguageModelTextPart("No reasoning."),
+    ]);
+    const [apiMessage] = provider.toApiMessages([message], true, true);
+
+    assert.strictEqual(
+      (apiMessage as { reasoning_content?: string }).reasoning_content,
+      "",
+    );
+  });
+
+  test("does not invent reasoning_content when the provider allows it", () => {
+    const message = vscode.LanguageModelChatMessage.Assistant([
+      new vscode.LanguageModelTextPart("No reasoning."),
+    ]);
+    const [apiMessage] = provider.toApiMessages([message], true, false);
+
+    assert.strictEqual(
+      (apiMessage as { reasoning_content?: string }).reasoning_content,
+      undefined,
+    );
   });
 });

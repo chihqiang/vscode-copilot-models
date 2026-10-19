@@ -10,7 +10,9 @@
     "capabilities": {
       "toolCalling": true,
       "imageInput": false,
-      "thinking": true
+      "thinking": true,
+      "reasoningEffort": true,
+      "thinkingAlwaysOn": true
     }
   },
   {
@@ -20,6 +22,38 @@
     "version": "5.3",
     "detail": "Native multimodal model, 1M context, image & video input",
     "maxInputTokens": 1000000,
+    "maxOutputTokens": 131072,
+    "capabilities": {
+      "toolCalling": true,
+      "imageInput": true,
+      "thinking": true,
+      "reasoningEffort": true,
+      "thinkingAlwaysOn": true
+    }
+  },
+  {
+    "id": "glm-5.3-flashx",
+    "name": "GLM-5.3-FlashX",
+    "family": "bigmodel",
+    "version": "5.3",
+    "detail": "Faster GLM-5.3-Flash at 200 tokens/s, 1M context, image & video input",
+    "maxInputTokens": 1000000,
+    "maxOutputTokens": 131072,
+    "capabilities": {
+      "toolCalling": true,
+      "imageInput": true,
+      "thinking": true,
+      "reasoningEffort": true,
+      "thinkingAlwaysOn": true
+    }
+  },
+  {
+    "id": "glm-5v-turbo",
+    "name": "GLM-5V-Turbo",
+    "family": "bigmodel",
+    "version": "5",
+    "detail": "Multimodal coding model with vision, 200K context",
+    "maxInputTokens": 200000,
     "maxOutputTokens": 131072,
     "capabilities": {
       "toolCalling": true,
@@ -38,7 +72,8 @@
     "capabilities": {
       "toolCalling": true,
       "imageInput": false,
-      "thinking": true
+      "thinking": true,
+      "reasoningEffort": true
     }
   },
   {
@@ -94,7 +129,7 @@
     "capabilities": {
       "toolCalling": true,
       "imageInput": false,
-      "thinking": false
+      "thinking": true
     }
   }
 ]
