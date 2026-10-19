@@ -55,6 +55,16 @@ class TestableProvider extends BaseChatProvider {
   constructor() {
     super(createStubContext(), createStubProvider());
   }
+
+  /** Populate the reasoning cache the way a completed stream would. */
+  rememberReasoningFromStream(thinking: string, content: string): void {
+    const callbacks = this.createStreamCallbacks({
+      report: () => {},
+    } as unknown as vscode.Progress<vscode.LanguageModelResponsePart>);
+    callbacks.onThinking(thinking);
+    callbacks.onContent(content);
+    callbacks.onDone();
+  }
 }
 
 const MODEL_INFO = {
@@ -160,5 +170,21 @@ suite("provideTokenCount coverage Test Suite", () => {
       createToken(),
     );
     assert.ok(count1 > 100, `expected a large count, got ${count1}`);
+  });
+
+  test("counts cached reasoning replayed by convertMessages", async () => {
+    const text = "the answer is 42";
+    const message = vscode.LanguageModelChatMessage.Assistant([
+      new vscode.LanguageModelTextPart(text),
+    ]);
+    const visible = await count(message);
+
+    provider.rememberReasoningFromStream(BULK, text);
+    const withReasoning = await count(message);
+
+    assert.ok(
+      withReasoning > visible + 100,
+      `expected cached reasoning in the count, got ${visible} then ${withReasoning}`,
+    );
   });
 });

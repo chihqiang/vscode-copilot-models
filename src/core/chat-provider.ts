@@ -927,6 +927,51 @@ export abstract class BaseChatProvider
   }
 
   /**
+   * Reasoning that would be replayed for a message whose thinking part is not
+   * on the message itself.
+   *
+   * Token estimation has to include it: `convertMessages` adds the cached
+   * reasoning to the request, so counting only the visible parts would report
+   * less context than the provider actually receives. A message that still
+   * carries its thinking part is already counted by
+   * `messageTextForTokenCount`.
+   */
+  private replayReasoningForTokenCount(
+    message: vscode.LanguageModelChatRequestMessage,
+  ): string | undefined {
+    if (message.role !== vscode.LanguageModelChatMessageRole.Assistant) {
+      return undefined;
+    }
+
+    let text = "";
+    const toolCallIds: string[] = [];
+
+    for (const part of message.content) {
+      if (part instanceof vscode.LanguageModelTextPart) {
+        text += part.value;
+      } else if (part instanceof vscode.LanguageModelDataPart) {
+        if (!isImageMime(part.mimeType)) {
+          text += dataPartText(part);
+        }
+      } else if (part instanceof vscode.LanguageModelPromptTsxPart) {
+        text +=
+          typeof part.value === "string"
+            ? part.value
+            : JSON.stringify(part.value);
+      } else if (part instanceof vscode.LanguageModelToolCallPart) {
+        toolCallIds.push(part.callId);
+      } else if (part instanceof vscode.LanguageModelThinkingPart) {
+        // An empty thinking part counts as absent, matching convertMessages.
+        if (part.value) {
+          return undefined;
+        }
+      }
+    }
+
+    return this.lookupReasoning(text, toolCallIds);
+  }
+
+  /**
    * Convert message format (subclass can override)
    *
    * `hasTools` tells the converter whether the request it is building will
@@ -1491,7 +1536,13 @@ export abstract class BaseChatProvider
     text: string | vscode.LanguageModelChatRequestMessage,
     _token: vscode.CancellationToken,
   ): Promise<number> {
-    return estimateTokenCount(text);
+    const count = estimateTokenCount(text);
+    if (typeof text === "string") {
+      return count;
+    }
+
+    const replay = this.replayReasoningForTokenCount(text);
+    return replay ? count + Tokenizer.getInstance().countTokens(replay) : count;
   }
 
   /**
