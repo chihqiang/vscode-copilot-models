@@ -333,7 +333,6 @@ export abstract class BaseChatProvider
   protected readonly providerId: string;
   protected readonly providerName: string;
   protected readonly configSection: string;
-  protected readonly supportsThinking: boolean;
   protected readonly visionService: VisionService;
   protected isActive = true;
   private disposables: vscode.Disposable[] = [];
@@ -373,8 +372,9 @@ export abstract class BaseChatProvider
   }
 
   static buildThinkingEffortSchema(thinkingAlwaysOn = false) {
-    // Some models (GLM-5.3/5.3-Flash) reject `thinking.type: "disabled"`, so
-    // offering "None" would produce a request the API cannot accept.
+    // Some models (GLM-5.3, GLM-5.3-Flash and GLM-5.3-FlashX) reject
+    // `thinking.type: "disabled"`, so offering "None" would produce a request
+    // the API cannot accept.
     const efforts = thinkingAlwaysOn
       ? (["low", "high", "max"] as const)
       : (["none", "low", "high", "max"] as const);
@@ -417,7 +417,6 @@ export abstract class BaseChatProvider
     this.providerId = modelProvider.id;
     this.providerName = modelProvider.config.vendorName;
     this.configSection = this.getConfigSection();
-    this.supportsThinking = this.getSupportsThinking();
     this.visionService = getVisionService(context);
 
     logger.provider.debug(`[${this.providerId}] ChatProvider initialized`);
@@ -448,6 +447,18 @@ export abstract class BaseChatProvider
    */
   protected getSupportsThinking(): boolean {
     return false;
+  }
+
+  /**
+   * Whether thinking controls are reported to VS Code.
+   *
+   * Deliberately a getter: subclasses override `getSupportsThinking()` and
+   * assign their own state after `super()`, so reading it in the constructor
+   * would observe an uninitialized field and hide the effort selector for
+   * every provider.
+   */
+  protected get supportsThinking(): boolean {
+    return this.getSupportsThinking();
   }
 
   /**

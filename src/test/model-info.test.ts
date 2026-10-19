@@ -76,6 +76,27 @@ class TestableProvider extends BaseChatProvider {
   }
 }
 
+/**
+ * Mirrors the real provider subclasses: thinking support lives in a field
+ * assigned after `super()`, and the base class reads it through an override.
+ */
+class LateBoundThinkingProvider extends BaseChatProvider {
+  private readonly _supportsThinking: boolean;
+
+  constructor() {
+    super(createStubContext(), createStubProvider());
+    this._supportsThinking = true;
+  }
+
+  protected override getSupportsThinking(): boolean {
+    return this._supportsThinking;
+  }
+
+  describeModel() {
+    return this.toChatInfo(MODEL, true, false);
+  }
+}
+
 /** Write the edit-tools setting, restoring the default afterwards. */
 async function setEditTools(tools: string[]): Promise<void> {
   await vscode.workspace
@@ -143,5 +164,26 @@ suite("model picker information Test Suite", () => {
     assert.strictEqual(info.detail, "API key required");
     // BYOK says who pays, not whether the model is usable — it stays true.
     assert.strictEqual(info.isBYOK, true);
+  });
+
+  test("thinking models expose the effort selector", () => {
+    // The base class used to read getSupportsThinking() in its constructor,
+    // before the subclass field backing it was assigned. Every provider then
+    // reported no schema, so the picker had no Thinking Effort control.
+    const thinkingProvider = new LateBoundThinkingProvider();
+    try {
+      const schema = thinkingProvider.describeModel().configurationSchema as
+        | { properties?: Record<string, unknown> }
+        | undefined;
+
+      assert.ok(schema, "a thinking model must report a configuration schema");
+      assert.deepStrictEqual(
+        (schema.properties?.reasoningEffort as { enum?: string[] } | undefined)
+          ?.enum,
+        ["none", "low", "high", "max"],
+      );
+    } finally {
+      thinkingProvider.dispose();
+    }
   });
 });
