@@ -153,4 +153,16 @@ suite("chat request body Test Suite", () => {
     assert.strictEqual(message.reasoning_content, "thinking");
     assert.strictEqual((message.tool_calls as unknown[]).length, 1);
   });
+
+  test("keeps an empty reasoning_content on assistant messages", () => {
+    // DeepSeek requires the field to be present in thinking mode. An empty
+    // string is the value used for a turn that produced no reasoning, so it
+    // has to survive conversion rather than be treated as absent.
+    const requestBody = body({
+      messages: [{ role: "assistant", content: "done", reasoning_content: "" }],
+    });
+
+    const [message] = requestBody.messages as Array<Record<string, unknown>>;
+    assert.strictEqual(message.reasoning_content, "");
+  });
 });
