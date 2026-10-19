@@ -927,23 +927,23 @@ export abstract class BaseChatProvider
   }
 
   /**
-   * Reasoning that would be replayed for a message whose thinking part is not
-   * on the message itself.
+   * Reasoning that would be replayed for an assistant message, plus the
+   * thinking text it would replace.
    *
    * Token estimation has to include it: `convertMessages` adds the cached
    * reasoning to the request, so counting only the visible parts would report
-   * less context than the provider actually receives. A message that still
-   * carries its thinking part is already counted by
-   * `messageTextForTokenCount`.
+   * less context than the provider actually receives. A thinking part supplied
+   * by VS Code may be a summary, which the cached full reasoning replaces.
    */
   private replayReasoningForTokenCount(
     message: vscode.LanguageModelChatRequestMessage,
-  ): string | undefined {
+  ): { reasoning: string; thinkingText: string } | undefined {
     if (message.role !== vscode.LanguageModelChatMessageRole.Assistant) {
       return undefined;
     }
 
     let text = "";
+    let thinkingText = "";
     const toolCallIds: string[] = [];
 
     for (const part of message.content) {
@@ -961,14 +961,12 @@ export abstract class BaseChatProvider
       } else if (part instanceof vscode.LanguageModelToolCallPart) {
         toolCallIds.push(part.callId);
       } else if (part instanceof vscode.LanguageModelThinkingPart) {
-        // An empty thinking part counts as absent, matching convertMessages.
-        if (part.value) {
-          return undefined;
-        }
+        thinkingText += part.value;
       }
     }
 
-    return this.lookupReasoning(text, toolCallIds);
+    const reasoning = this.lookupReasoning(text, toolCallIds);
+    return reasoning ? { reasoning, thinkingText } : undefined;
   }
 
   /**
@@ -1542,7 +1540,22 @@ export abstract class BaseChatProvider
     }
 
     const replay = this.replayReasoningForTokenCount(text);
-    return replay ? count + Tokenizer.getInstance().countTokens(replay) : count;
+    if (!replay) {
+      return count;
+    }
+
+    const tokenizer = Tokenizer.getInstance();
+    const reasoningCount = tokenizer.countTokens(replay.reasoning);
+    if (!replay.thinkingText) {
+      return count + reasoningCount;
+    }
+
+    // convertMessages prefers the cached reasoning over the thinking part, so
+    // replace the part's share of the estimate instead of counting both.
+    return (
+      Math.max(0, count - tokenizer.countTokens(replay.thinkingText)) +
+      reasoningCount
+    );
   }
 
   /**

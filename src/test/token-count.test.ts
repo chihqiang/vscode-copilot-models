@@ -187,4 +187,21 @@ suite("provideTokenCount coverage Test Suite", () => {
       `expected cached reasoning in the count, got ${visible} then ${withReasoning}`,
     );
   });
+
+  test("replaces a shorter thinking part with the cached reasoning", async () => {
+    const text = "the answer is 42";
+    const message = vscode.LanguageModelChatMessage.Assistant([
+      new vscode.LanguageModelTextPart(text),
+      new vscode.LanguageModelThinkingPart("short summary"),
+    ]);
+    const summaryCount = await count(message);
+
+    provider.rememberReasoningFromStream(BULK, text);
+    const replayCount = await count(message);
+
+    assert.ok(
+      replayCount > summaryCount + 100,
+      `expected the cached reasoning to replace the summary, got ${summaryCount} then ${replayCount}`,
+    );
+  });
 });
